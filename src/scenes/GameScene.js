@@ -207,17 +207,43 @@ export class GameScene extends Phaser.Scene {
     // ============ WALL EFFECTS ============
 
     createFireWall(data) {
-        // Create burn effect on wall
-        const fireWall = this.add.rectangle(data.x, data.y, 32, 32, 0xff3300, 0.6);
-        fireWall.setDepth(-1);
+        // Create burn effect ON TOP of wall (depth 5 = above walls)
+        const fireWall = this.add.rectangle(data.x, data.y, 34, 34, 0xff3300, 0.7);
+        fireWall.setDepth(5);
         fireWall.gridX = data.gridX;
         fireWall.gridY = data.gridY;
         this.effects.fireWalls.push(fireWall);
 
+        // Add glow effect
+        const glow = this.add.circle(data.x, data.y, 20, 0xff6600, 0.4);
+        glow.setDepth(4);
+
+        // Add particle sparks
+        for (let i = 0; i < 3; i++) {
+            this.time.delayedCall(i * 400, () => {
+                if (!fireWall.active) return;
+                const spark = this.add.circle(
+                    data.x + Phaser.Math.Between(-10, 10),
+                    data.y + Phaser.Math.Between(-10, 10),
+                    4, 0xffaa00, 0.9
+                );
+                spark.setDepth(6);
+                this.tweens.add({
+                    targets: spark,
+                    y: spark.y - 15,
+                    alpha: 0,
+                    scale: 0.3,
+                    duration: 300,
+                    onComplete: () => spark.destroy(),
+                });
+            });
+        }
+
         // Pulsing effect
         this.tweens.add({
-            targets: fireWall,
+            targets: [fireWall, glow],
             alpha: 0.3,
+            scale: 1.1,
             duration: 300,
             yoyo: true,
             repeat: 5,
@@ -228,23 +254,43 @@ export class GameScene extends Phaser.Scene {
             const index = this.effects.fireWalls.indexOf(fireWall);
             if (index > -1) this.effects.fireWalls.splice(index, 1);
             fireWall.destroy();
+            glow.destroy();
         });
+
+        console.log(`Created fire wall at grid (${data.gridX}, ${data.gridY})`);
     }
 
     createIceWall(data) {
-        // Create ice effect on wall
-        const iceWall = this.add.rectangle(data.x, data.y, 32, 32, 0x66ffff, 0.5);
-        iceWall.setDepth(-1);
+        // Create ice effect ON TOP of wall (depth 5 = above walls)
+        const iceWall = this.add.rectangle(data.x, data.y, 34, 34, 0x66ffff, 0.6);
+        iceWall.setDepth(5);
         iceWall.gridX = data.gridX;
         iceWall.gridY = data.gridY;
         this.effects.iceWalls.push(iceWall);
+
+        // Add frost border effect
+        const frost = this.add.rectangle(data.x, data.y, 38, 38, 0xaaffff, 0.3);
+        frost.setDepth(4);
+        frost.setStrokeStyle(2, 0xffffff, 0.8);
+
+        // Shimmer effect
+        this.tweens.add({
+            targets: [iceWall, frost],
+            alpha: 0.4,
+            duration: 500,
+            yoyo: true,
+            repeat: -1,
+        });
 
         // Remove after duration
         this.time.delayedCall(5000, () => {
             const index = this.effects.iceWalls.indexOf(iceWall);
             if (index > -1) this.effects.iceWalls.splice(index, 1);
             iceWall.destroy();
+            frost.destroy();
         });
+
+        console.log(`Created ice wall at grid (${data.gridX}, ${data.gridY})`);
     }
 
     checkWallEffects() {
