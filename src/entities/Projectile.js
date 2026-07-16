@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, GAME_CONFIG } from '../config.js';
+import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
+import { audio } from '../systems/AudioSystem.js';
 
 export class Projectile extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, dirX, dirY, element, ownerPlayerNumber, isRuneShot = false) {
@@ -21,7 +22,14 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.dirX = dirX;
         this.dirY = dirY;
         this.speed = config.speed;
-        this.damage = isRuneShot ? RUNTIME_SETTINGS.runeDamage : RUNTIME_SETTINGS.normalDamage;
+        if (!isRuneShot) {
+            this.damage = RUNTIME_SETTINGS.normalDamage;
+        } else if (element === ELEMENT_TYPES.TRIPLE) {
+            // Per-pellet damage: three pellets shouldn't triple the payload
+            this.damage = Math.max(5, Math.round(RUNTIME_SETTINGS.runeDamage * 0.75));
+        } else {
+            this.damage = RUNTIME_SETTINGS.runeDamage;
+        }
         this.initialized = false;
         this.isDestroying = false;
 
@@ -59,6 +67,8 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
 
         if (this.config.maxBounces !== Infinity && this.bounceCount > this.config.maxBounces) {
             this.detonate();
+        } else {
+            audio.bounce();
         }
     }
 
@@ -95,6 +105,8 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
             this.detonate();
             return;
         }
+
+        audio.bounce();
 
         // Element-specific wall effects (for rune shots)
         if (this.isRuneShot) {
@@ -142,27 +154,23 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
             const bounceReduction = this.bounceCount * 1000;
 
             switch (this.element) {
-                case ELEMENT_TYPES.FIRE:
+                case ELEMENT_TYPES.FIRE: {
                     // Fire: 4 bounces = no DOT
                     const burnDuration = Math.max(0, RUNTIME_SETTINGS.fireBurnDuration - bounceReduction);
                     if (burnDuration > 0) {
                         player.applyBurn(RUNTIME_SETTINGS.fireBurnDamagePerSec, burnDuration);
-                        console.log(`Applied burn for ${burnDuration}ms (reduced by ${this.bounceCount} bounces)`);
-                    } else {
-                        console.log(`No burn applied - too many bounces (${this.bounceCount})`);
                     }
                     break;
+                }
 
-                case ELEMENT_TYPES.ICE:
+                case ELEMENT_TYPES.ICE: {
                     // Ice: each bounce removes 1 second of slow
                     const slowDuration = Math.max(0, RUNTIME_SETTINGS.iceSlowDuration - bounceReduction);
                     if (slowDuration > 0) {
                         player.applySlow(RUNTIME_SETTINGS.iceSlowPercent, slowDuration);
-                        console.log(`Applied slow for ${slowDuration}ms (reduced by ${this.bounceCount} bounces)`);
-                    } else {
-                        console.log(`No slow applied - too many bounces (${this.bounceCount})`);
                     }
                     break;
+                }
 
                 case ELEMENT_TYPES.LIGHTNING:
                     player.applyStun(PROJECTILE_CONFIG.lightning.stunDuration);

@@ -1,10 +1,11 @@
 import { GAME_CONFIG } from '../config.js';
 
 export class MazeGenerator {
-    constructor(width, height, corridorWidth = 3) {
+    constructor(width, height, corridorWidth = 3, clearCenter = false) {
         this.width = width;
         this.height = height;
         this.corridorWidth = corridorWidth; // Cell size for corridors
+        this.clearCenter = clearCenter;     // Big central room (test mode)
         this.grid = [];
     }
 
@@ -155,15 +156,17 @@ export class MazeGenerator {
             }
         }
 
-        // Center area (for test mode)
-        const centerX = Math.floor(this.width / 2);
-        const centerY = Math.floor(this.height / 2);
-        const centerSize = Math.max(6, this.corridorWidth + 3);
+        // Big central room only when both players spawn in the middle (test mode)
+        if (this.clearCenter) {
+            const centerX = Math.floor(this.width / 2);
+            const centerY = Math.floor(this.height / 2);
+            const centerSize = Math.max(6, this.corridorWidth + 3);
 
-        for (let y = centerY - centerSize; y <= centerY + centerSize; y++) {
-            for (let x = centerX - centerSize; x <= centerX + centerSize; x++) {
-                if (this.isInBounds(x, y) && x > 0 && x < this.width - 1 && y > 0 && y < this.height - 1) {
-                    this.grid[y][x] = 0;
+            for (let y = centerY - centerSize; y <= centerY + centerSize; y++) {
+                for (let x = centerX - centerSize; x <= centerX + centerSize; x++) {
+                    if (this.isInBounds(x, y) && x > 0 && x < this.width - 1 && y > 0 && y < this.height - 1) {
+                        this.grid[y][x] = 0;
+                    }
                 }
             }
         }

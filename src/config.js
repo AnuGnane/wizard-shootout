@@ -8,8 +8,8 @@ export const GAME_CONFIG = {
     // Arena area (where the game is played)
     arenaWidth: 800,
     arenaHeight: 608, // 19 tiles * 32
-    arenaOffsetX: 0,
-    arenaOffsetY: 60, // Top UI bar
+    arenaOffsetX: 112, // Centered: (1024 - 800) / 2
+    arenaOffsetY: 60,  // Top UI bar
 
     // Tile settings
     tileSize: 32,
@@ -18,9 +18,11 @@ export const GAME_CONFIG = {
 
     // Wider corridors (maze uses 2-cell paths)
     corridorWidth: 2,
+};
 
-    // Testing mode - spawn players close together
-    testMode: true,
+export const MATCH_CONFIG = {
+    targetScore: 5,        // First to N round wins takes the match
+    roundEndDelay: 2200,   // ms between a kill and the next round
 };
 
 export const PLAYER_CONFIG = {
@@ -30,6 +32,10 @@ export const PLAYER_CONFIG = {
     colors: {
         player1: 0x5599ff, // Blue wizard
         player2: 0xff5566, // Red wizard
+    },
+    names: {
+        player1: 'BLUE WIZARD',
+        player2: 'RED WIZARD',
     },
 };
 
@@ -94,6 +100,16 @@ export const PROJECTILE_CONFIG = {
         size: 6,
         stunDuration: 1000,
     },
+    // Triple-shot pellets reuse arcane behaviour with lower per-pellet damage
+    triple: {
+        damage: 15,
+        speed: 350,
+        maxBounces: Infinity,
+        lifetime: 5000,
+        color: 0xff88dd,
+        size: 7,
+        spreadAngle: 0.28, // radians between pellets
+    },
 };
 
 export const ELEMENT_TYPES = {
@@ -102,14 +118,28 @@ export const ELEMENT_TYPES = {
     ICE: 'ice',
     EARTH: 'earth',
     LIGHTNING: 'lightning',
+    SHIELD: 'shield',
+    TRIPLE: 'triple',
 };
 
-// Elements that can spawn as runes (not arcane - that's default)
+export const ELEMENT_COLORS = {
+    arcane: 0xffffff,
+    fire: 0xff6600,
+    ice: 0x66ffff,
+    earth: 0x88aa44,
+    lightning: 0xffff00,
+    shield: 0xbb66ff,
+    triple: 0xff88dd,
+};
+
+// Elements that can spawn as orb pickups (not arcane - that's default)
 export const RUNE_ELEMENTS = [
     ELEMENT_TYPES.FIRE,
     ELEMENT_TYPES.ICE,
     ELEMENT_TYPES.EARTH,
     ELEMENT_TYPES.LIGHTNING,
+    ELEMENT_TYPES.SHIELD,
+    ELEMENT_TYPES.TRIPLE,
 ];
 
 export const RUNE_CONFIG = {
@@ -118,6 +148,8 @@ export const RUNE_CONFIG = {
     maxRunes: 4,            // 2 pairs can spawn
     runesPerSpawn: 2,       // Spawn 2 at a time
     shotsPerPickup: 3,
+    tripleShotsPerPickup: 2,
+    minPlayerDistanceTiles: 3, // Don't spawn on top of a player
 };
 
 export const CONTROLS = {
