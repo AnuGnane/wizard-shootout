@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ELEMENT_TYPES } from '../config.js';
+import { ELEMENT_COLORS } from '../config.js';
 
 export class Rune extends Phaser.GameObjects.Sprite {
     constructor(scene, x, y, element) {
@@ -12,9 +12,29 @@ export class Rune extends Phaser.GameObjects.Sprite {
 
         // Add to scene
         scene.add.existing(this);
+        this.setDepth(5);
+
+        // Spawn-in: pop up from nothing with an expanding ring
+        this.setScale(0);
+        scene.tweens.add({
+            targets: this,
+            scale: 1,
+            duration: 300,
+            ease: 'Back.easeOut',
+        });
+
+        const ring = scene.add.circle(x, y, 6, this.getElementColor(), 0);
+        ring.setStrokeStyle(2, this.getElementColor(), 0.8);
+        ring.setDepth(4);
+        scene.tweens.add({
+            targets: ring,
+            scale: 3.5,
+            alpha: 0,
+            duration: 450,
+            onComplete: () => ring.destroy(),
+        });
 
         // Floating animation
-        this.setDepth(5);
         scene.tweens.add({
             targets: this,
             y: y - 5,
@@ -27,9 +47,9 @@ export class Rune extends Phaser.GameObjects.Sprite {
         // Pulsing glow effect
         scene.tweens.add({
             targets: this,
-            alpha: 0.7,
-            scale: 1.1,
+            alpha: 0.75,
             duration: 500,
+            delay: 300,
             yoyo: true,
             repeat: -1,
             ease: 'Sine.easeInOut',
@@ -67,13 +87,7 @@ export class Rune extends Phaser.GameObjects.Sprite {
     }
 
     getElementColor() {
-        switch (this.element) {
-            case ELEMENT_TYPES.FIRE: return 0xff6600;
-            case ELEMENT_TYPES.ICE: return 0x66ffff;
-            case ELEMENT_TYPES.EARTH: return 0x88aa44;
-            case ELEMENT_TYPES.LIGHTNING: return 0xffff00;
-            default: return 0xffffff;
-        }
+        return ELEMENT_COLORS[this.element] || 0xffffff;
     }
 
     // Check if a player is close enough to collect

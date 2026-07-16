@@ -1,14 +1,42 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, PROJECTILE_CONFIG, RUNE_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, RUNE_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
+import { audio } from '../systems/AudioSystem.js';
+
+// Reads the real keyboard for a given player's control scheme.
+// Exposes the same getState() interface as AIController so Player
+// doesn't care who is driving.
+export class KeyboardInput {
+    constructor(scene, playerNumber) {
+        const controlScheme = playerNumber === 1 ? CONTROLS.player1 : CONTROLS.player2;
+        this.keys = {};
+        for (const [action, keyName] of Object.entries(controlScheme)) {
+            this.keys[action] = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[keyName]);
+        }
+    }
+
+    update() {}
+
+    getState() {
+        return {
+            up: this.keys.up.isDown,
+            down: this.keys.down.isDown,
+            left: this.keys.left.isDown,
+            right: this.keys.right.isDown,
+            shoot: this.keys.shoot.isDown,
+            runeShoot: this.keys.runeShoot.isDown,
+        };
+    }
+}
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
-    constructor(scene, x, y, playerNumber) {
+    constructor(scene, x, y, playerNumber, inputSource) {
         const textureKey = playerNumber === 1 ? 'wizard_blue' : 'wizard_red';
         super(scene, x, y, textureKey);
 
         this.scene = scene;
         this.playerNumber = playerNumber;
+        this.inputSource = inputSource || new KeyboardInput(scene, playerNumber);
 
         // Health - use runtime settings
         this.maxHealth = RUNTIME_SETTINGS.playerHealth;
@@ -19,11 +47,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.heldRune = null;      // Current rune type (or null)
         this.runeShots = 0;        // Shots remaining of held rune
 
+        // Shield orb
+        this.shieldCharges = 0;
+        this.shieldBubble = null;
+
         // Shot cooldowns
         this.canNormalShot = true;
         this.canRuneShot = true;
         this.normalCooldown = NORMAL_SHOT_CONFIG.cooldown;
         this.runeCooldown = 800; // Slightly faster for rune shots
+
+        // Edge detection for shoot buttons (works for keyboard and AI alike)
+        this.prevShoot = false;
+        this.prevRuneShoot = false;
 
         // Status effects
         this.statusEffects = {
@@ -59,38 +95,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setDrag(1000);
         this.setRotation(this.aimAngle);
 
-        // Setup controls
-        this.setupControls();
-
         // Create health bar
         this.createHealthBar();
-    }
-
-    setupControls() {
-        const controlScheme = this.playerNumber === 1 ? CONTROLS.player1 : CONTROLS.player2;
-
-        this.keys = {
-            up: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[controlScheme.up]),
-            down: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[controlScheme.down]),
-            left: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[controlScheme.left]),
-            right: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[controlScheme.right]),
-            shoot: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[controlScheme.shoot]),
-            runeShoot: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[controlScheme.runeShoot]),
-        };
     }
 
     createHealthBar() {
         const barWidth = 40;
         const barHeight = 6;
-        const yOffset = -20;
+        const yOffset = -24;
 
         // Background
-        this.healthBarBg = this.scene.add.rectangle(0, 0, barWidth, barHeight, 0x333333);
+        this.healthBarBg = this.scene.add.rectangle(0, 0, barWidth, barHeight, 0x222233);
         this.healthBarBg.setDepth(20);
+        this.healthBarBg.setStrokeStyle(1, 0x000000, 0.6);
 
         // Health fill
-        this.healthBarFill = this.scene.add.rectangle(0, 0, barWidth - 2, barHeight - 2,
-            this.playerNumber === 1 ? 0x5599ff : 0xff5566);
+        this.baseBarColor = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+        this.healthBarFill = this.scene.add.rectangle(0, 0, barWidth - 2, barHeight - 2, this.baseBarColor);
         this.healthBarFill.setDepth(21);
 
         // Store for positioning
@@ -100,6 +121,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     update(time, delta) {
         if (!this.isAlive) return;
+
+        this.inputSource.update(time, delta);
 
         // Update status effects
         this.updateStatusEffects(time, delta);
@@ -112,6 +135,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Update health bar position
         this.updateHealthBar();
+
+        // Keep shield bubble attached
+        if (this.shieldBubble) {
+            this.shieldBubble.setPosition(this.x, this.y);
+        }
     }
 
     updateStatusEffects(time, delta) {
@@ -123,7 +151,6 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
                 this.statusEffects.burning = false;
                 this.clearTint();
             } else {
-                // Apply burn damage every 100ms
                 const burnDamage = (this.statusEffects.burnDamagePerTick * delta) / 1000;
                 this.takeDamage(burnDamage, false); // false = don't show hit effect
 
@@ -168,13 +195,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        const input = this.inputSource.getState();
+
         let vx = 0;
         let vy = 0;
 
-        if (this.keys.left.isDown) vx -= 1;
-        if (this.keys.right.isDown) vx += 1;
-        if (this.keys.up.isDown) vy -= 1;
-        if (this.keys.down.isDown) vy += 1;
+        if (input.left) vx -= 1;
+        if (input.right) vx += 1;
+        if (input.up) vy -= 1;
+        if (input.down) vy += 1;
 
         // Normalize diagonal
         if (vx !== 0 && vy !== 0) {
@@ -198,13 +227,19 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     handleShooting() {
-        // Normal shot (Space / Enter)
-        if (Phaser.Input.Keyboard.JustDown(this.keys.shoot) && this.canNormalShot && !this.statusEffects.stunned) {
+        const input = this.inputSource.getState();
+
+        const shootPressed = input.shoot && !this.prevShoot;
+        const runePressed = input.runeShoot && !this.prevRuneShoot;
+        this.prevShoot = input.shoot;
+        this.prevRuneShoot = input.runeShoot;
+
+        if (this.statusEffects.stunned) return;
+
+        if (shootPressed && this.canNormalShot) {
             this.shootNormal();
         }
-
-        // Rune shot (Q / /)
-        if (Phaser.Input.Keyboard.JustDown(this.keys.runeShoot) && this.canRuneShot && !this.statusEffects.stunned) {
+        if (runePressed && this.canRuneShot) {
             this.shootRune();
         }
     }
@@ -264,6 +299,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         const healthPercent = Math.max(0, this.health / this.maxHealth);
         this.healthBarFill.setScale(healthPercent, 1);
         this.healthBarFill.setX(this.x - (this.healthBarWidth * (1 - healthPercent)) / 2);
+
+        // Low-health warning: bar flashes red
+        if (healthPercent <= 0.25) {
+            const flash = Math.floor(this.scene.time.now / 220) % 2 === 0;
+            this.healthBarFill.fillColor = flash ? 0xff2222 : this.baseBarColor;
+        } else {
+            this.healthBarFill.fillColor = this.baseBarColor;
+        }
     }
 
     takeDamage(amount, showEffect = true) {
@@ -279,6 +322,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
                 duration: 50,
                 yoyo: true,
             });
+            this.scene.events.emit('playerDamaged', { player: this, amount });
         }
 
         if (this.health <= 0) {
@@ -303,12 +347,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.statusEffects.stunned = true;
         this.statusEffects.stunEndTime = this.scene.time.now + duration;
         this.setTint(0xffff00);
+        audio.stun();
     }
 
     pickupRune(element) {
+        if (element === ELEMENT_TYPES.SHIELD) {
+            this.addShield();
+            return;
+        }
+
         // Can only hold ONE rune type at a time
         this.heldRune = element;
-        this.runeShots = RUNE_CONFIG.shotsPerPickup;
+        this.runeShots = element === ELEMENT_TYPES.TRIPLE
+            ? RUNE_CONFIG.tripleShotsPerPickup
+            : RUNE_CONFIG.shotsPerPickup;
 
         // Visual feedback
         this.scene.tweens.add({
@@ -317,8 +369,41 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             duration: 100,
             yoyo: true,
         });
+        audio.pickup();
+    }
 
-        console.log(`Player ${this.playerNumber} picked up ${element} rune (${this.runeShots} shots)`);
+    addShield() {
+        this.shieldCharges = 1;
+        audio.shieldUp();
+
+        if (this.shieldBubble) this.shieldBubble.destroy();
+        this.shieldBubble = this.scene.add.circle(this.x, this.y, 22, 0xbb66ff, 0.15);
+        this.shieldBubble.setStrokeStyle(2, 0xdd99ff, 0.9);
+        this.shieldBubble.setDepth(19);
+
+        this.scene.tweens.add({
+            targets: this.shieldBubble,
+            scale: { from: 0.3, to: 1 },
+            duration: 200,
+            ease: 'Back.easeOut',
+        });
+    }
+
+    breakShield() {
+        this.shieldCharges = 0;
+        audio.shieldBreak();
+
+        if (this.shieldBubble) {
+            const bubble = this.shieldBubble;
+            this.shieldBubble = null;
+            this.scene.tweens.add({
+                targets: bubble,
+                scale: 1.8,
+                alpha: 0,
+                duration: 250,
+                onComplete: () => bubble.destroy(),
+            });
+        }
     }
 
     die() {
@@ -328,26 +413,58 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setVisible(false);
         this.body.enable = false;
 
-        // Hide health bar
+        // Hide health bar and shield
         if (this.healthBarBg) this.healthBarBg.setVisible(false);
         if (this.healthBarFill) this.healthBarFill.setVisible(false);
+        if (this.shieldBubble) {
+            this.shieldBubble.destroy();
+            this.shieldBubble = null;
+        }
 
-        // Death effect
+        audio.death();
+
+        // Death explosion: colored shards + expanding ring + white flash
         const color = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
-        for (let i = 0; i < 8; i++) {
-            const angle = (i / 8) * Math.PI * 2;
-            const particle = this.scene.add.circle(
-                this.x + Math.cos(angle) * 10,
-                this.y + Math.sin(angle) * 10,
-                6, color, 0.9
+
+        const flash = this.scene.add.circle(this.x, this.y, 14, 0xffffff, 0.9);
+        flash.setDepth(30);
+        this.scene.tweens.add({
+            targets: flash,
+            scale: 3,
+            alpha: 0,
+            duration: 180,
+            onComplete: () => flash.destroy(),
+        });
+
+        const ring = this.scene.add.circle(this.x, this.y, 10, color, 0);
+        ring.setStrokeStyle(3, color, 0.9);
+        ring.setDepth(30);
+        this.scene.tweens.add({
+            targets: ring,
+            scale: 5,
+            alpha: 0,
+            duration: 450,
+            onComplete: () => ring.destroy(),
+        });
+
+        for (let i = 0; i < 14; i++) {
+            const angle = (i / 14) * Math.PI * 2 + Math.random() * 0.4;
+            const dist = 40 + Math.random() * 40;
+            const particle = this.scene.add.rectangle(
+                this.x, this.y,
+                3 + Math.random() * 4, 3 + Math.random() * 4,
+                i % 3 === 0 ? 0xffffff : color, 0.95
             );
+            particle.setDepth(30);
             this.scene.tweens.add({
                 targets: particle,
-                x: this.x + Math.cos(angle) * 50,
-                y: this.y + Math.sin(angle) * 50,
+                x: this.x + Math.cos(angle) * dist,
+                y: this.y + Math.sin(angle) * dist,
+                angle: Math.random() * 360,
                 alpha: 0,
                 scale: 0.3,
-                duration: 400,
+                duration: 450 + Math.random() * 250,
+                ease: 'Cubic.easeOut',
                 onComplete: () => particle.destroy(),
             });
         }
