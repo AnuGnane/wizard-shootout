@@ -1,7 +1,7 @@
 # Wizard Shootout
 
 A top-down arena duel inspired by Tank Trouble — but with wizards. Battle
-through a procedurally generated maze, bounce arcane bolts off the walls,
+across hand-designed battle maps, bounce arcane bolts off the walls,
 and grab elemental orbs for special powers. First wizard to win 5 rounds
 takes the match.
 
@@ -51,17 +51,37 @@ most give 3 special shots (Q or /).
 Bounces weaken elemental status effects — a fire shot that ricocheted four
 times won't burn.
 
+## Maps
+
+Each round is played on one of 7 hand-designed maps, picked at random
+(never the same one twice in a row). They range from small open duels to
+big mazes:
+
+| Map           | Size  | Style |
+| ------------- | ----- | ----- |
+| Open Court    | 15x11 | Small and open — pure reflexes |
+| Crossfire     | 17x13 | Small, split by a broken center wall |
+| The Ring      | 19x11 | Circle around a central block |
+| Four Chambers | 21x15 | Four rooms joined by a central corridor |
+| Corridors     | 25x15 | Long lanes with staggered gaps |
+| Twin Columns  | 25x19 | Large maze with flanking columns |
+| Old Labyrinth | 25x19 | Large classic maze |
+
+Maps are ASCII layouts in `src/systems/Maps.js` — easy to edit or extend.
+Every layout is validated (closed borders, both spawns, all floor tiles
+reachable), so a broken map fails loudly instead of ruining a match.
+
 ## Match rules
 
-- A kill scores 1 point and starts a fresh round in a newly generated maze.
+- A kill scores 1 point and starts a fresh round on a new map.
 - First to the target score (default 5, configurable in Settings) wins the
   match.
 
 ## Settings
 
 The Settings screen lets you tune the game without touching code: which
-orbs spawn, damage numbers, burn/slow durations, corridor width, orb spawn
-rate, target score, sound on/off, and a center-spawn test mode.
+orbs spawn, damage numbers, burn/slow durations, orb spawn rate, target
+score, and sound on/off.
 
 ## Project layout
 
@@ -74,7 +94,7 @@ src/
   systems/
     PixelSprites.js     Code-generated pixel-art textures
     AudioSystem.js      Procedural Web Audio sound effects
-    MazeGenerator.js    Recursive-backtracker maze with wide corridors
+    Maps.js             Hand-designed battle maps + layout validation
     AIController.js     Bot: BFS pathfinding + line-of-sight shooting
     MatchState.js       Score/round state across scene restarts
 ```
