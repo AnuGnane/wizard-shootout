@@ -23,8 +23,6 @@ export const RUNTIME_SETTINGS = {
     runeSpawnMax: 10000,
 
     // Game settings
-    testMode: false,        // spawn both players in the arena center
-    corridorWidth: 3,       // Tiles wide (default was 2)
     targetScore: MATCH_CONFIG.targetScore,
     soundEnabled: true,
 
@@ -91,8 +89,6 @@ export class SettingsScene extends Phaser.Scene {
 
         this.yPos += 20;
         this.addSectionHeader('ARENA');
-        this.addSlider('Corridor Width', 'corridorWidth', 2, 4, 1);
-        this.addToggle('Center spawn (test)', 'testMode');
         this.addSlider('Orb Spawn Min (s)', 'runeSpawnMin', 3000, 15000, 1000, (v) => (v / 1000).toFixed(0));
         this.addSlider('Orb Spawn Max (s)', 'runeSpawnMax', 5000, 20000, 1000, (v) => (v / 1000).toFixed(0));
 

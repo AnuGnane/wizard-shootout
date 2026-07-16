@@ -4,7 +4,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { Player } from '../entities/Player.js';
 import { Projectile } from '../entities/Projectile.js';
 import { Rune } from '../entities/Rune.js';
-import { MazeGenerator } from '../systems/MazeGenerator.js';
+import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -36,16 +36,12 @@ export class GameScene extends Phaser.Scene {
         this.input.keyboard.once('keydown', () => audio.unlock());
         this.input.once('pointerdown', () => audio.unlock());
 
-        this.createArenaBackground();
+        // Pick a battle map (also sets ARENA geometry for this round).
+        // A map chosen on the select screen is used every round; Random
+        // rotates maps between rounds.
+        this.map = pickMap(MATCH_STATE.mapIndex);
 
-        // Use corridor width from settings
-        this.mazeGen = new MazeGenerator(
-            GAME_CONFIG.gridWidth,
-            GAME_CONFIG.gridHeight,
-            RUNTIME_SETTINGS.corridorWidth,
-            RUNTIME_SETTINGS.testMode
-        );
-        this.mazeData = this.mazeGen.generate();
+        this.createArenaBackground();
         this.createMaze();
 
         this.createPlayers();
@@ -65,19 +61,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     createPlayers() {
-        let p1Spawn;
-        let p2Spawn;
-
-        if (RUNTIME_SETTINGS.testMode) {
-            const centerX = GAME_CONFIG.arenaOffsetX + GAME_CONFIG.arenaWidth / 2;
-            const centerY = GAME_CONFIG.arenaOffsetY + GAME_CONFIG.arenaHeight / 2;
-            p1Spawn = { x: centerX - 60, y: centerY };
-            p2Spawn = { x: centerX + 60, y: centerY };
-        } else {
-            const spawns = this.mazeGen.getSpawnPoints();
-            p1Spawn = spawns.player1;
-            p2Spawn = spawns.player2;
-        }
+        const spawns = this.map.getSpawnPoints();
+        const p1Spawn = spawns.player1;
+        const p2Spawn = spawns.player2;
 
         this.player1 = new Player(this, p1Spawn.x, p1Spawn.y, 1);
 
@@ -95,10 +81,10 @@ export class GameScene extends Phaser.Scene {
 
     createArenaBackground() {
         const bg = this.add.rectangle(
-            GAME_CONFIG.arenaOffsetX + GAME_CONFIG.arenaWidth / 2,
-            GAME_CONFIG.arenaOffsetY + GAME_CONFIG.arenaHeight / 2,
-            GAME_CONFIG.arenaWidth,
-            GAME_CONFIG.arenaHeight,
+            ARENA.offsetX + ARENA.width / 2,
+            ARENA.offsetY + ARENA.height / 2,
+            ARENA.width,
+            ARENA.height,
             0x0a0a15
         );
         bg.setDepth(-10);
@@ -106,29 +92,29 @@ export class GameScene extends Phaser.Scene {
         const border = this.add.graphics();
         border.lineStyle(3, 0x5a5a9a, 1);
         border.strokeRect(
-            GAME_CONFIG.arenaOffsetX - 2,
-            GAME_CONFIG.arenaOffsetY - 2,
-            GAME_CONFIG.arenaWidth + 4,
-            GAME_CONFIG.arenaHeight + 4
+            ARENA.offsetX - 2,
+            ARENA.offsetY - 2,
+            ARENA.width + 4,
+            ARENA.height + 4
         );
         border.lineStyle(1, 0x8a8aca, 0.4);
         border.strokeRect(
-            GAME_CONFIG.arenaOffsetX - 5,
-            GAME_CONFIG.arenaOffsetY - 5,
-            GAME_CONFIG.arenaWidth + 10,
-            GAME_CONFIG.arenaHeight + 10
+            ARENA.offsetX - 5,
+            ARENA.offsetY - 5,
+            ARENA.width + 10,
+            ARENA.height + 10
         );
     }
 
     createMaze() {
         this.walls = this.physics.add.staticGroup();
 
-        for (let y = 0; y < this.mazeData.length; y++) {
-            for (let x = 0; x < this.mazeData[y].length; x++) {
-                const worldX = GAME_CONFIG.arenaOffsetX + x * GAME_CONFIG.tileSize + GAME_CONFIG.tileSize / 2;
-                const worldY = GAME_CONFIG.arenaOffsetY + y * GAME_CONFIG.tileSize + GAME_CONFIG.tileSize / 2;
+        for (let y = 0; y < ARENA.rows; y++) {
+            for (let x = 0; x < ARENA.cols; x++) {
+                const worldX = ARENA.offsetX + x * ARENA.tileSize + ARENA.tileSize / 2;
+                const worldY = ARENA.offsetY + y * ARENA.tileSize + ARENA.tileSize / 2;
 
-                if (this.mazeData[y][x] === 1) {
+                if (this.map.grid[y][x] === 1) {
                     const wall = this.walls.create(worldX, worldY, 'wall');
                     wall.setImmovable(true);
                     wall.refreshBody();
@@ -159,10 +145,10 @@ export class GameScene extends Phaser.Scene {
         );
 
         this.physics.world.setBounds(
-            GAME_CONFIG.arenaOffsetX,
-            GAME_CONFIG.arenaOffsetY,
-            GAME_CONFIG.arenaWidth,
-            GAME_CONFIG.arenaHeight
+            ARENA.offsetX,
+            ARENA.offsetY,
+            ARENA.width,
+            ARENA.height
         );
 
         this.physics.world.on('worldbounds', (body) => {
@@ -215,13 +201,13 @@ export class GameScene extends Phaser.Scene {
         if (enabledElements.length === 0) return;
 
         // Find floor tiles away from both players
-        const minDist = RUNE_CONFIG.minPlayerDistanceTiles * GAME_CONFIG.tileSize;
+        const minDist = RUNE_CONFIG.minPlayerDistanceTiles * ARENA.tileSize;
         const floorTiles = [];
-        for (let y = 2; y < GAME_CONFIG.gridHeight - 2; y++) {
-            for (let x = 2; x < GAME_CONFIG.gridWidth - 2; x++) {
-                if (this.mazeGen.isWall(x, y)) continue;
-                const worldX = GAME_CONFIG.arenaOffsetX + x * GAME_CONFIG.tileSize + GAME_CONFIG.tileSize / 2;
-                const worldY = GAME_CONFIG.arenaOffsetY + y * GAME_CONFIG.tileSize + GAME_CONFIG.tileSize / 2;
+        for (let y = 1; y < ARENA.rows - 1; y++) {
+            for (let x = 1; x < ARENA.cols - 1; x++) {
+                if (this.map.isWall(x, y)) continue;
+                const worldX = ARENA.offsetX + x * ARENA.tileSize + ARENA.tileSize / 2;
+                const worldY = ARENA.offsetY + y * ARENA.tileSize + ARENA.tileSize / 2;
                 const nearPlayer = this.players.some(p =>
                     Phaser.Math.Distance.Between(worldX, worldY, p.x, p.y) < minDist
                 );
@@ -350,8 +336,8 @@ export class GameScene extends Phaser.Scene {
         for (const player of this.players) {
             if (!player.isAlive) continue;
 
-            const playerGridX = Math.floor((player.x - GAME_CONFIG.arenaOffsetX) / GAME_CONFIG.tileSize);
-            const playerGridY = Math.floor((player.y - GAME_CONFIG.arenaOffsetY) / GAME_CONFIG.tileSize);
+            const playerGridX = Math.floor((player.x - ARENA.offsetX) / ARENA.tileSize);
+            const playerGridY = Math.floor((player.y - ARENA.offsetY) / ARENA.tileSize);
 
             // Check fire walls (adjacent tiles)
             for (const fireWall of this.effects.fireWalls) {
@@ -500,7 +486,7 @@ export class GameScene extends Phaser.Scene {
         const target = MATCH_STATE.targetScore;
         const banner = this.add.text(
             GAME_CONFIG.width / 2,
-            GAME_CONFIG.arenaOffsetY + GAME_CONFIG.arenaHeight / 2,
+            ARENA.offsetY + ARENA.height / 2,
             `ROUND ${MATCH_STATE.round}`,
             {
                 font: 'bold 52px monospace',
@@ -510,8 +496,8 @@ export class GameScene extends Phaser.Scene {
 
         const sub = this.add.text(
             GAME_CONFIG.width / 2,
-            GAME_CONFIG.arenaOffsetY + GAME_CONFIG.arenaHeight / 2 + 44,
-            `first to ${target} wins`,
+            ARENA.offsetY + ARENA.height / 2 + 44,
+            `${this.map.name}  •  first to ${target} wins`,
             {
                 font: '16px monospace',
                 fill: '#aaaacc',
@@ -540,7 +526,7 @@ export class GameScene extends Phaser.Scene {
 
         const banner = this.add.text(
             GAME_CONFIG.width / 2,
-            GAME_CONFIG.arenaOffsetY + GAME_CONFIG.arenaHeight / 2 - 20,
+            ARENA.offsetY + ARENA.height / 2 - 20,
             text,
             {
                 font: 'bold 42px monospace',
@@ -551,7 +537,7 @@ export class GameScene extends Phaser.Scene {
 
         const score = this.add.text(
             GAME_CONFIG.width / 2,
-            GAME_CONFIG.arenaOffsetY + GAME_CONFIG.arenaHeight / 2 + 40,
+            ARENA.offsetY + ARENA.height / 2 + 40,
             `${MATCH_STATE.scores[1]}  -  ${MATCH_STATE.scores[2]}`,
             {
                 font: 'bold 32px monospace',
@@ -744,19 +730,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     createTempWall(data) {
-        const gridX = Math.floor((data.x - GAME_CONFIG.arenaOffsetX) / GAME_CONFIG.tileSize);
-        const gridY = Math.floor((data.y - GAME_CONFIG.arenaOffsetY) / GAME_CONFIG.tileSize);
-        if (this.mazeGen.isWall(gridX, gridY)) return;
+        const gridX = Math.floor((data.x - ARENA.offsetX) / ARENA.tileSize);
+        const gridY = Math.floor((data.y - ARENA.offsetY) / ARENA.tileSize);
+        if (this.map.isWall(gridX, gridY)) return;
 
-        const worldX = GAME_CONFIG.arenaOffsetX + gridX * GAME_CONFIG.tileSize + GAME_CONFIG.tileSize / 2;
-        const worldY = GAME_CONFIG.arenaOffsetY + gridY * GAME_CONFIG.tileSize + GAME_CONFIG.tileSize / 2;
+        const worldX = ARENA.offsetX + gridX * ARENA.tileSize + ARENA.tileSize / 2;
+        const worldY = ARENA.offsetY + gridY * ARENA.tileSize + ARENA.tileSize / 2;
 
         const tempWall = this.walls.create(worldX, worldY, 'temp_wall');
         tempWall.setImmovable(true);
         tempWall.refreshBody();
         tempWall.gridX = gridX;
         tempWall.gridY = gridY;
-        this.mazeGen.setTile(gridX, gridY, 1);
+        this.map.setTile(gridX, gridY, 1);
         this.effects.tempWalls.push(tempWall);
 
         // Rise-in effect
@@ -772,7 +758,7 @@ export class GameScene extends Phaser.Scene {
         this.time.delayedCall(PROJECTILE_CONFIG.earth.wallDuration, () => {
             const index = this.effects.tempWalls.indexOf(tempWall);
             if (index > -1) this.effects.tempWalls.splice(index, 1);
-            this.mazeGen.setTile(gridX, gridY, 0);
+            this.map.setTile(gridX, gridY, 0);
             tempWall.destroy();
         });
     }

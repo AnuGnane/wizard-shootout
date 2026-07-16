@@ -1,23 +1,12 @@
 // Game configuration constants
 
 export const GAME_CONFIG = {
-    // Total window size (includes UI panel)
+    // Total window size (includes UI bars)
     width: 1024,
     height: 700,
 
-    // Arena area (where the game is played)
-    arenaWidth: 800,
-    arenaHeight: 608, // 19 tiles * 32
-    arenaOffsetX: 112, // Centered: (1024 - 800) / 2
-    arenaOffsetY: 60,  // Top UI bar
-
-    // Tile settings
+    // Tile size; per-map arena geometry lives in systems/Maps.js (ARENA)
     tileSize: 32,
-    gridWidth: 25,  // 800 / 32
-    gridHeight: 19, // 608 / 32
-
-    // Wider corridors (maze uses 2-cell paths)
-    corridorWidth: 2,
 };
 
 export const MATCH_CONFIG = {

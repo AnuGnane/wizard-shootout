@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG } from '../config.js';
+import { ARENA } from './Maps.js';
 
 // Drives player 2 in 1-player mode. Implements the same interface as
 // KeyboardInput (update + getState) so Player is agnostic about who is
@@ -13,7 +13,7 @@ for (let i = 0; i < 8; i++) {
     DIRS_8.push({ x: Math.cos(a), y: Math.sin(a) });
 }
 
-const TILE = GAME_CONFIG.tileSize;
+const TILE = ARENA.tileSize;
 
 export class AIController {
     constructor(scene) {
@@ -62,15 +62,15 @@ export class AIController {
 
     toGrid(worldX, worldY) {
         return {
-            x: Math.floor((worldX - GAME_CONFIG.arenaOffsetX) / TILE),
-            y: Math.floor((worldY - GAME_CONFIG.arenaOffsetY) / TILE),
+            x: Math.floor((worldX - ARENA.offsetX) / TILE),
+            y: Math.floor((worldY - ARENA.offsetY) / TILE),
         };
     }
 
     toWorld(gridX, gridY) {
         return {
-            x: GAME_CONFIG.arenaOffsetX + gridX * TILE + TILE / 2,
-            y: GAME_CONFIG.arenaOffsetY + gridY * TILE + TILE / 2,
+            x: ARENA.offsetX + gridX * TILE + TILE / 2,
+            y: ARENA.offsetY + gridY * TILE + TILE / 2,
         };
     }
 
@@ -100,9 +100,9 @@ export class AIController {
     }
 
     bfs(start, goal) {
-        const maze = this.scene.mazeGen;
-        const w = GAME_CONFIG.gridWidth;
-        const h = GAME_CONFIG.gridHeight;
+        const maze = this.scene.map;
+        const w = ARENA.cols;
+        const h = ARENA.rows;
 
         if (maze.isWall(goal.x, goal.y)) return [];
 
@@ -167,7 +167,7 @@ export class AIController {
     // ---- combat -----------------------------------------------------------
 
     hasLineOfSight(x1, y1, x2, y2) {
-        const maze = this.scene.mazeGen;
+        const maze = this.scene.map;
         const dist = Phaser.Math.Distance.Between(x1, y1, x2, y2);
         const steps = Math.ceil(dist / 8);
         for (let i = 1; i < steps; i++) {
