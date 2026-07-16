@@ -88,6 +88,73 @@ export const MAP_DEFS = [
             '#####################',
         ],
     },
+    // Asymmetric layout, 180°-rotationally mirrored so both sides are fair
+    {
+        name: 'Shards',
+        layout: [
+            '#####################',
+            '#.1........#........#',
+            '#..........#........#',
+            '#..##......#....##..#',
+            '#...##..........##..#',
+            '#....##.............#',
+            '#...................#',
+            '#.....##.....##.....#',
+            '#...................#',
+            '#.............##....#',
+            '#..##..........##...#',
+            '#..##....#......##..#',
+            '#........#..........#',
+            '#........#........2.#',
+            '#####################',
+        ],
+    },
+    // Asymmetric layout, 180°-rotationally mirrored so both sides are fair
+    {
+        name: 'Serpent',
+        layout: [
+            '#######################',
+            '#.1...................#',
+            '#.....................#',
+            '#####################.#',
+            '#.....................#',
+            '#.....................#',
+            '#.#####################',
+            '#.....................#',
+            '#..........#..........#',
+            '#.....................#',
+            '#####################.#',
+            '#.....................#',
+            '#.....................#',
+            '#.#####################',
+            '#.....................#',
+            '#...................2.#',
+            '#######################',
+        ],
+    },
+    // Asymmetric layout, 180°-rotationally mirrored so both sides are fair
+    {
+        name: 'Bastions',
+        layout: [
+            '#######################',
+            '#.......#.............#',
+            '#.1.....#........##...#',
+            '#.......#........##...#',
+            '#####...#.............#',
+            '#.....................#',
+            '#...#####.....#####...#',
+            '#.....................#',
+            '#....###.......###....#',
+            '#.....................#',
+            '#...#####.....#####...#',
+            '#.....................#',
+            '#.............#...#####',
+            '#...##........#.......#',
+            '#...##........#.....2.#',
+            '#.............#.......#',
+            '#######################',
+        ],
+    },
     {
         name: 'Corridors',
         layout: [
@@ -235,11 +302,17 @@ if (import.meta.env && import.meta.env.DEV) {
 
 let lastMapIndex = -1;
 
-export function pickMap() {
+// forcedIndex: play a specific map (from the map-select screen).
+// null/invalid: random map, never the same one twice in a row.
+export function pickMap(forcedIndex = null) {
     let idx;
-    do {
-        idx = Math.floor(Math.random() * MAP_DEFS.length);
-    } while (MAP_DEFS.length > 1 && idx === lastMapIndex);
+    if (forcedIndex !== null && forcedIndex >= 0 && forcedIndex < MAP_DEFS.length) {
+        idx = forcedIndex;
+    } else {
+        do {
+            idx = Math.floor(Math.random() * MAP_DEFS.length);
+        } while (MAP_DEFS.length > 1 && idx === lastMapIndex);
+    }
     lastMapIndex = idx;
 
     const map = new GameMap(MAP_DEFS[idx]);

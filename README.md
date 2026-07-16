@@ -53,9 +53,10 @@ times won't burn.
 
 ## Maps
 
-Each round is played on one of 7 hand-designed maps, picked at random
-(never the same one twice in a row). They range from small open duels to
-big mazes:
+After picking a mode you choose your battleground on the map-select
+screen — any of the 10 hand-designed maps (shown with a live thumbnail
+preview), or **Random**, which rotates maps between rounds (never the
+same one twice in a row). A chosen map is played every round of the match.
 
 | Map           | Size  | Style |
 | ------------- | ----- | ----- |
@@ -63,9 +64,16 @@ big mazes:
 | Crossfire     | 17x13 | Small, split by a broken center wall |
 | The Ring      | 19x11 | Circle around a central block |
 | Four Chambers | 21x15 | Four rooms joined by a central corridor |
+| Shards        | 21x15 | Diagonal wall shards, mirrored diagonally |
+| Serpent       | 23x17 | One long snaking corridor — chase map |
+| Bastions      | 23x17 | A walled keep for each wizard, staggered cover |
 | Corridors     | 25x15 | Long lanes with staggered gaps |
 | Twin Columns  | 25x19 | Large maze with flanking columns |
 | Old Labyrinth | 25x19 | Large classic maze |
+
+Shards, Serpent and Bastions are asymmetric layouts with 180° rotational
+symmetry — the terrain looks organic but both players get exactly the
+same battlefield.
 
 Maps are ASCII layouts in `src/systems/Maps.js` — easy to edit or extend.
 Every layout is validated (closed borders, both spawns, all floor tiles
@@ -73,7 +81,8 @@ reachable), so a broken map fails loudly instead of ruining a match.
 
 ## Match rules
 
-- A kill scores 1 point and starts a fresh round on a new map.
+- A kill scores 1 point and starts a fresh round (on a new map if you
+  picked Random).
 - First to the target score (default 5, configurable in Settings) wins the
   match.
 
@@ -89,7 +98,7 @@ score, and sound on/off.
 src/
   main.js               Phaser game bootstrap
   config.js             All tunable gameplay constants
-  scenes/               Boot, Menu, Settings, Game, GameOver
+  scenes/               Boot, Menu, Settings, MapSelect, Game, GameOver
   entities/             Player, Projectile, Rune (orb pickup)
   systems/
     PixelSprites.js     Code-generated pixel-art textures

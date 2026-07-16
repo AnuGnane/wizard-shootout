@@ -3,6 +3,7 @@ import { GAME_CONFIG } from './config.js';
 import { BootScene } from './scenes/BootScene.js';
 import { MenuScene } from './scenes/MenuScene.js';
 import { SettingsScene } from './scenes/SettingsScene.js';
+import { MapSelectScene } from './scenes/MapSelectScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 
@@ -19,7 +20,7 @@ const config = {
             gravity: { x: 0, y: 0 },
         },
     },
-    scene: [BootScene, MenuScene, SettingsScene, GameScene, GameOverScene],
+    scene: [BootScene, MenuScene, SettingsScene, MapSelectScene, GameScene, GameOverScene],
     render: {
         pixelArt: true,
         antialias: false,

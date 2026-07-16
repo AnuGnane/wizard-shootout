@@ -7,6 +7,7 @@ export const MATCH_STATE = {
     scores: { 1: 0, 2: 0 },
     round: 1,
     targetScore: MATCH_CONFIG.targetScore,
+    mapIndex: null,        // null = random map each round; number = fixed map
 };
 
 export function resetMatch(mode = MATCH_STATE.mode) {

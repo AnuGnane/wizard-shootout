@@ -36,8 +36,10 @@ export class GameScene extends Phaser.Scene {
         this.input.keyboard.once('keydown', () => audio.unlock());
         this.input.once('pointerdown', () => audio.unlock());
 
-        // Pick a battle map (also sets ARENA geometry for this round)
-        this.map = pickMap();
+        // Pick a battle map (also sets ARENA geometry for this round).
+        // A map chosen on the select screen is used every round; Random
+        // rotates maps between rounds.
+        this.map = pickMap(MATCH_STATE.mapIndex);
 
         this.createArenaBackground();
         this.createMaze();

@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import { resetMatch, MATCH_STATE } from '../systems/MatchState.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 
@@ -126,8 +125,6 @@ export class MenuScene extends Phaser.Scene {
     startGame(mode) {
         audio.unlock();
         audio.uiClick();
-        resetMatch(mode);
-        MATCH_STATE.targetScore = RUNTIME_SETTINGS.targetScore;
-        this.scene.start('GameScene');
+        this.scene.start('MapSelectScene', { mode });
     }
 }
