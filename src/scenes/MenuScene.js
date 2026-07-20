@@ -101,6 +101,13 @@ export class MenuScene extends Phaser.Scene {
             fill: dailyStatus.won ? '#66ff66' : '#ffdd44',
         }).setOrigin(0.5);
 
+        // Phase 6c: [ WARDROBE ] fills the reserved RIGHT secondary slot.
+        const wardrobeX = secondaryStartX + 2 * secondarySpacing;
+        this.makeSmallButton(wardrobeX, 509, '[ WARDROBE ]', () => {
+            audio.uiClick();
+            this.scene.start('WardrobeScene');
+        });
+
         // Orb legend
         const orbs = [
             { key: 'rune_fire', label: 'Burn' },

@@ -9,6 +9,7 @@ import { GameScene } from './scenes/GameScene.js';
 import { PauseScene } from './scenes/PauseScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 import { StatsScene } from './scenes/StatsScene.js';
+import { WardrobeScene } from './scenes/WardrobeScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { loadSettings } from './systems/Storage.js';
 import { MATCH_STATE } from './systems/MatchState.js';
@@ -41,7 +42,7 @@ const config = {
             gravity: { x: 0, y: 0 },
         },
     },
-    scene: [BootScene, MenuScene, SettingsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene, StatsScene],
+    scene: [BootScene, MenuScene, SettingsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene, StatsScene, WardrobeScene],
     render: {
         pixelArt: true,
         antialias: false,

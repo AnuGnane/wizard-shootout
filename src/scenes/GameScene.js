@@ -306,6 +306,9 @@ export class GameScene extends Phaser.Scene {
         if (success) {
             player.abilityReadyAt = this.time.now + player.abilityCooldown;
             audio.signature(player.classKey);
+            // Phase 6c — cast flash at the staff tip, only on a real cast (a
+            // fizzled ability stays ready and shouldn't flash).
+            if (player.castFlash) player.castFlash();
         } else {
             audio.fizzle();
         }

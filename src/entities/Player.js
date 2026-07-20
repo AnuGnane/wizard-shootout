@@ -5,6 +5,8 @@ import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { recordDeath } from '../systems/Stats.js';
+import { resolveColors } from '../systems/Cosmetics.js';
+import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 
 // Reads the real keyboard for a given player's control scheme.
 // Exposes the same getState() interface as AIController so Player
@@ -36,7 +38,20 @@ export class KeyboardInput {
 export class Player extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, playerNumber, inputSource) {
         const classKey = MATCH_STATE.classes[playerNumber];
-        const textureKey = `wizard_${classKey}_${playerNumber}`;
+        // Seat 1 is "you": apply the equipped cosmetics (robe base + staff
+        // material). Other seats keep their plain baked texture. Guarded so a
+        // scene without textures ready can still fall back to the plain key —
+        // BootScene has already baked them, so this is belt-and-braces. The
+        // default look resolves back to `wizard_<class>_1`, byte-identical.
+        let textureKey = `wizard_${classKey}_${playerNumber}`;
+        if (playerNumber === 1) {
+            try {
+                const { robeColor, staffColor } = resolveColors(classKey);
+                textureKey = ensureCosmeticWizardTexture(scene, classKey, playerNumber, robeColor, staffColor);
+            } catch (e) {
+                textureKey = `wizard_${classKey}_${playerNumber}`;
+            }
+        }
         super(scene, x, y, textureKey);
 
         this.scene = scene;
@@ -100,6 +115,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.dashUntil = 0;
         this.dashHitDone = false;
         this.nextAfterimageAt = 0;
+
+        // Phase 6c — cosmetic animation state (purely visual, no physics).
+        // animLockUntil: a short window (set by pickupRune) during which the
+        // walk-bob yields so it can't fight the pickup scale-pop tween.
+        // nextSparkleAt: scene.time.now gate for the occasional idle sparkle.
+        this.animLockUntil = 0;
+        this.nextSparkleAt = 0;
 
         // Edge detection for shoot/ability buttons (works for keyboard and AI alike)
         this.prevShoot = false;
@@ -191,6 +213,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Update shooting
         this.handleShooting();
+
+        // Cosmetic juice: walk-bob squash/stretch + idle staff sparkle.
+        this.updateAnimation(time);
 
         // Update health bar position
         this.updateHealthBar();
@@ -435,6 +460,108 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         }
     }
 
+    // Phase 6c — subtle walk-bob squash/stretch plus the occasional idle
+    // staff sparkle. Purely cosmetic: it only writes scaleX/scaleY (the same
+    // property the pickup pop uses) and spawns self-destroying additive
+    // objects — it never writes tint, never touches the body, and never
+    // changes gameplay timing. It deliberately YIELDS while stunned, dashing,
+    // or during the pickup scale-pop window so it can't clobber those effects.
+    updateAnimation(time) {
+        if (this.statusEffects.stunned || time < this.dashUntil || time < this.animLockUntil) {
+            // Push the sparkle gate out so none fires the instant control
+            // returns, and leave scale frozen (the bob simply pauses).
+            this.nextSparkleAt = time + Phaser.Math.Between(500, 900);
+            return;
+        }
+
+        const body = this.body;
+        const speed = body ? Math.sqrt(body.velocity.x ** 2 + body.velocity.y ** 2) : 0;
+
+        if (speed > 20) {
+            // Gentle bob: scaleY dips as scaleX stretches (anti-correlated), so
+            // it reads as a squash. Amplitude is deliberately small.
+            const s = Math.sin(time * 0.012);
+            this.scaleY = 0.95 + 0.05 * s;  // 0.90 .. 1.00
+            this.scaleX = 1.03 - 0.03 * s;  // 1.00 .. 1.06
+            // Only sparkle after standing still a moment — reset while moving.
+            this.nextSparkleAt = time + Phaser.Math.Between(500, 900);
+        } else {
+            // Idle: ease scale back to (1,1), snapping once effectively there.
+            this.scaleX = Phaser.Math.Linear(this.scaleX, 1, 0.2);
+            this.scaleY = Phaser.Math.Linear(this.scaleY, 1, 0.2);
+            if (Math.abs(this.scaleX - 1) < 0.004) this.scaleX = 1;
+            if (Math.abs(this.scaleY - 1) < 0.004) this.scaleY = 1;
+
+            if (time >= this.nextSparkleAt) {
+                this.nextSparkleAt = time + Phaser.Math.Between(500, 900);
+                this.spawnIdleSparkle();
+            }
+        }
+    }
+
+    // Tiny additive spark that rises + fades at the gem/staff tip while idle.
+    // Self-destroying and guarded, so nothing leaks across a scene restart.
+    spawnIdleSparkle() {
+        if (!this.scene) return;
+        const tipX = this.x + this.aimDirection.x * 18;
+        const tipY = this.y + this.aimDirection.y * 18;
+        const color = ELEMENT_COLORS[this.classDef.element] || 0xffffff;
+
+        const sparkle = this.scene.add.circle(
+            tipX + Phaser.Math.Between(-3, 3),
+            tipY + Phaser.Math.Between(-3, 3),
+            Phaser.Math.Between(1, 2), color, 0.9
+        );
+        sparkle.name = 'idleSparkle';
+        sparkle.setBlendMode(Phaser.BlendModes.ADD);
+        sparkle.setDepth(9);
+        this.scene.tweens.add({
+            targets: sparkle,
+            y: sparkle.y - Phaser.Math.Between(4, 8),
+            alpha: 0,
+            scale: 0.3,
+            duration: Phaser.Math.Between(400, 700),
+            ease: 'Sine.easeOut',
+            onComplete: () => { if (sparkle.active) sparkle.destroy(); },
+        });
+    }
+
+    // Brief additive bright flash + expanding ring at the staff tip, fired on a
+    // shot or a successful signature (see shootNormal/shootRune and
+    // GameScene.onSignatureUsed). Additive — no sprite tint — so it complements
+    // the existing element-colored muzzle flash. Restart-safe.
+    castFlash() {
+        if (!this.isAlive || !this.scene) return;
+        const tipX = this.x + this.aimDirection.x * 18;
+        const tipY = this.y + this.aimDirection.y * 18;
+        const color = ELEMENT_COLORS[this.classDef.element] || 0xffffff;
+
+        const core = this.scene.add.circle(tipX, tipY, 4, 0xffffff, 0.95);
+        core.name = 'castFlash';
+        core.setBlendMode(Phaser.BlendModes.ADD);
+        core.setDepth(9);
+        this.scene.tweens.add({
+            targets: core,
+            scale: 2.2,
+            alpha: 0,
+            duration: 150,
+            onComplete: () => { if (core.active) core.destroy(); },
+        });
+
+        const ring = this.scene.add.circle(tipX, tipY, 7, color, 0);
+        ring.name = 'castFlash';
+        ring.setStrokeStyle(2, color, 0.85);
+        ring.setBlendMode(Phaser.BlendModes.ADD);
+        ring.setDepth(9);
+        this.scene.tweens.add({
+            targets: ring,
+            scale: 2.4,
+            alpha: 0,
+            duration: 150,
+            onComplete: () => { if (ring.active) ring.destroy(); },
+        });
+    }
+
     handleShooting() {
         const input = this.inputSource.getState();
 
@@ -481,6 +608,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             isRuneShot: false,
         });
 
+        this.castFlash();
+
         this.scene.time.delayedCall(this.normalCooldown, () => {
             this.canNormalShot = true;
         });
@@ -503,6 +632,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             element: this.heldRune,
             isRuneShot: true,
         });
+
+        this.castFlash();
 
         this.runeShots--;
         if (this.runeShots <= 0) {
@@ -595,7 +726,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             this.runeShots = RUNE_CONFIG.shotsPerPickup;
         }
 
-        // Visual feedback
+        // Visual feedback: the scale-pop pop. Lock out the walk-bob briefly so
+        // it can't fight this tween (see updateAnimation's animLockUntil gate).
+        this.animLockUntil = this.scene.time.now + 160;
         this.scene.tweens.add({
             targets: this,
             scale: 1.3,

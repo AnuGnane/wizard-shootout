@@ -43,6 +43,11 @@ export const STATS = {
     // achievements — see GameScene's trackProfile guard). `date` gates a
     // once-a-day rollover; `bestRounds` is rounds-to-win, lower is better.
     daily: { date: '', attempts: 0, won: false, bestRounds: null },
+
+    // Phase 6c — Cosmetics: seat-1 equipped robe/staff ids (see Cosmetics.js).
+    // Stored as plain string ids; Cosmetics owns unlock/existence validation,
+    // so a stale or locked id here resolves back to the default at render time.
+    cosmetics: { robe: 'class', staff: 'oak' },
 };
 
 // Plain numeric counters, copied verbatim when the stored value is a finite number.
@@ -121,6 +126,18 @@ export function loadStats() {
         if (saved.daily.bestRounds === null ||
             (typeof saved.daily.bestRounds === 'number' && Number.isFinite(saved.daily.bestRounds))) {
             STATS.daily.bestRounds = saved.daily.bestRounds;
+        }
+    }
+
+    // Phase 6c — accept only string ids for the cosmetic slots; whether the id
+    // is a real/unlocked option is decided at resolve time (Cosmetics.js), not
+    // here, so a locked id can never leak into a render regardless of the blob.
+    if (saved.cosmetics && typeof saved.cosmetics === 'object') {
+        if (typeof saved.cosmetics.robe === 'string') {
+            STATS.cosmetics.robe = saved.cosmetics.robe;
+        }
+        if (typeof saved.cosmetics.staff === 'string') {
+            STATS.cosmetics.staff = saved.cosmetics.staff;
         }
     }
 }

@@ -42,15 +42,25 @@ const HAND_SKIN = 0xf0c090;
 // tip and brim highlight are derived from the wizard's TEAM color instead,
 // so a class reads in the robe while the team still reads at a glance.
 // The staff gem is always the class's ELEMENT color.
-function paintWizardTexture(scene, key, classColor, teamColor, elementColor) {
+//
+// Phase 6c — optional `opts` recolors seat-1 cosmetics without disturbing the
+// team read: `opts.robeColor` derives the robe/hat/hatLight/edge shades from a
+// custom color instead of classColor; `opts.staffColor` recolors the shaft
+// (plus a darkened underside). Omitted/undefined opts → byte-identical to the
+// pre-6c output, so every baked generateAllTextures() call is unchanged.
+function paintWizardTexture(scene, key, classColor, teamColor, elementColor, opts = {}) {
     const W = 20;
     const H = 18;
     const cx = 8.5;
     const cy = 8.5;
 
-    const edge = darken(classColor, 70);
-    const hat = darken(classColor, 35);
-    const hatLight = lighten(classColor, 60);
+    const robeBase = (opts.robeColor !== undefined && opts.robeColor !== null) ? opts.robeColor : classColor;
+    const staffTop = (opts.staffColor !== undefined && opts.staffColor !== null) ? opts.staffColor : STAFF_WOOD;
+    const staffBot = (opts.staffColor !== undefined && opts.staffColor !== null) ? darken(opts.staffColor, 43) : STAFF_DARK;
+
+    const edge = darken(robeBase, 70);
+    const hat = darken(robeBase, 35);
+    const hatLight = lighten(robeBase, 60);
     const tip = lighten(teamColor, 55);
     const brimHighlight = lighten(teamColor, 15);
 
@@ -66,7 +76,7 @@ function paintWizardTexture(scene, key, classColor, teamColor, elementColor) {
 
         // Staff shaft, two pixels tall so it reads chunky
         if ((y === 8 || y === 9) && x >= 13 && x <= 16) {
-            return { color: y === 8 ? STAFF_WOOD : STAFF_DARK };
+            return { color: y === 8 ? staffTop : staffBot };
         }
 
         // Hands gripping near the staff
@@ -83,9 +93,9 @@ function paintWizardTexture(scene, key, classColor, teamColor, elementColor) {
             return { color: d <= 2.8 ? hatLight : hat };
         }
         if (d <= 6.3) {
-            // Brim with top-left highlight
+            // Brim with top-left highlight (highlight stays team-colored)
             if (dx + dy < -4.2) return { color: brimHighlight };
-            return { color: classColor };
+            return { color: robeBase };
         }
         if (d <= 7.3) return { color: edge };
 
@@ -317,4 +327,35 @@ export function generateAllTextures(scene) {
         const cfg = PROJECTILE_CONFIG[element];
         createProjectileTexture(scene, `projectile_${element}`, cfg.size, cfg.color);
     }
+}
+
+// Phase 6c — return a texture key for a seat's wizard with the given cosmetic
+// colors, painting it on first request and caching by content so repeated
+// calls (and round rebuilds) never leak textures. `robeColor`/`staffColor` may
+// be null/undefined to mean "default"; when BOTH are the plain defaults the
+// key resolves to the standard baked `wizard_<class>_<seat>` so the default
+// look is byte-identical to a no-cosmetics build. Otherwise the robe/staff
+// override goes through paintWizardTexture's opts while class/team/element
+// stay their canonical values (team + gem read is preserved).
+export function ensureCosmeticWizardTexture(scene, classKey, seat, robeColor, staffColor) {
+    const cls = WIZARD_CLASSES[classKey];
+    const classColor = cls ? cls.color : 0xffffff;
+    const elementColor = cls ? ELEMENT_COLORS[cls.element] : ELEMENT_COLORS.arcane;
+    const teamColor = TEAM_COLORS[seat - 1];
+
+    const robeIsDefault = robeColor == null || robeColor === classColor;
+    const staffIsDefault = staffColor == null || staffColor === STAFF_WOOD;
+
+    if (robeIsDefault && staffIsDefault) {
+        return `wizard_${classKey}_${seat}`;
+    }
+
+    const key = `wizard_${classKey}_${seat}__r${robeColor ?? 'x'}_s${staffColor ?? 'x'}`;
+    if (!scene.textures.exists(key)) {
+        const opts = {};
+        if (!robeIsDefault) opts.robeColor = robeColor;
+        if (!staffIsDefault) opts.staffColor = staffColor;
+        paintWizardTexture(scene, key, classColor, teamColor, elementColor, opts);
+    }
+    return key;
 }
