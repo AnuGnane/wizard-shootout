@@ -87,6 +87,14 @@ export class MenuScene extends Phaser.Scene {
         });
         controlsP2.setOrigin(0.5);
 
+        // Gamepad legend, tucked under the keyboard controls
+        const controlsGamepad = this.add.text(width / 2, 622,
+            'Gamepads: stick/d-pad move · A shoot · X orb · B ability', {
+            font: '12px monospace',
+            fill: '#666688',
+        });
+        controlsGamepad.setOrigin(0.5);
+
         // Hint
         const hint = this.add.text(width / 2, 655, '1 / 2 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
             font: '14px monospace',

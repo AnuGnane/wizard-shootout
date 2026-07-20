@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, RUNE_CONFIG, RUNE_ELEMENTS, MATCH_CONFIG, FROST_CONFIG, PRESSURE_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
-import { Player } from '../entities/Player.js';
+import { Player, KeyboardInput } from '../entities/Player.js';
+import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { Projectile } from '../entities/Projectile.js';
 import { Rune } from '../entities/Rune.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
@@ -93,7 +94,10 @@ export class GameScene extends Phaser.Scene {
         const p1Spawn = spawns.player1;
         const p2Spawn = spawns.player2;
 
-        this.player1 = new Player(this, p1Spawn.x, p1Spawn.y, 1);
+        // Player 1 is always human: keyboard and pad 0 both drive it, so
+        // either (or both at once) work with no setup.
+        const p1Input = new CompositeInput(new KeyboardInput(this, 1), new GamepadInput(this, 0));
+        this.player1 = new Player(this, p1Spawn.x, p1Spawn.y, 1, p1Input);
 
         if (MATCH_STATE.mode === '1p') {
             this.aiController = new AIController(this);
@@ -101,7 +105,8 @@ export class GameScene extends Phaser.Scene {
             this.aiController.setPlayers(this.player2, this.player1);
         } else {
             this.aiController = null;
-            this.player2 = new Player(this, p2Spawn.x, p2Spawn.y, 2);
+            const p2Input = new CompositeInput(new KeyboardInput(this, 2), new GamepadInput(this, 1));
+            this.player2 = new Player(this, p2Spawn.x, p2Spawn.y, 2, p2Input);
         }
 
         this.players = [this.player1, this.player2];

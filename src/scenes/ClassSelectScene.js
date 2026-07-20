@@ -5,6 +5,7 @@ import { MATCH_STATE } from '../systems/MatchState.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
+import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
 
 const CARD_W = 180;
 const CARD_H = 300;
@@ -55,6 +56,12 @@ export class ClassSelectScene extends Phaser.Scene {
         this.p1ClassKey = null;
         this.p2ClassKey = null;
         this.transitioning = false;
+
+        // Gamepad nav edge-detection state, mirroring how Player tracks
+        // prevShoot/prevRuneShoot/prevAbility - a button only acts on the
+        // frame it goes from up to down, not for as long as it's held.
+        this.p1PadPrev = { left: false, right: false, confirm: false };
+        this.p2PadPrev = { left: false, right: false, confirm: false };
 
         this.p1Frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
         this.p1Frame.setStrokeStyle(3, 0x5599ff, 1);
@@ -153,6 +160,35 @@ export class ClassSelectScene extends Phaser.Scene {
             align: 'center',
             wordWrap: { width: CARD_W - 20 },
         }).setOrigin(0.5, 0);
+    }
+
+    // Gamepad nav: pad 0 drives P1's cursor, pad 1 drives P2's (2P mode
+    // only) - same left/right + confirm shape as the keyboard handlers,
+    // just polled instead of event-driven since Phaser has no keydown-style
+    // event for pad buttons.
+    update() {
+        this.pollPadNav(0, 1, this.p1PadPrev);
+        if (this.mode === '2p') {
+            this.pollPadNav(1, 2, this.p2PadPrev);
+        }
+    }
+
+    pollPadNav(padIndex, playerNum, prev) {
+        const pad = getGamepad(this, padIndex);
+        if (!pad) return;
+
+        const axisX = pad.axes[AXIS_LEFT_X] ? pad.axes[AXIS_LEFT_X].getValue() : 0;
+        const left = (pad.buttons[BUTTON_DPAD_LEFT] && pad.buttons[BUTTON_DPAD_LEFT].pressed) || axisX < -STICK_DEADZONE;
+        const right = (pad.buttons[BUTTON_DPAD_RIGHT] && pad.buttons[BUTTON_DPAD_RIGHT].pressed) || axisX > STICK_DEADZONE;
+        const confirm = !!(pad.buttons[BUTTON_A] && pad.buttons[BUTTON_A].pressed);
+
+        if (left && !prev.left) this.moveCursor(playerNum, -1);
+        if (right && !prev.right) this.moveCursor(playerNum, 1);
+        if (confirm && !prev.confirm) this.confirm(playerNum);
+
+        prev.left = left;
+        prev.right = right;
+        prev.confirm = confirm;
     }
 
     moveCursor(playerNum, dir) {
