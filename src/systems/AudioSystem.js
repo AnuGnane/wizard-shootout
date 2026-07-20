@@ -148,6 +148,16 @@ class AudioSystem {
         this.arpeggio([523, 659, 784], 0.1, 'triangle', 0.35);
     }
 
+    // Soft hiss when fire melts a frost tile into steam.
+    steam() {
+        this.noise({ duration: 0.4, volume: 0.16, filterFrom: 5000, filterTo: 1400 });
+    }
+
+    // Short rising fanfare announcing the Orb Surge.
+    surge() {
+        this.arpeggio([440, 660, 880], 0.09, 'square', 0.3);
+    }
+
     matchWin() {
         this.arpeggio([392, 523, 659, 784, 1046], 0.12, 'triangle', 0.4);
     }

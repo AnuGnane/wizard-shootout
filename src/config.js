@@ -141,6 +141,22 @@ export const RUNE_CONFIG = {
     minPlayerDistanceTiles: 3, // Don't spawn on top of a player
 };
 
+// Phase 4 — slippery ice floor tiles
+export const FROST_CONFIG = {
+    grip: 0.06,              // velocity lerp factor per frame while on frost
+    durationMs: 6500,        // frost tile lifetime
+    frostEveryPx: 20,        // ice projectile lays frost every N px traveled
+    slideStopSpeed: 8,       // below this speed, snap to 0
+};
+
+// Phase 4 — Orb Surge: pressure once a round drags on
+export const PRESSURE_CONFIG = {
+    surgeAtMs: 60000,        // round time before surge kicks in
+    spawnIntervalMin: 2500,  // surge-mode rune spawn cadence
+    spawnIntervalMax: 4000,
+    maxRunes: 6,             // raised cap during surge
+};
+
 export const CONTROLS = {
     player1: {
         up: 'W',

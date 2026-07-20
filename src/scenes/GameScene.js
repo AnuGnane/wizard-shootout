@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, RUNE_CONFIG, RUNE_ELEMENTS, MATCH_CONFIG } from '../config.js';
+import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, RUNE_CONFIG, RUNE_ELEMENTS, MATCH_CONFIG, FROST_CONFIG, PRESSURE_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { Player } from '../entities/Player.js';
 import { Projectile } from '../entities/Projectile.js';
@@ -33,6 +33,15 @@ export class GameScene extends Phaser.Scene {
         this.maxProjectilesPerPlayer = 5;
         this.allProjectiles = [];
         this.runes = [];
+
+        // Phase 4: slippery frost floor tiles, keyed by `${gx},${gy}`.
+        this.frostTiles = new Map();
+        // Phase 4: Orb Surge — flips true once the round drags past surgeAtMs.
+        this.surgeActive = false;
+
+        // The scene restarts between rounds; make sure frost overlays/timers are
+        // torn down on shutdown so nothing leaks or double-fires next round.
+        this.events.once('shutdown', this.clearAllFrost, this);
 
         // Per-round stats for the round-end summary banner
         this.roundStats = {
@@ -356,7 +365,8 @@ export class GameScene extends Phaser.Scene {
 
         this.spawnRing(player.x, player.y, sig.ringColor, sig.ringRadius / 10, sig.ringFadeMs);
 
-        // Frost overlay on open tiles whose center is within range.
+        // Phase 4: frosted tiles become real slippery ice — route the ring's
+        // frost through the shared addFrost system instead of a bare overlay.
         const here = this.tileOf(player.x, player.y);
         const span = Math.ceil(sig.frostRadius / ARENA.tileSize) + 1;
         for (let ty = here.y - span; ty <= here.y + span; ty++) {
@@ -364,16 +374,7 @@ export class GameScene extends Phaser.Scene {
                 if (this.map.isWall(tx, ty)) continue;
                 const c = this.map.tileToWorld(tx, ty);
                 if (Phaser.Math.Distance.Between(c.x, c.y, player.x, player.y) > sig.frostRadius) continue;
-
-                // Phase 4: frosted tiles become slippery
-                const overlay = this.add.rectangle(c.x, c.y, ARENA.tileSize, ARENA.tileSize, sig.overlayColor, 0.25);
-                overlay.setDepth(1);
-                this.tweens.add({
-                    targets: overlay,
-                    alpha: 0,
-                    duration: sig.overlayFadeMs,
-                    onComplete: () => overlay.destroy(),
-                });
+                this.addFrost(tx, ty);
             }
         }
 
@@ -456,6 +457,142 @@ export class GameScene extends Phaser.Scene {
         return true;
     }
 
+    // ============ FROST FLOOR (Phase 4) ============
+
+    // Lay frost on a floor tile. No-op on walls / out of bounds; an already
+    // frosted tile just refreshes its expiry instead of stacking overlays.
+    addFrost(gx, gy) {
+        if (gx < 0 || gx >= ARENA.cols || gy < 0 || gy >= ARENA.rows) return;
+        if (this.map.isWall(gx, gy)) return;
+
+        const key = `${gx},${gy}`;
+        const existing = this.frostTiles.get(key);
+        if (existing) {
+            existing.expiresAt = this.time.now + FROST_CONFIG.durationMs;
+            if (existing.timer) existing.timer.remove(false);
+            existing.timer = this.time.delayedCall(
+                FROST_CONFIG.durationMs, () => this.fadeOutFrost(key)
+            );
+            return;
+        }
+
+        const c = this.map.tileToWorld(gx, gy);
+        const overlay = this.add.image(c.x, c.y, 'frost');
+        overlay.setAlpha(0.55);
+        overlay.setAngle(Phaser.Math.Between(0, 3) * 90); // vary orientation
+        overlay.setDepth(-4); // just above floor (-5), below players
+
+        this.frostTiles.set(key, {
+            overlay,
+            expiresAt: this.time.now + FROST_CONFIG.durationMs,
+            timer: this.time.delayedCall(
+                FROST_CONFIG.durationMs, () => this.fadeOutFrost(key)
+            ),
+        });
+    }
+
+    // World-space entry point used by ice projectiles laying a frost trail.
+    frostTileAtWorld(worldX, worldY) {
+        const t = this.tileOf(worldX, worldY);
+        this.addFrost(t.x, t.y);
+    }
+
+    // Instant removal (used by fire melting). Kills the timer + overlay now.
+    removeFrost(gx, gy) {
+        const key = `${gx},${gy}`;
+        const entry = this.frostTiles.get(key);
+        if (!entry) return false;
+        this.frostTiles.delete(key);
+        if (entry.timer) entry.timer.remove(false);
+        if (entry.overlay && entry.overlay.active) entry.overlay.destroy();
+        return true;
+    }
+
+    // Lifetime expiry: drop the tile from tracking (so it stops being
+    // slippery immediately) then fade the overlay out before destroying it.
+    fadeOutFrost(key) {
+        const entry = this.frostTiles.get(key);
+        if (!entry) return;
+        this.frostTiles.delete(key);
+        const overlay = entry.overlay;
+        if (overlay && overlay.active) {
+            this.tweens.add({
+                targets: overlay,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => { if (overlay.active) overlay.destroy(); },
+            });
+        }
+    }
+
+    isFrostedAt(worldX, worldY) {
+        const t = this.tileOf(worldX, worldY);
+        return this.frostTiles.has(`${t.x},${t.y}`);
+    }
+
+    // Fire passing over a frosted tile melts it and puffs a steam cloud.
+    meltFrostAt(worldX, worldY) {
+        const t = this.tileOf(worldX, worldY);
+        if (!this.frostTiles.has(`${t.x},${t.y}`)) return;
+        this.removeFrost(t.x, t.y);
+        const c = this.map.tileToWorld(t.x, t.y);
+        this.spawnSteam(c.x, c.y);
+        audio.steam();
+    }
+
+    // Purge all frost (round teardown/restart). Guarded so an already
+    // shut-down clock/overlay can't throw.
+    clearAllFrost() {
+        if (!this.frostTiles) return;
+        for (const entry of this.frostTiles.values()) {
+            if (entry.timer) entry.timer.remove(false);
+            if (entry.overlay && entry.overlay.active) entry.overlay.destroy();
+        }
+        this.frostTiles.clear();
+    }
+
+    // Purely-visual steam puff: a small cluster of soft gray-white circles that
+    // drift up, wobble, then fade. Depth 26 = above players (a vision blocker).
+    // No physics body and no LOS change for the bot.
+    spawnSteam(x, y) {
+        const count = Phaser.Math.Between(3, 5);
+        for (let i = 0; i < count; i++) {
+            const puff = this.add.circle(
+                x + Phaser.Math.Between(-8, 8),
+                y + Phaser.Math.Between(-8, 8),
+                Phaser.Math.Between(10, 16),
+                0xdde5ee, 0.8
+            );
+            puff.setDepth(26);
+
+            // Gentle upward drift over its lifetime
+            this.tweens.add({
+                targets: puff,
+                y: puff.y - Phaser.Math.Between(8, 16),
+                scale: 1.35,
+                duration: 2500,
+                ease: 'Sine.easeOut',
+            });
+            // Side-to-side wobble
+            this.tweens.add({
+                targets: puff,
+                x: puff.x + Phaser.Math.Between(-6, 6),
+                duration: 700,
+                yoyo: true,
+                repeat: 2,
+                ease: 'Sine.easeInOut',
+            });
+            // Hold, then fade out and destroy
+            this.tweens.add({
+                targets: puff,
+                alpha: 0,
+                delay: 2100,
+                duration: 400,
+                onComplete: () => { if (puff.active) puff.destroy(); },
+            });
+        }
+    }
+
     // ============ RUNE SPAWNING ============
 
     startRuneSpawning() {
@@ -465,7 +602,10 @@ export class GameScene extends Phaser.Scene {
     scheduleNextRune() {
         if (this.roundOver) return;
 
-        const delay = Phaser.Math.Between(RUNTIME_SETTINGS.runeSpawnMin, RUNTIME_SETTINGS.runeSpawnMax);
+        // Orb Surge tightens the cadence once the round drags on.
+        const min = this.surgeActive ? PRESSURE_CONFIG.spawnIntervalMin : RUNTIME_SETTINGS.runeSpawnMin;
+        const max = this.surgeActive ? PRESSURE_CONFIG.spawnIntervalMax : RUNTIME_SETTINGS.runeSpawnMax;
+        const delay = Phaser.Math.Between(min, max);
         this.time.delayedCall(delay, () => {
             this.spawnRunes();
             this.scheduleNextRune();
@@ -474,7 +614,8 @@ export class GameScene extends Phaser.Scene {
 
     spawnRunes() {
         if (this.roundOver) return;
-        if (this.runes.length >= RUNE_CONFIG.maxRunes) return;
+        const maxRunes = this.surgeActive ? PRESSURE_CONFIG.maxRunes : RUNE_CONFIG.maxRunes;
+        if (this.runes.length >= maxRunes) return;
 
         // Get enabled elements
         const enabledElements = RUNE_ELEMENTS.filter(e => RUNTIME_SETTINGS.runesEnabled[e]);
@@ -503,7 +644,7 @@ export class GameScene extends Phaser.Scene {
 
         const count = Math.min(
             RUNE_CONFIG.runesPerSpawn,
-            RUNE_CONFIG.maxRunes - this.runes.length,
+            maxRunes - this.runes.length,
             floorTiles.length
         );
         for (let i = 0; i < count; i++) {
@@ -866,6 +1007,51 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    // Orb Surge: flip the spawner into surge mode (faster cadence + higher
+    // cap, both read live in scheduleNextRune/spawnRunes), announce it, jingle.
+    triggerOrbSurge() {
+        this.surgeActive = true;
+        this.showSurgeBanner();
+        audio.surge();
+    }
+
+    showSurgeBanner() {
+        const banner = this.add.text(
+            GAME_CONFIG.width / 2,
+            ARENA.offsetY + ARENA.height / 2,
+            'ORB SURGE!',
+            {
+                font: 'bold 52px monospace',
+                fill: '#ffdd44',
+            }
+        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
+
+        const sub = this.add.text(
+            GAME_CONFIG.width / 2,
+            ARENA.offsetY + ARENA.height / 2 + 44,
+            'orbs flood the arena',
+            {
+                font: '16px monospace',
+                fill: '#ffeeaa',
+            }
+        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+
+        banner.setScale(0.3);
+        this.tweens.add({
+            targets: banner,
+            scale: 1,
+            duration: 300,
+            ease: 'Back.easeOut',
+        });
+        this.tweens.add({
+            targets: [banner, sub],
+            alpha: 0,
+            delay: 1000,
+            duration: 400,
+            onComplete: () => { banner.destroy(); sub.destroy(); },
+        });
+    }
+
     showScoreBanner(winnerNumber, isMatchWin) {
         const color = winnerNumber === 1 ? '#5599ff' : '#ff5566';
         const name = winnerNumber === 1
@@ -953,6 +1139,12 @@ export class GameScene extends Phaser.Scene {
         this.checkWallEffects();
 
         this.roundTimer += delta;
+
+        // Orb Surge fires once per round when the clock crosses surgeAtMs.
+        if (!this.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
+            this.triggerOrbSurge();
+        }
+
         const seconds = Math.floor(this.roundTimer / 1000);
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
@@ -44,8 +44,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.classDef = WIZARD_CLASSES[classKey];
         this.inputSource = inputSource || new KeyboardInput(scene, playerNumber);
 
-        // Health - use runtime settings
-        this.maxHealth = RUNTIME_SETTINGS.playerHealth;
+        // Health - use runtime settings. Sudden Death overrides to a 1-HP
+        // glass cannon: any hit (and any burn tick) is lethal.
+        this.maxHealth = RUNTIME_SETTINGS.suddenDeath ? 1 : RUNTIME_SETTINGS.playerHealth;
         this.health = this.maxHealth;
         this.isAlive = true;
 
@@ -323,7 +324,32 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Apply speed with slow modifier
         const speedMod = this.statusEffects.slowed ? this.statusEffects.slowPercent : 1;
-        this.setVelocity(vx * PLAYER_CONFIG.speed * speedMod, vy * PLAYER_CONFIG.speed * speedMod);
+        const dvx = vx * PLAYER_CONFIG.speed * speedMod;
+        const dvy = vy * PLAYER_CONFIG.speed * speedMod;
+
+        // Frosted floor is slippery: blend toward the desired velocity instead
+        // of snapping to it, so players skate with momentum (hard to stop, hard
+        // to turn). The body's strong drag would instantly kill that momentum,
+        // so it's suspended while sliding — off frost, drag stays on and the
+        // direct set makes it inert, so dry-floor behavior is unchanged. The
+        // Cryomancer is sure-footed on their own element (passive immunity).
+        const onFrost = this.classKey !== 'cryomancer' &&
+            this.scene.isFrostedAt && this.scene.isFrostedAt(this.x, this.y);
+
+        if (onFrost) {
+            this.body.allowDrag = false;
+            const cur = this.body.velocity;
+            const g = FROST_CONFIG.grip;
+            const curSpeed = Math.sqrt(cur.x * cur.x + cur.y * cur.y);
+            if (dvx === 0 && dvy === 0 && curSpeed < FROST_CONFIG.slideStopSpeed) {
+                this.setVelocity(0, 0);
+            } else {
+                this.setVelocity(cur.x + (dvx - cur.x) * g, cur.y + (dvy - cur.y) * g);
+            }
+        } else {
+            this.body.allowDrag = true;
+            this.setVelocity(dvx, dvy);
+        }
     }
 
     // Runs each frame while a Zap Dash is active: applies a one-time contact

@@ -149,6 +149,28 @@ function createFloorTextures(scene) {
     }
 }
 
+// Frost overlay tile (Phase 4): mostly-transparent icy pale-blue sheen with
+// crystalline speckle + a few hairline cracks, so a frosted floor reads at a
+// glance. Painted 16x16 -> 32x32 like the other tiles; the overlay's own
+// alpha (~0.55) sits on top of these per-pixel alphas.
+function createFrostTexture(scene) {
+    const W = 16;
+    const shades = [0xbfe8ff, 0xa8dcff, 0xd8f4ff, 0x8fc4ec];
+    paintPixels(scene, 'frost', W, W, (x, y) => {
+        const n = hash2(x, y, 41);
+        // Crystalline speckle — brighter, more opaque
+        if (n > 0.72) {
+            const s = shades[Math.floor(hash2(x + 3, y + 1, 7) * 4) % 4];
+            return { color: s, alpha: 0.55 + n * 0.35 };
+        }
+        // Hairline frost cracks from a second noise field
+        const v = hash2(x * 3 - y, y * 2 + x, 19);
+        if (v > 0.88) return { color: 0xeaf9ff, alpha: 0.6 };
+        // Faint pale wash elsewhere keeps the tile mostly transparent
+        return { color: 0xaad8f5, alpha: 0.14 };
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Orb pickups: glowing ring with an element glyph inside
 // ---------------------------------------------------------------------------
@@ -283,6 +305,7 @@ export function generateAllTextures(scene) {
 
     createWallTextures(scene);
     createFloorTextures(scene);
+    createFrostTexture(scene);
 
     for (const [element, glyph] of Object.entries(GLYPHS)) {
         createOrbTexture(scene, `rune_${element}`, ELEMENT_COLORS[element], glyph);

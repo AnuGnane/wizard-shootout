@@ -26,6 +26,7 @@ export const RUNTIME_SETTINGS = {
     // Game settings
     targetScore: MATCH_CONFIG.targetScore,
     soundEnabled: true,
+    suddenDeath: false,     // 1-HP mutator: any hit is lethal
     aiDifficulty: 'normal', // easy | normal | hard (picked on map select)
 
     // Class picks (persisted, initialize ClassSelectScene cursors)
@@ -92,6 +93,7 @@ export class SettingsScene extends Phaser.Scene {
         this.addSectionHeader('MATCH');
         this.addSlider('First to (rounds)', 'targetScore', 1, 10, 1);
         this.addToggle('Sound', 'soundEnabled');
+        this.addToggle('Sudden Death (1 HP)', 'suddenDeath');
 
         this.yPos += 20;
         this.addSectionHeader('ARENA');

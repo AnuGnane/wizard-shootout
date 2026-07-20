@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG } from '../config.js';
+import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, FROST_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 
@@ -66,6 +66,42 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.body.setCollideWorldBounds(true);
         this.body.onWorldBounds = true;
         this.body.setVelocity(this.dirX * this.speed, this.dirY * this.speed);
+    }
+
+    // Frost interaction, sampled along the flight path (physics drives the
+    // body; we just read position each frame). Ice rune shots lay a frost
+    // trail every FROST_CONFIG.frostEveryPx of travel; any fire projectile
+    // (rune shots AND Flame Burst sparks) melts frost it passes over into steam.
+    preUpdate(time, delta) {
+        super.preUpdate(time, delta);
+
+        if (!this.active || this.isDestroying || !this.scene) return;
+
+        const lays = this.isRuneShot && this.element === ELEMENT_TYPES.ICE;
+        const melts = this.element === ELEMENT_TYPES.FIRE;
+        if (!lays && !melts) return;
+
+        if (this._frostSampleX === undefined) {
+            this._frostSampleX = this.x;
+            this._frostSampleY = this.y;
+            this._frostAccum = 0;
+        }
+
+        if (melts) {
+            // Fire melts on contact — a cheap Map lookup, fine every frame.
+            if (this.scene.meltFrostAt) this.scene.meltFrostAt(this.x, this.y);
+            return;
+        }
+
+        const dx = this.x - this._frostSampleX;
+        const dy = this.y - this._frostSampleY;
+        this._frostSampleX = this.x;
+        this._frostSampleY = this.y;
+        this._frostAccum += Math.sqrt(dx * dx + dy * dy);
+        if (this._frostAccum >= FROST_CONFIG.frostEveryPx) {
+            this._frostAccum = 0;
+            if (this.scene.frostTileAtWorld) this.scene.frostTileAtWorld(this.x, this.y);
+        }
     }
 
     onWorldBoundsHit() {

@@ -47,6 +47,9 @@ export function loadSettings(settings) {
     if (typeof saved.soundEnabled === 'boolean') {
         settings.soundEnabled = saved.soundEnabled;
     }
+    if (typeof saved.suddenDeath === 'boolean') {
+        settings.suddenDeath = saved.suddenDeath;
+    }
     if (['easy', 'normal', 'hard'].includes(saved.aiDifficulty)) {
         settings.aiDifficulty = saved.aiDifficulty;
     }
@@ -74,6 +77,7 @@ export function saveSettings(settings) {
         payload[key] = settings[key];
     }
     payload.soundEnabled = settings.soundEnabled;
+    payload.suddenDeath = settings.suddenDeath;
     payload.aiDifficulty = settings.aiDifficulty;
     payload.p1Class = settings.p1Class;
     payload.p2Class = settings.p2Class;
