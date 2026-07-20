@@ -36,6 +36,11 @@ export const RUNTIME_SETTINGS = {
     mutLowCooldowns: false, // 0.4x normal/orb/signature cooldowns
     mutMirrorMaps: false,   // every map horizontally flipped at load
 
+    // Phase 7 — Fog of War (experimental, 1P only): shrouds the arena outside
+    // player 1's line of sight, hiding the bot until you can see it. Off by
+    // default; persisted like the mutators. Inert in 2P/party (see GameScene).
+    fogOfWar: false,
+
     // Class picks (persisted, initialize ClassSelectScene cursors)
     p1Class: 'arcanist',
     p2Class: 'arcanist',
@@ -119,6 +124,7 @@ export class SettingsScene extends Phaser.Scene {
         this.addToggle('Orb Rain', 'mutOrbRain');
         this.addToggle('Low Cooldowns', 'mutLowCooldowns');
         this.addToggle('Mirror Maps', 'mutMirrorMaps');
+        this.addToggle('Fog of War (1P)', 'fogOfWar');
 
         // Buttons
         const saveBtn = this.add.text(width / 2 - 120, height - 50, '[ SAVE ]', {

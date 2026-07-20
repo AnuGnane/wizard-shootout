@@ -56,6 +56,9 @@ export function loadSettings(settings) {
     if (typeof saved.suddenDeath === 'boolean') {
         settings.suddenDeath = saved.suddenDeath;
     }
+    if (typeof saved.fogOfWar === 'boolean') {
+        settings.fogOfWar = saved.fogOfWar;
+    }
     for (const key of MUTATOR_KEYS) {
         if (typeof saved[key] === 'boolean') {
             settings[key] = saved[key];
@@ -90,6 +93,7 @@ export function saveSettings(settings) {
     payload.soundEnabled = settings.soundEnabled;
     payload.musicEnabled = settings.musicEnabled;
     payload.suddenDeath = settings.suddenDeath;
+    payload.fogOfWar = settings.fogOfWar;
     for (const key of MUTATOR_KEYS) {
         payload[key] = settings[key];
     }
