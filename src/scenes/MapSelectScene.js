@@ -156,7 +156,7 @@ export class MapSelectScene extends Phaser.Scene {
     }
 
     drawThumbnail(cx, cy, def) {
-        const map = new GameMap(def);
+        const map = new GameMap(def, { mirror: RUNTIME_SETTINGS.mutMirrorMaps });
         const w = map.cols * THUMB_TILE;
         const h = map.rows * THUMB_TILE;
         const x0 = cx - w / 2;

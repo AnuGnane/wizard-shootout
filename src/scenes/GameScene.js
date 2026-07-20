@@ -40,6 +40,14 @@ export class GameScene extends Phaser.Scene {
         // Phase 4: Orb Surge — flips true once the round drags past surgeAtMs.
         this.surgeActive = false;
 
+        // Orb Rain mutator: start every round already in surge mode — no
+        // banner, no jingle, it's a chosen mode rather than a triggered
+        // event. The Phase 4 trigger in update() already guards on
+        // `!this.surgeActive`, so it simply never fires from here on.
+        if (RUNTIME_SETTINGS.mutOrbRain) {
+            this.surgeActive = true;
+        }
+
         // The scene restarts between rounds; make sure frost overlays/timers are
         // torn down on shutdown so nothing leaks or double-fires next round.
         this.events.once('shutdown', this.clearAllFrost, this);
@@ -57,7 +65,7 @@ export class GameScene extends Phaser.Scene {
         // Pick a battle map (also sets ARENA geometry for this round).
         // A map chosen on the select screen is used every round; Random
         // rotates maps between rounds.
-        this.map = pickMap(MATCH_STATE.mapIndex);
+        this.map = pickMap(MATCH_STATE.mapIndex, { mirror: RUNTIME_SETTINGS.mutMirrorMaps });
 
         this.createArenaBackground();
         this.createMaze();
@@ -263,7 +271,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (success) {
-            player.abilityReadyAt = this.time.now + player.classDef.signature.cooldown;
+            player.abilityReadyAt = this.time.now + player.abilityCooldown;
             audio.signature(player.classKey);
         } else {
             audio.fizzle();
@@ -1119,6 +1127,18 @@ export class GameScene extends Phaser.Scene {
 
     // ============ BANNERS ============
 
+    // Short labels for whatever mutators are currently active, in display
+    // order. Empty array when nothing (including Sudden Death) is on.
+    getActiveMutatorLabels() {
+        const labels = [];
+        if (RUNTIME_SETTINGS.suddenDeath) labels.push('sudden death');
+        if (RUNTIME_SETTINGS.mutGiantShots) labels.push('giant shots');
+        if (RUNTIME_SETTINGS.mutOrbRain) labels.push('orb rain');
+        if (RUNTIME_SETTINGS.mutLowCooldowns) labels.push('low cooldowns');
+        if (RUNTIME_SETTINGS.mutMirrorMaps) labels.push('mirror maps');
+        return labels;
+    }
+
     showRoundBanner() {
         const target = MATCH_STATE.targetScore;
         const banner = this.add.text(
@@ -1143,10 +1163,30 @@ export class GameScene extends Phaser.Scene {
 
         const bannerTexts = [banner, sub];
 
+        // Mutator flair: one small muted-gold line listing whatever's active
+        // (including Sudden Death), directly under the map/first-to line.
+        // With everything off this adds nothing, so the banner stays
+        // byte-identical to pre-Phase-5c behavior.
+        let matchPointY = ARENA.offsetY + ARENA.height / 2 + 80;
+        const activeMutators = this.getActiveMutatorLabels();
+        if (activeMutators.length > 0) {
+            const mutatorsLine = this.add.text(
+                GAME_CONFIG.width / 2,
+                ARENA.offsetY + ARENA.height / 2 + 68,
+                `mutators: ${activeMutators.join(' · ')}`,
+                {
+                    font: '13px monospace',
+                    fill: '#ccaa66',
+                }
+            ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+            bannerTexts.push(mutatorsLine);
+            matchPointY += 24;
+        }
+
         if (MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1) {
             const matchPoint = this.add.text(
                 GAME_CONFIG.width / 2,
-                ARENA.offsetY + ARENA.height / 2 + 80,
+                matchPointY,
                 'MATCH POINT',
                 {
                     font: 'bold 24px monospace',

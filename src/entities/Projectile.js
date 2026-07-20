@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, FROST_CONFIG } from '../config.js';
+import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, FROST_CONFIG, MUTATOR_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 
@@ -41,6 +41,24 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.isDestroying = false;
 
         scene.add.existing(this);
+
+        // Giant Projectiles mutator: scale the visual sprite BEFORE the
+        // physics body is created below. Arcade's Body caches the Game
+        // Object's scale once at creation time (`_sx`/`_sy`) and multiplies
+        // the body's size/offset by it every frame from then on — so as long
+        // as the sprite is already at its final scale when the body is
+        // created, the size/offset math right below can stay in plain
+        // "source pixel" units (unchanged from pre-mutator code) and Phaser
+        // scales it for us automatically and consistently. (Scaling the
+        // sprite AFTER body creation, or pre-multiplying bodySize here,
+        // both cause a double-scale once the body's cached scale
+        // self-corrects on the next physics step — confirmed against
+        // Phaser's Body.setSize()/preUpdate() source.) scaleFactor === 1
+        // (mutator off) skips setScale entirely, reproducing today's
+        // behavior exactly.
+        const scaleFactor = RUNTIME_SETTINGS.mutGiantShots ? MUTATOR_CONFIG.giantScale : 1;
+        if (scaleFactor !== 1) this.setScale(scaleFactor);
+
         scene.physics.add.existing(this);
 
         const bodySize = config.size;

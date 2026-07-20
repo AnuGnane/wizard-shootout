@@ -49,3 +49,4 @@ const game = new Phaser.Game(config);
 // Handy for debugging from the browser console
 window.__game = game;
 window.__match = MATCH_STATE;
+window.__settings = RUNTIME_SETTINGS;

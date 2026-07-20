@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, TEAM_COLORS } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, TEAM_COLORS, MUTATOR_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
@@ -68,6 +68,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // conjured-wall lifetime, which lives in GameScene, not here).
         if (this.classKey === 'arcanist') this.normalCooldown *= 0.72;
         if (this.classKey === 'stormcaller') this.runeCooldown *= 0.7;
+
+        // Signature ability cooldown, mirrored per-instance from class data
+        // (rather than read live off classDef.signature.cooldown) so the Low
+        // Cooldowns mutator below can scale it the same way as the shot
+        // cooldowns. The arc indicator (updateIndicator) and GameScene's
+        // cooldown commit (onSignatureUsed) both read this field.
+        this.abilityCooldown = this.classDef.signature.cooldown;
+
+        // Low Cooldowns mutator: shrink all three cooldowns AFTER class
+        // passives — multiplicative stacking with passives is intended.
+        if (RUNTIME_SETTINGS.mutLowCooldowns) {
+            this.normalCooldown *= MUTATOR_CONFIG.lowCooldownFactor;
+            this.runeCooldown *= MUTATOR_CONFIG.lowCooldownFactor;
+            this.abilityCooldown *= MUTATOR_CONFIG.lowCooldownFactor;
+        }
 
         // Timestamps (scene.time.now) for when each shot type comes off
         // cooldown - used purely to draw the cooldown indicator arcs; the
@@ -218,7 +233,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Signature cooldown arc, gold, further out than the shot arcs
         if (now < this.abilityReadyAt) {
-            const remaining = Phaser.Math.Clamp((this.abilityReadyAt - now) / this.classDef.signature.cooldown, 0, 1);
+            const remaining = Phaser.Math.Clamp((this.abilityReadyAt - now) / this.abilityCooldown, 0, 1);
             const startAngle = Phaser.Math.DegToRad(-90);
             const endAngle = Phaser.Math.DegToRad(-90 + 360 * remaining);
             g.lineStyle(2, 0xffdd44, 0.55);

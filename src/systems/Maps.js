@@ -225,16 +225,29 @@ export const MAP_DEFS = [
     },
 ];
 
+// Phase 5c — Mirror Maps mutator. Reverses each row string, producing a
+// horizontally-flipped layout; spawn markers ('1'/'2') and walls flip along
+// with everything else since they're just characters in the row. Never
+// mutates the input — returns a new array of new strings, so the shared
+// MAP_DEFS layouts stay pristine.
+export function mirrorLayout(layout) {
+    return layout.map(row => row.split('').reverse().join(''));
+}
+
 export class GameMap {
-    constructor(def) {
+    // `mirror` comes from the Mirror Maps mutator; callers pass it in rather
+    // than this module reading settings, so Maps.js stays importable from
+    // plain Node (the deploy workflow runs validateMap outside a browser).
+    constructor(def, { mirror = false } = {}) {
         this.name = def.name;
-        this.rows = def.layout.length;
-        this.cols = def.layout[0].length;
+        const layout = mirror ? mirrorLayout(def.layout) : def.layout;
+        this.rows = layout.length;
+        this.cols = layout[0].length;
         this.grid = [];
         this.spawnTiles = {};
 
         for (let y = 0; y < this.rows; y++) {
-            const row = def.layout[y];
+            const row = layout[y];
             this.grid[y] = [];
             for (let x = 0; x < this.cols; x++) {
                 const ch = row[x];
@@ -373,7 +386,7 @@ let lastMapIndex = -1;
 
 // forcedIndex: play a specific map (from the map-select screen).
 // null/invalid: random map, never the same one twice in a row.
-export function pickMap(forcedIndex = null) {
+export function pickMap(forcedIndex = null, { mirror = false } = {}) {
     let idx;
     if (forcedIndex !== null && forcedIndex >= 0 && forcedIndex < MAP_DEFS.length) {
         idx = forcedIndex;
@@ -384,7 +397,7 @@ export function pickMap(forcedIndex = null) {
     }
     lastMapIndex = idx;
 
-    const map = new GameMap(MAP_DEFS[idx]);
+    const map = new GameMap(MAP_DEFS[idx], { mirror });
     applyArena(map);
     return map;
 }

@@ -162,6 +162,13 @@ export const PRESSURE_CONFIG = {
     maxRunes: 6,             // raised cap during surge
 };
 
+// Phase 5c — Mutators: numbers for the combinable, default-OFF match modifiers
+// (see RUNTIME_SETTINGS.mut* in scenes/SettingsScene.js).
+export const MUTATOR_CONFIG = {
+    giantScale: 1.8,        // Giant Projectiles: visual scale + physics body multiplier
+    lowCooldownFactor: 0.4, // Low Cooldowns: multiplier applied after class passives
+};
+
 export const CONTROLS = {
     player1: {
         up: 'W',
