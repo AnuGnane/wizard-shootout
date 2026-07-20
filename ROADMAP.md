@@ -34,11 +34,11 @@ cheapest model tier that can do it well.
 
 ## Phase 2 — Feel Pass (combat readability)
 
-- [ ] `[S]` Cooldown indicators: arc/gem glow on each wizard for normal shot, orb shot, and (later) signature ability
-- [ ] `[H]` Aim hint: faint short line showing current 8-way facing
-- [ ] `[S]` MATCH POINT banner when a player is one round from victory
-- [ ] `[S]` Round-end summary between rounds: damage dealt, shots fired/hit, orbs used
-- [ ] `[H]` Score pips (filled/empty dots up to target score) instead of bare numbers
+- [x] `[S]` Cooldown indicators: arc/gem glow on each wizard for normal shot, orb shot, and (later) signature ability
+- [x] `[H]` Aim hint: faint short line showing current 8-way facing
+- [x] `[S]` MATCH POINT banner when a player is one round from victory
+- [x] `[S]` Round-end summary between rounds: damage dealt, shots fired/hit, orbs used
+- [x] `[H]` Score pips (filled/empty dots up to target score) instead of bare numbers
 
 ## Phase 3 — Wizard Classes (the signature mechanic)
 
