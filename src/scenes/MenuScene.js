@@ -125,6 +125,6 @@ export class MenuScene extends Phaser.Scene {
     startGame(mode) {
         audio.unlock();
         audio.uiClick();
-        this.scene.start('MapSelectScene', { mode });
+        this.scene.start('ClassSelectScene', { mode });
     }
 }

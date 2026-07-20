@@ -2,7 +2,8 @@
 // pixel grid (then scaled up) so circles and edges stay crisp with
 // pixelArt rendering — no binary assets needed.
 
-import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG } from '../config.js';
+import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG, PLAYER_CONFIG } from '../config.js';
+import { WIZARD_CLASSES, CLASS_KEYS } from './Classes.js';
 
 const SCALE = 2;
 
@@ -33,35 +34,25 @@ function paintPixels(scene, key, w, h, painter, scale = SCALE) {
 // with a staff and glowing gem sticking out to the right so rotation reads.
 // ---------------------------------------------------------------------------
 
-const WIZARD_PALETTES = {
-    wizard_blue: {
-        edge: 0x1e3a6e,
-        robe: 0x3f6fd1,
-        robeLight: 0x6f9ff0,
-        hat: 0x2b4fa0,
-        hatTop: 0x9fc4ff,
-        gem: 0x8fe0ff,
-    },
-    wizard_red: {
-        edge: 0x6e1e2e,
-        robe: 0xd14f5f,
-        robeLight: 0xf08f9f,
-        hat: 0xa02b3f,
-        hatTop: 0xffb0b8,
-        gem: 0xffd28f,
-    },
-};
-
 const STAFF_WOOD = 0x8a5a2b;
 const STAFF_DARK = 0x5f3d1d;
 const HAND_SKIN = 0xf0c090;
 
-function createWizardTexture(scene, key) {
-    const p = WIZARD_PALETTES[key];
+// Robe/hat/brim shades are derived from the wizard's CLASS color; the hat
+// tip and brim highlight are derived from the wizard's TEAM color instead,
+// so a class reads in the robe while the team still reads at a glance.
+// The staff gem is always the class's ELEMENT color.
+function paintWizardTexture(scene, key, classColor, teamColor, elementColor) {
     const W = 20;
     const H = 18;
     const cx = 8.5;
     const cy = 8.5;
+
+    const edge = darken(classColor, 70);
+    const hat = darken(classColor, 35);
+    const hatLight = lighten(classColor, 60);
+    const tip = lighten(teamColor, 55);
+    const brimHighlight = lighten(teamColor, 15);
 
     paintPixels(scene, key, W, H, (x, y) => {
         const dx = x - cx;
@@ -70,8 +61,8 @@ function createWizardTexture(scene, key) {
 
         // Staff gem (glow ring then core), centered at (17.5, 8.5)
         const gd = Math.sqrt((x - 17.5) ** 2 + (y - 8.5) ** 2);
-        if (gd <= 1.4) return { color: p.gem };
-        if (gd <= 2.4) return { color: p.gem, alpha: 0.35 };
+        if (gd <= 1.4) return { color: elementColor };
+        if (gd <= 2.4) return { color: elementColor, alpha: 0.35 };
 
         // Staff shaft, two pixels tall so it reads chunky
         if ((y === 8 || y === 9) && x >= 13 && x <= 16) {
@@ -83,19 +74,20 @@ function createWizardTexture(scene, key) {
         const h2 = Math.sqrt((x - 13.5) ** 2 + (y - 11.5) ** 2);
         if (h1 <= 1.2 || h2 <= 1.2) return { color: HAND_SKIN };
 
-        // Hat cone from above: bright tip -> hat -> brim -> dark edge
-        if (d <= 1.8) return { color: p.hatTop };
+        // Hat cone from above: bright team-colored tip -> class hat -> brim
+        // (with a team-colored highlight wedge) -> dark class edge.
+        if (d <= 1.8) return { color: tip };
         if (d <= 4.0) {
             // Light wedge on the upper-left of the cone
-            if (dx < 0 && dy < 0 && d > 2.4) return { color: p.hat };
-            return { color: d <= 2.8 ? p.hatTop : p.hat };
+            if (dx < 0 && dy < 0 && d > 2.4) return { color: hat };
+            return { color: d <= 2.8 ? hatLight : hat };
         }
         if (d <= 6.3) {
             // Brim with top-left highlight
-            if (dx + dy < -4.2) return { color: p.robeLight };
-            return { color: p.robe };
+            if (dx + dy < -4.2) return { color: brimHighlight };
+            return { color: classColor };
         }
-        if (d <= 7.3) return { color: p.edge };
+        if (d <= 7.3) return { color: edge };
 
         return null;
     });
@@ -225,6 +217,13 @@ function lighten(color, amt) {
     return (r << 16) | (g << 8) | b;
 }
 
+function darken(color, amt) {
+    const r = Math.max(0, ((color >> 16) & 0xff) - amt);
+    const g = Math.max(0, ((color >> 8) & 0xff) - amt);
+    const b = Math.max(0, (color & 0xff) - amt);
+    return (r << 16) | (g << 8) | b;
+}
+
 function createOrbTexture(scene, key, color, glyph) {
     const W = 16;
     const cx = 7.5;
@@ -267,8 +266,20 @@ function createProjectileTexture(scene, key, radius, color) {
 // ---------------------------------------------------------------------------
 
 export function generateAllTextures(scene) {
-    createWizardTexture(scene, 'wizard_blue');
-    createWizardTexture(scene, 'wizard_red');
+    // Default team wizards (menus / game-over screen use these directly,
+    // before or without a class ever being picked) — team color doubles as
+    // the class color so they read as plain blue/red.
+    paintWizardTexture(scene, 'wizard_blue', PLAYER_CONFIG.colors.player1, PLAYER_CONFIG.colors.player1, ELEMENT_COLORS.arcane);
+    paintWizardTexture(scene, 'wizard_red', PLAYER_CONFIG.colors.player2, PLAYER_CONFIG.colors.player2, ELEMENT_COLORS.arcane);
+
+    // Class-colored wizards: robe/hat show the class, hat tip + brim
+    // highlight show the team, one texture per class per player slot.
+    for (const classKey of CLASS_KEYS) {
+        const cls = WIZARD_CLASSES[classKey];
+        const elementColor = ELEMENT_COLORS[cls.element];
+        paintWizardTexture(scene, `wizard_${classKey}_1`, cls.color, PLAYER_CONFIG.colors.player1, elementColor);
+        paintWizardTexture(scene, `wizard_${classKey}_2`, cls.color, PLAYER_CONFIG.colors.player2, elementColor);
+    }
 
     createWallTextures(scene);
     createFloorTextures(scene);

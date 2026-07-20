@@ -132,9 +132,9 @@ export const RUNE_ELEMENTS = [
 ];
 
 export const RUNE_CONFIG = {
-    spawnIntervalMin: 6000,
-    spawnIntervalMax: 10000,
-    maxRunes: 4,            // 2 pairs can spawn
+    spawnIntervalMin: 8000,
+    spawnIntervalMax: 13000,
+    maxRunes: 3,
     runesPerSpawn: 2,       // Spawn 2 at a time
     shotsPerPickup: 3,
     tripleShotsPerPickup: 2,
@@ -149,6 +149,7 @@ export const CONTROLS = {
         right: 'D',
         shoot: 'SPACE',
         runeShoot: 'Q',
+        ability: 'E',
     },
     player2: {
         up: 'UP',
@@ -157,5 +158,6 @@ export const CONTROLS = {
         right: 'RIGHT',
         shoot: 'ENTER',
         runeShoot: 'FORWARD_SLASH',
+        ability: 'PERIOD',
     },
 };

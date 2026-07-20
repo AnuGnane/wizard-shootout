@@ -60,7 +60,7 @@ export class AIController {
         this.opponent = null;
         this.params = AI_DIFFICULTY[RUNTIME_SETTINGS.aiDifficulty] || AI_DIFFICULTY.normal;
 
-        this.state = { up: false, down: false, left: false, right: false, shoot: false, runeShoot: false };
+        this.state = { up: false, down: false, left: false, right: false, shoot: false, runeShoot: false, ability: false };
 
         this.path = [];
         this.nextRepath = 0;
@@ -85,6 +85,7 @@ export class AIController {
         s.up = s.down = s.left = s.right = false;
         s.shoot = false;
         s.runeShoot = false;
+        s.ability = false; // signature abilities land in Phase 3b
 
         if (!this.me || !this.me.isAlive || !this.opponent || !this.opponent.isAlive) return;
         if (this.scene.roundOver) return;

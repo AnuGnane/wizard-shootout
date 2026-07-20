@@ -7,12 +7,13 @@ import { Rune } from '../entities/Rune.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
+import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
-    'lightningPierce', 'playerDied', 'runeCollected', 'playerDamaged',
+    'lightningPierce', 'playerDied', 'runeCollected', 'playerDamaged', 'signatureUsed',
 ];
 
 export class GameScene extends Phaser.Scene {
@@ -192,7 +193,13 @@ export class GameScene extends Phaser.Scene {
         this.events.on('playerDied', this.onPlayerDied, this);
         this.events.on('runeCollected', this.onRuneCollected, this);
         this.events.on('playerDamaged', this.onPlayerDamaged, this);
+        this.events.on('signatureUsed', this.onSignatureUsed, this);
     }
+
+    // STUB: ability effects implemented in Phase 3b. For now the scene just
+    // needs a handler registered so setupEvents()'s cleanup loop has
+    // something to remove on restart.
+    onSignatureUsed(data) {}
 
     // ============ RUNE SPAWNING ============
 
@@ -397,12 +404,15 @@ export class GameScene extends Phaser.Scene {
         uiBar.setDepth(10);
         this.add.rectangle(GAME_CONFIG.width / 2, 59, GAME_CONFIG.width, 2, 0x5a5a9a).setDepth(10);
 
+        const p1ClassName = WIZARD_CLASSES[MATCH_STATE.classes[1]].name.toUpperCase();
+        const p2ClassName = WIZARD_CLASSES[MATCH_STATE.classes[2]].name.toUpperCase();
+
         const p2Name = MATCH_STATE.mode === '1p'
-            ? `BOT · ${RUNTIME_SETTINGS.aiDifficulty.toUpperCase()}`
-            : PLAYER_CONFIG.names.player2;
+            ? `BOT ${p2ClassName} · ${RUNTIME_SETTINGS.aiDifficulty.toUpperCase()}`
+            : p2ClassName;
 
         // --- Player 1 (left) ---
-        this.add.text(20, 8, PLAYER_CONFIG.names.player1, {
+        this.add.text(20, 8, p1ClassName, {
             font: 'bold 14px monospace',
             fill: '#5599ff',
         }).setDepth(11);
@@ -470,8 +480,8 @@ export class GameScene extends Phaser.Scene {
         this.add.rectangle(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, GAME_CONFIG.width, 30, 0x1a1a2e).setDepth(10);
 
         const hint = MATCH_STATE.mode === '1p'
-            ? 'WASD move | SPACE shoot | Q orb shot | Grab orbs for powers | M mute'
-            : 'P1: WASD + SPACE/Q  |  P2: Arrows + ENTER//  |  Grab orbs for powers  |  M mute';
+            ? 'WASD move | SPACE shoot | Q orb shot | E ability | Grab orbs for powers | M mute'
+            : 'P1: WASD + SPACE/Q/E  |  P2: Arrows + ENTER//.  |  Grab orbs for powers  |  M mute';
         this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
             font: '11px monospace',
             fill: '#666688',

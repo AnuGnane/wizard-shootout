@@ -20,13 +20,17 @@ export const RUNTIME_SETTINGS = {
         shield: true,
         triple: true,
     },
-    runeSpawnMin: 6000,
-    runeSpawnMax: 10000,
+    runeSpawnMin: 8000,
+    runeSpawnMax: 13000,
 
     // Game settings
     targetScore: MATCH_CONFIG.targetScore,
     soundEnabled: true,
     aiDifficulty: 'normal', // easy | normal | hard (picked on map select)
+
+    // Class picks (persisted, initialize ClassSelectScene cursors)
+    p1Class: 'arcanist',
+    p2Class: 'arcanist',
 
     // Effect settings
     fireBurnDuration: 4000,
