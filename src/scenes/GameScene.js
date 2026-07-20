@@ -201,13 +201,19 @@ export class GameScene extends Phaser.Scene {
     createMaze() {
         this.walls = this.physics.add.staticGroup();
 
+        // Phase 6d — Map theming: each map picks a wall/floor palette; the
+        // border/interior walls and floor tiles use the map's themed texture
+        // keys (a dungeon-themed map's keys are byte-identical to the old
+        // plain 'wall'/'floor_*' keys).
+        const theme = this.map.theme;
+
         for (let y = 0; y < ARENA.rows; y++) {
             for (let x = 0; x < ARENA.cols; x++) {
                 const worldX = ARENA.offsetX + x * ARENA.tileSize + ARENA.tileSize / 2;
                 const worldY = ARENA.offsetY + y * ARENA.tileSize + ARENA.tileSize / 2;
 
                 if (this.map.grid[y][x] === 1) {
-                    const wall = this.walls.create(worldX, worldY, 'wall');
+                    const wall = this.walls.create(worldX, worldY, 'wall_' + theme);
                     wall.setImmovable(true);
                     wall.refreshBody();
                     wall.gridX = x;
@@ -215,7 +221,7 @@ export class GameScene extends Phaser.Scene {
                 } else {
                     // Vary the floor texture per tile for a less flat look
                     const variant = (x * 7 + y * 13) % 3;
-                    this.add.image(worldX, worldY, `floor_${variant}`).setDepth(-5);
+                    this.add.image(worldX, worldY, 'floor_' + theme + '_' + variant).setDepth(-5);
                 }
             }
         }
@@ -503,7 +509,7 @@ export class GameScene extends Phaser.Scene {
             // createMaze never drew a floor under a wall tile — add one now.
             const c = this.map.tileToWorld(t.x, t.y);
             const variant = (t.x * 7 + t.y * 13) % 3;
-            this.add.image(c.x, c.y, `floor_${variant}`).setDepth(-5);
+            this.add.image(c.x, c.y, 'floor_' + this.map.theme + '_' + variant).setDepth(-5);
 
             // Debris + shake
             for (let i = 0; i < 7; i++) {

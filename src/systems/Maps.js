@@ -4,6 +4,7 @@
 // All layouts are checked by scripts and at load time (see validateMap).
 
 import { GAME_CONFIG } from '../config.js';
+import { DEFAULT_THEME } from './Themes.js';
 
 // Live arena geometry for the currently loaded map. GameScene applies it
 // via pickMap() before anything reads it.
@@ -20,6 +21,7 @@ export const ARENA = {
 export const MAP_DEFS = [
     {
         name: 'Open Court',
+        theme: 'dungeon',
         layout: [
             '###############',
             '#.............#',
@@ -36,6 +38,7 @@ export const MAP_DEFS = [
     },
     {
         name: 'Crossfire',
+        theme: 'catacombs',
         layout: [
             '#################',
             '#.......#.......#',
@@ -54,6 +57,7 @@ export const MAP_DEFS = [
     },
     {
         name: 'The Ring',
+        theme: 'forge',
         layout: [
             '###################',
             '#.................#',
@@ -70,6 +74,7 @@ export const MAP_DEFS = [
     },
     {
         name: 'Four Chambers',
+        theme: 'ruins',
         layout: [
             '#####################',
             '#.........#.........#',
@@ -91,6 +96,7 @@ export const MAP_DEFS = [
     // Asymmetric layout, 180°-rotationally mirrored so both sides are fair
     {
         name: 'Shards',
+        theme: 'ice',
         layout: [
             '#####################',
             '#.1........#........#',
@@ -112,6 +118,7 @@ export const MAP_DEFS = [
     // Asymmetric layout, 180°-rotationally mirrored so both sides are fair
     {
         name: 'Serpent',
+        theme: 'catacombs',
         layout: [
             '#######################',
             '#.1...................#',
@@ -135,6 +142,7 @@ export const MAP_DEFS = [
     // Asymmetric layout, 180°-rotationally mirrored so both sides are fair
     {
         name: 'Bastions',
+        theme: 'forge',
         layout: [
             '#######################',
             '#.......#.............#',
@@ -157,6 +165,7 @@ export const MAP_DEFS = [
     },
     {
         name: 'Corridors',
+        theme: 'dungeon',
         layout: [
             '#########################',
             '#.1.........#...........#',
@@ -177,6 +186,7 @@ export const MAP_DEFS = [
     },
     {
         name: 'Twin Columns',
+        theme: 'ruins',
         layout: [
             '#########################',
             '#1.#.................#..#',
@@ -201,6 +211,7 @@ export const MAP_DEFS = [
     },
     {
         name: 'Old Labyrinth',
+        theme: 'ice',
         layout: [
             '#########################',
             '#1....#...........#.....#',
@@ -240,6 +251,7 @@ export class GameMap {
     // plain Node (the deploy workflow runs validateMap outside a browser).
     constructor(def, { mirror = false } = {}) {
         this.name = def.name;
+        this.theme = def.theme || DEFAULT_THEME;
         const layout = mirror ? mirrorLayout(def.layout) : def.layout;
         this.rows = layout.length;
         this.cols = layout[0].length;

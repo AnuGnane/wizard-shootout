@@ -4,6 +4,7 @@
 
 import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG, PLAYER_CONFIG, TEAM_COLORS } from '../config.js';
 import { WIZARD_CLASSES, CLASS_KEYS } from './Classes.js';
+import { THEMES, DEFAULT_THEME } from './Themes.js';
 
 const SCALE = 2;
 
@@ -127,16 +128,18 @@ function brickPainter(colors, seed) {
     };
 }
 
-function createWallTextures(scene) {
-    paintPixels(scene, 'wall', 16, 16, brickPainter({
-        mortar: 0x232338,
-        base: 0x4a4a6e,
-        baseAlt: 0x50507a,
-        light: 0x5e5e88,
-        dark: 0x3c3c5c,
-    }, 7));
+// Phase 6d — Map theming. `wallColors` is a THEMES[id].wall palette; every
+// theme bakes at seed 7 so the brick layout/character stays identical across
+// themes and only the colors shift. `wall_dungeon` uses the same palette (and
+// seed) the plain 'wall' key always used, so the two are byte-identical.
+function createWallTextures(scene, themeId, wallColors) {
+    paintPixels(scene, `wall_${themeId}`, 16, 16, brickPainter(wallColors, 7));
+}
 
-    // Earth wall — mossy green bricks so conjured walls stand out
+// Earth wall — mossy green bricks so conjured walls stand out. Always
+// 'temp_wall' regardless of map theme (a gameplay element that must stay
+// recognizable), baked once, unchanged from before Phase 6d.
+function createTempWallTexture(scene) {
     paintPixels(scene, 'temp_wall', 16, 16, brickPainter({
         mortar: 0x1c2a16,
         base: 0x55743a,
@@ -146,15 +149,18 @@ function createWallTextures(scene) {
     }, 13));
 }
 
-function createFloorTextures(scene) {
+// Phase 6d — Map theming. `floorColors` is a THEMES[id].floor palette. Same
+// noise seeds/thresholds as before Phase 6d (variant * 97 + 5, >0.93/<0.06)
+// so tile character is unchanged; only the colors come from the theme.
+function createFloorTextures(scene, themeId, floorColors) {
     for (let variant = 0; variant < 3; variant++) {
-        paintPixels(scene, `floor_${variant}`, 16, 16, (x, y) => {
+        paintPixels(scene, `floor_${themeId}_${variant}`, 16, 16, (x, y) => {
             // Faint tile seams on two edges give a subtle grid
-            if (x === 0 || y === 0) return { color: 0x10101c };
+            if (x === 0 || y === 0) return { color: floorColors.seam };
             const n = hash2(x, y, variant * 97 + 5);
-            if (n > 0.93) return { color: 0x1e1e30 };  // sparse light flecks
-            if (n < 0.06) return { color: 0x111120 };  // sparse dark flecks
-            return { color: 0x16162a };
+            if (n > 0.93) return { color: floorColors.fleckLight };  // sparse light flecks
+            if (n < 0.06) return { color: floorColors.fleckDark };   // sparse dark flecks
+            return { color: floorColors.base };
         });
     }
 }
@@ -314,8 +320,28 @@ export function generateAllTextures(scene) {
         }
     }
 
-    createWallTextures(scene);
-    createFloorTextures(scene);
+    // Phase 6d — Map theming: bake wall/floor textures for every theme.
+    createTempWallTexture(scene);
+    for (const themeId of Object.keys(THEMES)) {
+        createWallTextures(scene, themeId, THEMES[themeId].wall);
+        createFloorTextures(scene, themeId, THEMES[themeId].floor);
+    }
+    // Back-compat plain keys ('wall', 'floor_0/1/2') for any code still
+    // referencing them directly. Baked from the dungeon palette — the same
+    // colors the old hardcoded 'wall'/'floor_*' textures used — so `wall` and
+    // `wall_dungeon` (and `floor_0..2` / `floor_dungeon_0..2`) are byte-identical.
+    paintPixels(scene, 'wall', 16, 16, brickPainter(THEMES[DEFAULT_THEME].wall, 7));
+    for (let variant = 0; variant < 3; variant++) {
+        const floorColors = THEMES[DEFAULT_THEME].floor;
+        paintPixels(scene, `floor_${variant}`, 16, 16, (x, y) => {
+            if (x === 0 || y === 0) return { color: floorColors.seam };
+            const n = hash2(x, y, variant * 97 + 5);
+            if (n > 0.93) return { color: floorColors.fleckLight };
+            if (n < 0.06) return { color: floorColors.fleckDark };
+            return { color: floorColors.base };
+        });
+    }
+
     createFrostTexture(scene);
 
     for (const [element, glyph] of Object.entries(GLYPHS)) {
