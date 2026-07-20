@@ -2,6 +2,8 @@
 // try/catch since private browsing (and some locked-down environments) can
 // throw just from touching localStorage.
 
+import { CLASS_KEYS } from './Classes.js';
+
 const STORAGE_KEY = 'wizard-shootout-settings-v1';
 
 // Numeric settings, copied verbatim when the stored value is a finite number.
@@ -56,6 +58,13 @@ export function loadSettings(settings) {
             }
         }
     }
+
+    if (CLASS_KEYS.includes(saved.p1Class)) {
+        settings.p1Class = saved.p1Class;
+    }
+    if (CLASS_KEYS.includes(saved.p2Class)) {
+        settings.p2Class = saved.p2Class;
+    }
 }
 
 // Persist the whitelisted subset of RUNTIME_SETTINGS.
@@ -66,6 +75,8 @@ export function saveSettings(settings) {
     }
     payload.soundEnabled = settings.soundEnabled;
     payload.aiDifficulty = settings.aiDifficulty;
+    payload.p1Class = settings.p1Class;
+    payload.p2Class = settings.p2Class;
 
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

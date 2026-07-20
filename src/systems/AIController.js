@@ -22,6 +22,7 @@ export const AI_DIFFICULTY = {
         dodgeChance: 0.2,
         dodgeLookahead: 0.35,
         orbHunting: false,
+        abilityChance: 0.3,
     },
     normal: {
         label: 'NORMAL',
@@ -32,6 +33,7 @@ export const AI_DIFFICULTY = {
         dodgeChance: 0.7,
         dodgeLookahead: 0.55,
         orbHunting: true,
+        abilityChance: 0.8,
     },
     hard: {
         label: 'HARD',
@@ -42,6 +44,7 @@ export const AI_DIFFICULTY = {
         dodgeChance: 1,
         dodgeLookahead: 0.7,
         orbHunting: true,
+        abilityChance: 1.0,
     },
 };
 
@@ -60,11 +63,12 @@ export class AIController {
         this.opponent = null;
         this.params = AI_DIFFICULTY[RUNTIME_SETTINGS.aiDifficulty] || AI_DIFFICULTY.normal;
 
-        this.state = { up: false, down: false, left: false, right: false, shoot: false, runeShoot: false };
+        this.state = { up: false, down: false, left: false, right: false, shoot: false, runeShoot: false, ability: false };
 
         this.path = [];
         this.nextRepath = 0;
         this.nextShotTime = 0;
+        this.nextAbilityDecision = 0;
 
         // Per-projectile dodge decisions (roll once, not every frame)
         this.ignoredThreats = new WeakSet();
@@ -85,6 +89,7 @@ export class AIController {
         s.up = s.down = s.left = s.right = false;
         s.shoot = false;
         s.runeShoot = false;
+        s.ability = false; // re-armed per frame; set by tryAbility()
 
         if (!this.me || !this.me.isAlive || !this.opponent || !this.opponent.isAlive) return;
         if (this.scene.roundOver) return;
@@ -99,6 +104,7 @@ export class AIController {
 
         this.followPath();
         this.tryShoot(time);
+        this.tryAbility(time);
     }
 
     // ---- navigation -------------------------------------------------------
@@ -264,6 +270,109 @@ export class AIController {
         // Human-ish reaction gap between attempts
         const p = this.params;
         this.nextShotTime = time + p.reactionMin + Math.random() * (p.reactionMax - p.reactionMin);
+    }
+
+    // Aim the bot toward a world point using the same tap-movement trick as
+    // tryShoot, so Player.handleMovement points aimDirection there this frame.
+    aimTapToward(x, y) {
+        const s = this.state;
+        s.up = s.down = s.left = s.right = false;
+        const dx = x - this.me.x;
+        const dy = y - this.me.y;
+        if (dx < -3) s.left = true;
+        if (dx > 3) s.right = true;
+        if (dy < -3) s.up = true;
+        if (dy > 3) s.down = true;
+    }
+
+    // Would a Breach fired along (dirX,dirY) hit a non-border wall in range?
+    // Mirrors GameScene.abilityBreach's step-scan against the live map.
+    breachWallAhead(dirX, dirY) {
+        const maze = this.scene.map;
+        for (let d = 20; d <= 84; d += 8) {
+            const g = this.toGrid(this.me.x + dirX * d, this.me.y + dirY * d);
+            if (!maze.isWall(g.x, g.y)) continue;
+            if (g.x > 0 && g.x < ARENA.cols - 1 && g.y > 0 && g.y < ARENA.rows - 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Per-class signature usage. Only attempts when the ability is off
+    // cooldown and the class-specific trigger condition holds; a difficulty
+    // roll then gates whether the bot actually commits (easy bots hold back).
+    tryAbility(time) {
+        if (time < this.me.abilityReadyAt) return; // still on cooldown
+        if (time < this.nextAbilityDecision) return;
+        this.nextAbilityDecision = time + 400;
+
+        const me = this.me;
+        const opp = this.opponent;
+        const toX = opp.x - me.x;
+        const toY = opp.y - me.y;
+        const dist = Math.sqrt(toX * toX + toY * toY);
+
+        let trigger = false;
+        let aimAt = null;      // world point to face before casting (or null)
+
+        switch (me.classKey) {
+            case 'arcanist':
+                // Reposition through a wall when the foe is near but blocked.
+                if (dist <= 160 && !this.hasLineOfSight(me.x, me.y, opp.x, opp.y)) {
+                    trigger = true;
+                    aimAt = opp;
+                }
+                break;
+
+            case 'pyromancer':
+                if (dist <= 95) trigger = true;
+                break;
+
+            case 'cryomancer':
+                if (dist <= 95) trigger = true;
+                break;
+
+            case 'stonecaller': {
+                // Blocked, foe reachable-ish, and a wall sits along the aim.
+                if (!this.hasLineOfSight(me.x, me.y, opp.x, opp.y) && dist <= 220) {
+                    let ax = 0, ay = 0;
+                    if (toX < -3) ax = -1;
+                    if (toX > 3) ax = 1;
+                    if (toY < -3) ay = -1;
+                    if (toY > 3) ay = 1;
+                    const len = Math.sqrt(ax * ax + ay * ay) || 1;
+                    if (this.breachWallAhead(ax / len, ay / len)) {
+                        trigger = true;
+                        aimAt = opp;
+                    }
+                }
+                break;
+            }
+
+            case 'stormcaller': {
+                // Dash a foe that's lined up on an 8-way at mid range.
+                if (dist >= 60 && dist <= 200 && this.hasLineOfSight(me.x, me.y, opp.x, opp.y)) {
+                    for (const d of DIRS_8) {
+                        const along = toX * d.x + toY * d.y;
+                        if (along <= 0) continue;
+                        const perp = Math.abs(toX * d.y - toY * d.x);
+                        if (perp < 14) {
+                            trigger = true;
+                            aimAt = { x: me.x + d.x * 40, y: me.y + d.y * 40 };
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        if (!trigger) return;
+        if (Math.random() > this.params.abilityChance) return;
+
+        if (aimAt) this.aimTapToward(aimAt.x, aimAt.y);
+        this.state.ability = true;
     }
 
     tryDodge() {

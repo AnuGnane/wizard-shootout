@@ -34,11 +34,11 @@ cheapest model tier that can do it well.
 
 ## Phase 2 — Feel Pass (combat readability)
 
-- [ ] `[S]` Cooldown indicators: arc/gem glow on each wizard for normal shot, orb shot, and (later) signature ability
-- [ ] `[H]` Aim hint: faint short line showing current 8-way facing
-- [ ] `[S]` MATCH POINT banner when a player is one round from victory
-- [ ] `[S]` Round-end summary between rounds: damage dealt, shots fired/hit, orbs used
-- [ ] `[H]` Score pips (filled/empty dots up to target score) instead of bare numbers
+- [x] `[S]` Cooldown indicators: arc/gem glow on each wizard for normal shot, orb shot, and (later) signature ability
+- [x] `[H]` Aim hint: faint short line showing current 8-way facing
+- [x] `[S]` MATCH POINT banner when a player is one round from victory
+- [x] `[S]` Round-end summary between rounds: damage dealt, shots fired/hit, orbs used
+- [x] `[H]` Score pips (filled/empty dots up to target score) instead of bare numbers
 
 ## Phase 3 — Wizard Classes (the signature mechanic)
 
@@ -56,11 +56,11 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 | Stormcaller | lightning | **Zap Dash** — fast dash forward, stuns anyone touched      | 9s  | shorter orb-shot cooldown        |
 
 - [ ] `[F]` Finalize class stats/cooldowns (balance pass on the table above)
-- [ ] `[S]` Class data module + class-select scene (both players pick; bot picks randomly in 1P)
-- [ ] `[S]` Class-colored sprites: robe = class color, hat band/health bar = team color (procedural palettes)
-- [ ] `[O]` Signature abilities implementation (Blink wall traversal, Breach map mutation, dash + hit detection, novas)
-- [ ] `[O]` Bot uses signature abilities sensibly per class
-- [ ] `[S]` Cooldown UI for signatures (extends Phase 2 indicators); orb spawn rebalance
+- [x] `[S]` Class data module + class-select scene (both players pick; bot picks randomly in 1P)
+- [x] `[S]` Class-colored sprites: robe = class color, hat band/health bar = team color (procedural palettes)
+- [x] `[O]` Signature abilities implementation (Blink wall traversal, Breach map mutation, dash + hit detection, novas)
+- [x] `[O]` Bot uses signature abilities sensibly per class
+- [x] `[S]` Cooldown UI for signatures (extends Phase 2 indicators); orb spawn rebalance
 - [ ] `[F]` Playtest + balance pass
 
 ## Phase 4 — Battlefield Identity (the maze is mutable)

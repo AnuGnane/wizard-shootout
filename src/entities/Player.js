@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, RUNE_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
+import { WIZARD_CLASSES } from '../systems/Classes.js';
+import { MATCH_STATE } from '../systems/MatchState.js';
 
 // Reads the real keyboard for a given player's control scheme.
 // Exposes the same getState() interface as AIController so Player
@@ -25,17 +27,21 @@ export class KeyboardInput {
             right: this.keys.right.isDown,
             shoot: this.keys.shoot.isDown,
             runeShoot: this.keys.runeShoot.isDown,
+            ability: this.keys.ability.isDown,
         };
     }
 }
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, playerNumber, inputSource) {
-        const textureKey = playerNumber === 1 ? 'wizard_blue' : 'wizard_red';
+        const classKey = MATCH_STATE.classes[playerNumber];
+        const textureKey = `wizard_${classKey}_${playerNumber}`;
         super(scene, x, y, textureKey);
 
         this.scene = scene;
         this.playerNumber = playerNumber;
+        this.classKey = classKey;
+        this.classDef = WIZARD_CLASSES[classKey];
         this.inputSource = inputSource || new KeyboardInput(scene, playerNumber);
 
         // Health - use runtime settings
@@ -57,9 +63,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.normalCooldown = NORMAL_SHOT_CONFIG.cooldown;
         this.runeCooldown = 800; // Slightly faster for rune shots
 
-        // Edge detection for shoot buttons (works for keyboard and AI alike)
+        // Simple stat-tweak passives (Stonecaller's is Phase 3b — it affects
+        // conjured-wall lifetime, which lives in GameScene, not here).
+        if (this.classKey === 'arcanist') this.normalCooldown *= 0.72;
+        if (this.classKey === 'stormcaller') this.runeCooldown *= 0.7;
+
+        // Timestamps (scene.time.now) for when each shot type comes off
+        // cooldown - used purely to draw the cooldown indicator arcs; the
+        // boolean flags above remain the source of truth for gameplay.
+        this.normalReadyAt = 0;
+        this.runeReadyAt = 0;
+
+        // Signature ability cooldown. The cooldown is only committed once
+        // GameScene confirms the effect actually fired (see useSignature).
+        this.abilityReadyAt = 0;
+
+        // Stormcaller Zap Dash state. dashUntil is a scene.time.now timestamp;
+        // dashHitDone gates the once-per-dash stun so one dash can't multi-hit.
+        this.dashUntil = 0;
+        this.dashHitDone = false;
+        this.nextAfterimageAt = 0;
+
+        // Edge detection for shoot/ability buttons (works for keyboard and AI alike)
         this.prevShoot = false;
         this.prevRuneShoot = false;
+        this.prevAbility = false;
 
         // Status effects
         this.statusEffects = {
@@ -97,6 +125,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Create health bar
         this.createHealthBar();
+
+        // Cooldown arcs + aim hint, redrawn every update()
+        this.indicator = scene.add.graphics();
+        this.indicator.setDepth(18);
     }
 
     createHealthBar() {
@@ -130,6 +162,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // Update movement
         this.handleMovement();
 
+        // Stormcaller dash: contact stun + afterimage trail while active
+        if (time < this.dashUntil) {
+            this.updateDash(time);
+        }
+
         // Update shooting
         this.handleShooting();
 
@@ -140,6 +177,61 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.shieldBubble) {
             this.shieldBubble.setPosition(this.x, this.y);
         }
+
+        // Redraw cooldown arcs + aim hint
+        this.updateIndicator();
+    }
+
+    updateIndicator() {
+        const g = this.indicator;
+        g.clear();
+
+        if (!this.isAlive) return;
+
+        const now = this.scene.time.now;
+        const teamColor = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+
+        // Normal shot cooldown arc - sweeps from -90deg, shrinking to
+        // nothing as the shot comes off cooldown.
+        if (now < this.normalReadyAt) {
+            const remaining = Phaser.Math.Clamp((this.normalReadyAt - now) / this.normalCooldown, 0, 1);
+            const startAngle = Phaser.Math.DegToRad(-90);
+            const endAngle = Phaser.Math.DegToRad(-90 + 360 * remaining);
+            g.lineStyle(2, 0xffffff, 0.5);
+            g.beginPath();
+            g.arc(this.x, this.y, 17, startAngle, endAngle, false);
+            g.strokePath();
+        }
+
+        // Orb shot cooldown arc, colored by the held element
+        if (this.heldRune && now < this.runeReadyAt) {
+            const remaining = Phaser.Math.Clamp((this.runeReadyAt - now) / this.runeCooldown, 0, 1);
+            const startAngle = Phaser.Math.DegToRad(-90);
+            const endAngle = Phaser.Math.DegToRad(-90 + 360 * remaining);
+            const runeColor = ELEMENT_COLORS[this.heldRune] || 0xffffff;
+            g.lineStyle(2, runeColor, 0.5);
+            g.beginPath();
+            g.arc(this.x, this.y, 20, startAngle, endAngle, false);
+            g.strokePath();
+        }
+
+        // Signature cooldown arc, gold, further out than the shot arcs
+        if (now < this.abilityReadyAt) {
+            const remaining = Phaser.Math.Clamp((this.abilityReadyAt - now) / this.classDef.signature.cooldown, 0, 1);
+            const startAngle = Phaser.Math.DegToRad(-90);
+            const endAngle = Phaser.Math.DegToRad(-90 + 360 * remaining);
+            g.lineStyle(2, 0xffdd44, 0.55);
+            g.beginPath();
+            g.arc(this.x, this.y, 23, startAngle, endAngle, false);
+            g.strokePath();
+        }
+
+        // Aim hint: faint line along current facing direction
+        g.lineStyle(2, teamColor, 0.28);
+        g.beginPath();
+        g.moveTo(this.x + this.aimDirection.x * 14, this.y + this.aimDirection.y * 14);
+        g.lineTo(this.x + this.aimDirection.x * 30, this.y + this.aimDirection.y * 30);
+        g.strokePath();
     }
 
     updateStatusEffects(time, delta) {
@@ -195,6 +287,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        // Stormcaller Zap Dash: while dashing, ignore input and drive straight
+        // along the locked aim direction. Walls stop it via the normal collider.
+        if (this.scene.time.now < this.dashUntil) {
+            const dashSpeed = this.classDef.signature.dashSpeed;
+            this.setVelocity(this.aimDirection.x * dashSpeed, this.aimDirection.y * dashSpeed);
+            return;
+        }
+
         const input = this.inputSource.getState();
 
         let vx = 0;
@@ -226,13 +326,68 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setVelocity(vx * PLAYER_CONFIG.speed * speedMod, vy * PLAYER_CONFIG.speed * speedMod);
     }
 
+    // Runs each frame while a Zap Dash is active: applies a one-time contact
+    // stun to the opponent and lays down a fading afterimage trail.
+    updateDash(time) {
+        const sig = this.classDef.signature;
+        const opponent = this.playerNumber === 1 ? this.scene.player2 : this.scene.player1;
+
+        if (!this.dashHitDone && opponent && opponent.isAlive) {
+            const dist = Phaser.Math.Distance.Between(this.x, this.y, opponent.x, opponent.y);
+            if (dist <= sig.dashHitRange) {
+                this.dashHitDone = true;
+                opponent.applyStun(sig.dashStunMs);
+                opponent.takeDamage(sig.dashDamage);
+                this.spawnDashSpark(opponent.x, opponent.y);
+            }
+        }
+
+        if (time >= this.nextAfterimageAt) {
+            this.nextAfterimageAt = time + sig.afterimageEveryMs;
+            this.spawnAfterimage(sig.afterimageFadeMs);
+        }
+    }
+
+    spawnAfterimage(fadeMs) {
+        const ghost = this.scene.add.image(this.x, this.y, this.texture.key);
+        ghost.setRotation(this.rotation);
+        ghost.setAlpha(0.4);
+        ghost.setDepth(-1);
+        ghost.setTint(this.classDef.color);
+        this.scene.tweens.add({
+            targets: ghost,
+            alpha: 0,
+            duration: fadeMs,
+            onComplete: () => ghost.destroy(),
+        });
+    }
+
+    spawnDashSpark(x, y) {
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            const spark = this.scene.add.circle(x, y, 3, 0xffff66, 0.9);
+            spark.setDepth(30);
+            this.scene.tweens.add({
+                targets: spark,
+                x: x + Math.cos(a) * 18,
+                y: y + Math.sin(a) * 18,
+                alpha: 0,
+                scale: 0.2,
+                duration: 200,
+                onComplete: () => spark.destroy(),
+            });
+        }
+    }
+
     handleShooting() {
         const input = this.inputSource.getState();
 
         const shootPressed = input.shoot && !this.prevShoot;
         const runePressed = input.runeShoot && !this.prevRuneShoot;
+        const abilityPressed = input.ability && !this.prevAbility;
         this.prevShoot = input.shoot;
         this.prevRuneShoot = input.runeShoot;
+        this.prevAbility = input.ability;
 
         if (this.statusEffects.stunned) return;
 
@@ -242,10 +397,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (runePressed && this.canRuneShot) {
             this.shootRune();
         }
+        if (abilityPressed && this.scene.time.now >= this.abilityReadyAt) {
+            this.useSignature();
+        }
+    }
+
+    // Requests the signature ability. Crucially this does NOT set the
+    // cooldown or play a sound — GameScene's handler attempts the effect and,
+    // only on success, commits the cooldown and plays the class cast sound
+    // (a failed ability fizzles and stays ready). The edge-detection guard in
+    // handleShooting still prevents re-firing while the ability is on cooldown.
+    useSignature() {
+        this.scene.events.emit('signatureUsed', { player: this });
     }
 
     shootNormal() {
         this.canNormalShot = false;
+        this.normalReadyAt = this.scene.time.now + this.normalCooldown;
 
         this.scene.events.emit('playerShoot', {
             player: this,
@@ -268,6 +436,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         }
 
         this.canRuneShot = false;
+        this.runeReadyAt = this.scene.time.now + this.runeCooldown;
 
         this.scene.events.emit('playerShoot', {
             player: this,
@@ -332,12 +501,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     applyBurn(damagePerSec, duration) {
+        if (this.classKey === 'pyromancer') return; // passive: burn immune
+
         this.statusEffects.burning = true;
         this.statusEffects.burnDamagePerTick = damagePerSec;
         this.statusEffects.burnEndTime = this.scene.time.now + duration;
     }
 
     applySlow(slowPercent, duration) {
+        if (this.classKey === 'cryomancer') return; // passive: slow immune
+
         this.statusEffects.slowed = true;
         this.statusEffects.slowPercent = slowPercent;
         this.statusEffects.slowEndTime = this.scene.time.now + duration;
@@ -358,9 +531,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Can only hold ONE rune type at a time
         this.heldRune = element;
-        this.runeShots = element === ELEMENT_TYPES.TRIPLE
-            ? RUNE_CONFIG.tripleShotsPerPickup
-            : RUNE_CONFIG.shotsPerPickup;
+        if (element === ELEMENT_TYPES.TRIPLE) {
+            this.runeShots = RUNE_CONFIG.tripleShotsPerPickup;
+        } else if (element === ELEMENT_TYPES.FIRE && this.classKey === 'pyromancer') {
+            this.runeShots = 4; // passive: fire orb pickup grants 4 shots
+        } else {
+            this.runeShots = RUNE_CONFIG.shotsPerPickup;
+        }
 
         // Visual feedback
         this.scene.tweens.add({
@@ -419,6 +596,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.shieldBubble) {
             this.shieldBubble.destroy();
             this.shieldBubble = null;
+        }
+        if (this.indicator) {
+            this.indicator.destroy();
+            this.indicator = null;
         }
 
         audio.death();

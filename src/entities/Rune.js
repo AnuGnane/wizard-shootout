@@ -79,7 +79,7 @@ export class Rune extends Phaser.GameObjects.Sprite {
         });
 
         // Notify scene
-        this.scene.events.emit('runeCollected', this);
+        this.scene.events.emit('runeCollected', { rune: this, player });
 
         // Destroy self
         this.destroy();
