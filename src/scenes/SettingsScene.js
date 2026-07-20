@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { MATCH_CONFIG } from '../config.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
+import { saveSettings } from '../systems/Storage.js';
 
 // Runtime settings that can be modified
 export const RUNTIME_SETTINGS = {
@@ -25,6 +26,7 @@ export const RUNTIME_SETTINGS = {
     // Game settings
     targetScore: MATCH_CONFIG.targetScore,
     soundEnabled: true,
+    aiDifficulty: 'normal', // easy | normal | hard (picked on map select)
 
     // Effect settings
     fireBurnDuration: 4000,
@@ -206,5 +208,6 @@ export class SettingsScene extends Phaser.Scene {
         });
         audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
         MATCH_STATE.targetScore = RUNTIME_SETTINGS.targetScore;
+        saveSettings(RUNTIME_SETTINGS);
     }
 }
