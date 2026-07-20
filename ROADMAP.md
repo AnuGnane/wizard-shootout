@@ -81,7 +81,7 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 - [ ] `[S]` Mobile touch controls: virtual joystick + fire buttons for 1P mode
 - [ ] `[S]` Cosmetic unlocks: hat/robe/staff palettes earned via local stats (procedural sprites make these free)
 - [x] `[S]` Local stats + achievements (wins, streaks, per-element kills)
-- [ ] `[S]` Daily challenge: seeded map + mutator + bot, local best tracked
+- [x] `[S]` Daily challenge: seeded map + mutator + bot, local best tracked
 - [ ] `[S]` Procedural chiptune music loop, intensity up on match point
 - [ ] `[H]` Map theming: per-map wall/floor palettes (catacombs, ruins, forge, ice cavern)
 - [ ] `[S]` Wizard animation: walk bob, cast flash, idle staff sparkle
