@@ -196,10 +196,265 @@ export class GameScene extends Phaser.Scene {
         this.events.on('signatureUsed', this.onSignatureUsed, this);
     }
 
-    // STUB: ability effects implemented in Phase 3b. For now the scene just
-    // needs a handler registered so setupEvents()'s cleanup loop has
-    // something to remove on restart.
-    onSignatureUsed(data) {}
+    // A player requested their signature. Attempt the class-specific effect;
+    // commit the cooldown + cast sound only when it actually fires. A failed
+    // ability fizzles and stays ready (no cooldown burned).
+    onSignatureUsed({ player }) {
+        if (!player || !player.isAlive) return;
+
+        let success = false;
+        switch (player.classKey) {
+            case 'arcanist':    success = this.abilityBlink(player);      break;
+            case 'pyromancer':  success = this.abilityFlameBurst(player); break;
+            case 'cryomancer':  success = this.abilityFrostRing(player);  break;
+            case 'stonecaller': success = this.abilityBreach(player);     break;
+            case 'stormcaller': success = this.abilityZapDash(player);    break;
+        }
+
+        if (success) {
+            player.abilityReadyAt = this.time.now + player.classDef.signature.cooldown;
+            audio.signature(player.classKey);
+        } else {
+            audio.fizzle();
+        }
+    }
+
+    // ============ SIGNATURE ABILITIES ============
+
+    opponentOf(player) {
+        return player === this.player1 ? this.player2 : this.player1;
+    }
+
+    tileOf(worldX, worldY) {
+        return {
+            x: Math.floor((worldX - ARENA.offsetX) / ARENA.tileSize),
+            y: Math.floor((worldY - ARENA.offsetY) / ARENA.tileSize),
+        };
+    }
+
+    // Expanding stroked circle, styled like the death ring.
+    spawnRing(x, y, color, scaleTo, duration) {
+        const ring = this.add.circle(x, y, 10, color, 0);
+        ring.setStrokeStyle(3, color, 0.9);
+        ring.setDepth(30);
+        this.tweens.add({
+            targets: ring,
+            scale: scaleTo,
+            alpha: 0,
+            duration,
+            onComplete: () => ring.destroy(),
+        });
+    }
+
+    // Arcanist — Blink. Scan along the aim direction and teleport to the
+    // first landing that clears a wall, fits the body, and isn't on the foe.
+    abilityBlink(player) {
+        const sig = player.classDef.signature;
+        const opponent = this.opponentOf(player);
+        const dir = player.aimDirection;
+
+        // Half-body probe: a landing is valid only if the four cardinal
+        // probe points either share the landing tile or fall on open tiles.
+        const fits = (px, py) => {
+            const t = this.tileOf(px, py);
+            if (this.map.isWall(t.x, t.y)) return false;
+            const off = sig.bodyOffset;
+            for (const [ox, oy] of [[off, 0], [-off, 0], [0, off], [0, -off]]) {
+                const tt = this.tileOf(px + ox, py + oy);
+                if (tt.x === t.x && tt.y === t.y) continue;
+                if (this.map.isWall(tt.x, tt.y)) return false;
+            }
+            return true;
+        };
+
+        for (let d = sig.step; d <= sig.maxDist; d += sig.step) {
+            if (d < sig.minDist) continue;
+            const px = player.x + dir.x * d;
+            const py = player.y + dir.y * d;
+            if (!fits(px, py)) continue;
+            if (opponent && opponent.isAlive) {
+                if (Phaser.Math.Distance.Between(px, py, opponent.x, opponent.y) < sig.clearOpponent) continue;
+            }
+
+            // Valid — snap to the containing tile's center.
+            const t = this.tileOf(px, py);
+            const dest = this.map.tileToWorld(t.x, t.y);
+
+            const fromX = player.x;
+            const fromY = player.y;
+
+            this.spawnRing(fromX, fromY, player.classDef.color, 3, 300);
+            this.spawnRing(dest.x, dest.y, player.classDef.color, 3, 300);
+
+            // Brief particle trail along the jump
+            for (let i = 0; i < 8; i++) {
+                const t2 = i / 7;
+                const trail = this.add.circle(
+                    fromX + (dest.x - fromX) * t2,
+                    fromY + (dest.y - fromY) * t2,
+                    3, player.classDef.color, 0.7
+                );
+                trail.setDepth(9);
+                this.tweens.add({
+                    targets: trail,
+                    alpha: 0,
+                    scale: 0.2,
+                    duration: 220,
+                    onComplete: () => trail.destroy(),
+                });
+            }
+
+            player.setPosition(dest.x, dest.y);
+            player.setVelocity(0, 0);
+            return true;
+        }
+
+        return false;
+    }
+
+    // Pyromancer — Flame Burst. Eight short-lived burning sparks in the
+    // compass directions. Sparks bypass the per-player projectile cap (they
+    // go to allProjectiles only) and detonate on the first wall they touch.
+    abilityFlameBurst(player) {
+        const sig = player.classDef.signature;
+        const compass = [
+            [0, -1], [1, -1], [1, 0], [1, 1],
+            [0, 1], [-1, 1], [-1, 0], [-1, -1],
+        ];
+
+        for (let i = 0; i < sig.sparkCount; i++) {
+            const [rx, ry] = compass[i % compass.length];
+            const len = Math.sqrt(rx * rx + ry * ry);
+            const dx = rx / len;
+            const dy = ry / len;
+
+            const spark = new Projectile(
+                this,
+                player.x + dx * 16,
+                player.y + dy * 16,
+                dx, dy,
+                ELEMENT_TYPES.FIRE,
+                player.playerNumber,
+                true,
+                { ...sig.spark }
+            );
+
+            // NOT added to projectilesByPlayer — sparks don't count toward
+            // the cap. checkProjectileHits only reads allProjectiles.
+            this.projectiles.add(spark);
+            this.allProjectiles.push(spark);
+            spark.init();
+        }
+
+        return true;
+    }
+
+    // Cryomancer — Frost Ring. Visual frost burst, temporary frost overlay
+    // tiles nearby, and a slow on any foe in range.
+    abilityFrostRing(player) {
+        const sig = player.classDef.signature;
+
+        this.spawnRing(player.x, player.y, sig.ringColor, sig.ringRadius / 10, sig.ringFadeMs);
+
+        // Frost overlay on open tiles whose center is within range.
+        const here = this.tileOf(player.x, player.y);
+        const span = Math.ceil(sig.frostRadius / ARENA.tileSize) + 1;
+        for (let ty = here.y - span; ty <= here.y + span; ty++) {
+            for (let tx = here.x - span; tx <= here.x + span; tx++) {
+                if (this.map.isWall(tx, ty)) continue;
+                const c = this.map.tileToWorld(tx, ty);
+                if (Phaser.Math.Distance.Between(c.x, c.y, player.x, player.y) > sig.frostRadius) continue;
+
+                // Phase 4: frosted tiles become slippery
+                const overlay = this.add.rectangle(c.x, c.y, ARENA.tileSize, ARENA.tileSize, sig.overlayColor, 0.25);
+                overlay.setDepth(1);
+                this.tweens.add({
+                    targets: overlay,
+                    alpha: 0,
+                    duration: sig.overlayFadeMs,
+                    onComplete: () => overlay.destroy(),
+                });
+            }
+        }
+
+        // Slow the opponent if they're within range (applySlow already
+        // no-ops against a slow-immune Cryomancer).
+        const opponent = this.opponentOf(player);
+        if (opponent && opponent.isAlive) {
+            if (Phaser.Math.Distance.Between(player.x, player.y, opponent.x, opponent.y) <= sig.frostRadius) {
+                opponent.applySlow(sig.slowPercent, sig.slowMs);
+            }
+        }
+
+        return true;
+    }
+
+    // Stonecaller — Breach. Shatter the first non-border wall tile ahead.
+    abilityBreach(player) {
+        const sig = player.classDef.signature;
+        const dir = player.aimDirection;
+
+        for (let d = sig.stepStart; d <= sig.stepEnd; d += sig.step) {
+            const t = this.tileOf(player.x + dir.x * d, player.y + dir.y * d);
+            if (!this.map.isWall(t.x, t.y)) continue;
+            const isBorder = !(t.x > 0 && t.x < ARENA.cols - 1 && t.y > 0 && t.y < ARENA.rows - 1);
+            if (isBorder) continue;
+
+            // Found a breachable wall.
+            this.map.setTile(t.x, t.y, 0);
+
+            const wall = this.walls.getChildren().find(w => w.gridX === t.x && w.gridY === t.y);
+            if (wall) {
+                // If it was a conjured temp wall, drop it from tracking so the
+                // expiry timer's destroy() becomes a guarded no-op.
+                const twIdx = this.effects.tempWalls.indexOf(wall);
+                if (twIdx > -1) this.effects.tempWalls.splice(twIdx, 1);
+                wall.destroy();
+            }
+
+            // createMaze never drew a floor under a wall tile — add one now.
+            const c = this.map.tileToWorld(t.x, t.y);
+            const variant = (t.x * 7 + t.y * 13) % 3;
+            this.add.image(c.x, c.y, `floor_${variant}`).setDepth(-5);
+
+            // Debris + shake
+            for (let i = 0; i < 7; i++) {
+                const debris = this.add.rectangle(
+                    c.x, c.y,
+                    3 + Math.random() * 4, 3 + Math.random() * 4,
+                    0x7a7a7a, 0.95
+                );
+                debris.setDepth(9);
+                const a = Math.random() * Math.PI * 2;
+                const dist = 20 + Math.random() * 26;
+                this.tweens.add({
+                    targets: debris,
+                    x: c.x + Math.cos(a) * dist,
+                    y: c.y + Math.sin(a) * dist,
+                    angle: Math.random() * 360,
+                    alpha: 0,
+                    duration: 350 + Math.random() * 200,
+                    ease: 'Cubic.easeOut',
+                    onComplete: () => debris.destroy(),
+                });
+            }
+            this.cameras.main.shake(150, 0.006);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // Stormcaller — Zap Dash. Kicks off the dash on the Player; the contact
+    // stun and afterimage trail are driven from Player.update while active.
+    abilityZapDash(player) {
+        const sig = player.classDef.signature;
+        player.dashUntil = this.time.now + sig.dashMs;
+        player.dashHitDone = false;
+        player.nextAfterimageAt = 0;
+        return true;
+    }
 
     // ============ RUNE SPAWNING ============
 
@@ -875,21 +1130,31 @@ export class GameScene extends Phaser.Scene {
         this.map.setTile(gridX, gridY, 1);
         this.effects.tempWalls.push(tempWall);
 
-        // Rise-in effect
+        // Rise-in effect. A Breach can destroy the wall mid-rise, so guard the
+        // onComplete — refreshBody() on a destroyed sprite has no body and throws.
         tempWall.setScale(0.2);
         this.tweens.add({
             targets: tempWall,
             scale: 1,
             duration: 150,
             ease: 'Back.easeOut',
-            onComplete: () => tempWall.refreshBody(),
+            onComplete: () => { if (tempWall.active) tempWall.refreshBody(); },
         });
 
-        this.time.delayedCall(PROJECTILE_CONFIG.earth.wallDuration, () => {
+        // Stonecaller passive: this class's conjured walls last longer.
+        const owner = this.players.find(p => p.playerNumber === data.ownerPlayerNumber);
+        let duration = PROJECTILE_CONFIG.earth.wallDuration;
+        if (owner && owner.classKey === 'stonecaller') {
+            duration *= WIZARD_CLASSES.stonecaller.signature.wallDurationMultiplier;
+        }
+
+        this.time.delayedCall(duration, () => {
             const index = this.effects.tempWalls.indexOf(tempWall);
             if (index > -1) this.effects.tempWalls.splice(index, 1);
             this.map.setTile(gridX, gridY, 0);
-            tempWall.destroy();
+            // A Breach may have already destroyed this sprite (and removed it
+            // from tempWalls above); guard so the timer stays a safe no-op.
+            if (tempWall.active) tempWall.destroy();
         });
     }
 

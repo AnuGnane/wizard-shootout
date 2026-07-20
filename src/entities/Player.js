@@ -74,9 +74,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.normalReadyAt = 0;
         this.runeReadyAt = 0;
 
-        // Signature ability cooldown (activation itself is a stub for now —
-        // see useSignature()).
+        // Signature ability cooldown. The cooldown is only committed once
+        // GameScene confirms the effect actually fired (see useSignature).
         this.abilityReadyAt = 0;
+
+        // Stormcaller Zap Dash state. dashUntil is a scene.time.now timestamp;
+        // dashHitDone gates the once-per-dash stun so one dash can't multi-hit.
+        this.dashUntil = 0;
+        this.dashHitDone = false;
+        this.nextAfterimageAt = 0;
 
         // Edge detection for shoot/ability buttons (works for keyboard and AI alike)
         this.prevShoot = false;
@@ -155,6 +161,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Update movement
         this.handleMovement();
+
+        // Stormcaller dash: contact stun + afterimage trail while active
+        if (time < this.dashUntil) {
+            this.updateDash(time);
+        }
 
         // Update shooting
         this.handleShooting();
@@ -276,6 +287,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             return;
         }
 
+        // Stormcaller Zap Dash: while dashing, ignore input and drive straight
+        // along the locked aim direction. Walls stop it via the normal collider.
+        if (this.scene.time.now < this.dashUntil) {
+            const dashSpeed = this.classDef.signature.dashSpeed;
+            this.setVelocity(this.aimDirection.x * dashSpeed, this.aimDirection.y * dashSpeed);
+            return;
+        }
+
         const input = this.inputSource.getState();
 
         let vx = 0;
@@ -307,6 +326,59 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.setVelocity(vx * PLAYER_CONFIG.speed * speedMod, vy * PLAYER_CONFIG.speed * speedMod);
     }
 
+    // Runs each frame while a Zap Dash is active: applies a one-time contact
+    // stun to the opponent and lays down a fading afterimage trail.
+    updateDash(time) {
+        const sig = this.classDef.signature;
+        const opponent = this.playerNumber === 1 ? this.scene.player2 : this.scene.player1;
+
+        if (!this.dashHitDone && opponent && opponent.isAlive) {
+            const dist = Phaser.Math.Distance.Between(this.x, this.y, opponent.x, opponent.y);
+            if (dist <= sig.dashHitRange) {
+                this.dashHitDone = true;
+                opponent.applyStun(sig.dashStunMs);
+                opponent.takeDamage(sig.dashDamage);
+                this.spawnDashSpark(opponent.x, opponent.y);
+            }
+        }
+
+        if (time >= this.nextAfterimageAt) {
+            this.nextAfterimageAt = time + sig.afterimageEveryMs;
+            this.spawnAfterimage(sig.afterimageFadeMs);
+        }
+    }
+
+    spawnAfterimage(fadeMs) {
+        const ghost = this.scene.add.image(this.x, this.y, this.texture.key);
+        ghost.setRotation(this.rotation);
+        ghost.setAlpha(0.4);
+        ghost.setDepth(-1);
+        ghost.setTint(this.classDef.color);
+        this.scene.tweens.add({
+            targets: ghost,
+            alpha: 0,
+            duration: fadeMs,
+            onComplete: () => ghost.destroy(),
+        });
+    }
+
+    spawnDashSpark(x, y) {
+        for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            const spark = this.scene.add.circle(x, y, 3, 0xffff66, 0.9);
+            spark.setDepth(30);
+            this.scene.tweens.add({
+                targets: spark,
+                x: x + Math.cos(a) * 18,
+                y: y + Math.sin(a) * 18,
+                alpha: 0,
+                scale: 0.2,
+                duration: 200,
+                onComplete: () => spark.destroy(),
+            });
+        }
+    }
+
     handleShooting() {
         const input = this.inputSource.getState();
 
@@ -330,13 +402,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         }
     }
 
-    // Puts the signature ability on cooldown and notifies listeners.
-    // STUB: ability effects implemented in Phase 3b — this only handles the
-    // cooldown/UI/event plumbing that later logic will hang off of.
+    // Requests the signature ability. Crucially this does NOT set the
+    // cooldown or play a sound — GameScene's handler attempts the effect and,
+    // only on success, commits the cooldown and plays the class cast sound
+    // (a failed ability fizzles and stays ready). The edge-detection guard in
+    // handleShooting still prevents re-firing while the ability is on cooldown.
     useSignature() {
-        const now = this.scene.time.now;
-        this.abilityReadyAt = now + this.classDef.signature.cooldown;
-        audio.uiClick(); // placeholder cast sound until per-class SFX land
         this.scene.events.emit('signatureUsed', { player: this });
     }
 

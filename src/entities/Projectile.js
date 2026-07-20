@@ -4,8 +4,11 @@ import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 
 export class Projectile extends Phaser.Physics.Arcade.Sprite {
-    constructor(scene, x, y, dirX, dirY, element, ownerPlayerNumber, isRuneShot = false) {
-        const config = element === ELEMENT_TYPES.ARCANE ? NORMAL_SHOT_CONFIG : PROJECTILE_CONFIG[element];
+    constructor(scene, x, y, dirX, dirY, element, ownerPlayerNumber, isRuneShot = false, configOverride = null) {
+        // configOverride (used by ability-spawned projectiles like Flame Burst
+        // sparks) replaces the element's config lookup entirely; the texture
+        // still comes from the element so the shot draws correctly.
+        const config = configOverride || (element === ELEMENT_TYPES.ARCANE ? NORMAL_SHOT_CONFIG : PROJECTILE_CONFIG[element]);
         const textureKey = `projectile_${element}`;
 
         super(scene, x, y, textureKey);
@@ -15,6 +18,7 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.ownerPlayerNumber = ownerPlayerNumber;
         this.isRuneShot = isRuneShot;
         this.config = config;
+        this.configOverride = configOverride;
         this.bounceCount = 0;
         this.hasHitWall = false;
         this.hasPierced = false;
@@ -22,7 +26,10 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.dirX = dirX;
         this.dirY = dirY;
         this.speed = config.speed;
-        if (!isRuneShot) {
+        if (configOverride) {
+            // Ability sparks carry their damage verbatim in the override.
+            this.damage = config.damage;
+        } else if (!isRuneShot) {
             this.damage = RUNTIME_SETTINGS.normalDamage;
         } else if (element === ELEMENT_TYPES.TRIPLE) {
             // Per-pellet damage: three pellets shouldn't triple the payload
@@ -101,6 +108,19 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         const gridX = wallTile.gridX;
         const gridY = wallTile.gridY;
 
+        // Earth orbs conjure a temporary wall on contact (their whole purpose).
+        // Handled before the maxBounces check below: earth's maxBounces is 0,
+        // so the generic detonate path would otherwise pre-empt this case.
+        if (this.isRuneShot && this.element === ELEMENT_TYPES.EARTH) {
+            this.scene.events.emit('createTempWall', {
+                x: this.x,
+                y: this.y,
+                ownerPlayerNumber: this.ownerPlayerNumber,
+            });
+            this.destroy();
+            return;
+        }
+
         if (this.config.maxBounces !== Infinity && this.bounceCount > this.config.maxBounces) {
             this.detonate();
             return;
@@ -129,11 +149,6 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
                         gridX,
                         gridY
                     });
-                    break;
-
-                case ELEMENT_TYPES.EARTH:
-                    this.scene.events.emit('createTempWall', { x: this.x, y: this.y });
-                    this.destroy();
                     break;
 
                 case ELEMENT_TYPES.LIGHTNING:

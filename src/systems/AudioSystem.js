@@ -155,6 +155,37 @@ class AudioSystem {
     uiClick() {
         this.tone({ type: 'square', from: 700, to: 500, duration: 0.04, volume: 0.15 });
     }
+
+    // Per-class signature cast, dispatched on a successful ability.
+    signature(classKey) {
+        switch (classKey) {
+            case 'arcanist': // Blink: fast rising sine sweep
+                this.tone({ type: 'sine', from: 500, to: 1400, duration: 0.16, volume: 0.28 });
+                break;
+            case 'pyromancer': // Flame Burst: noise whoosh + saw drop
+                this.noise({ duration: 0.3, volume: 0.4, filterFrom: 3200, filterTo: 250 });
+                this.tone({ type: 'sawtooth', from: 340, to: 70, duration: 0.28, volume: 0.25 });
+                break;
+            case 'cryomancer': // Frost Ring: two descending high sines
+                this.tone({ type: 'sine', from: 1800, to: 900, duration: 0.24, volume: 0.28 });
+                this.tone({ type: 'sine', from: 2400, to: 1200, duration: 0.24, volume: 0.16, delay: 0.05 });
+                break;
+            case 'stonecaller': // Breach: low sine drop + rumble noise
+                this.tone({ type: 'sine', from: 90, to: 35, duration: 0.32, volume: 0.5 });
+                this.noise({ duration: 0.28, volume: 0.32, filterFrom: 700, filterTo: 90 });
+                break;
+            case 'stormcaller': // Zap Dash: fast rising saw zap
+                this.tone({ type: 'sawtooth', from: 300, to: 1600, duration: 0.14, volume: 0.28 });
+                break;
+            default:
+                this.uiClick();
+        }
+    }
+
+    // Played when an ability fails (e.g. no wall to breach / nowhere to blink).
+    fizzle() {
+        this.tone({ type: 'square', from: 200, to: 150, duration: 0.09, volume: 0.12 });
+    }
 }
 
 export const audio = new AudioSystem();
