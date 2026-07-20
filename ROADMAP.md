@@ -73,7 +73,7 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 ## Phase 5 — Party Pass (couch multiplayer)
 
 - [x] `[S]` Gamepad support (Phaser Gamepad API), pads join seamlessly
-- [ ] `[O]` 3–4 player local matches (player array refactor, HUD for 4, FFA scoring)
+- [x] `[O]` 3–4 player local matches (player array refactor, HUD for 4, FFA scoring)
 - [ ] `[S]` Mutators menu: giant projectiles, orb rain, low cooldowns, mirror maps
 
 ## Phase 6 — Reach (retention + audience)
