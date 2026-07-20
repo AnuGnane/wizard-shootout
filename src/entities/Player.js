@@ -4,6 +4,7 @@ import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
+import { recordDeath } from '../systems/Stats.js';
 
 // Reads the real keyboard for a given player's control scheme.
 // Exposes the same getState() interface as AIController so Player
@@ -104,6 +105,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.prevShoot = false;
         this.prevRuneShoot = false;
         this.prevAbility = false;
+
+        // Phase 6a: who/what last damaged this player, set by
+        // Projectile.applyEffectsToPlayer just before takeDamage(); read by
+        // die() for kill credit. { by: playerNumber, element } or null.
+        this.lastHitBy = null;
 
         // Status effects
         this.statusEffects = {
@@ -382,6 +388,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
                 this.dashHitDone = true;
                 for (const opponent of inRange) {
                     opponent.applyStun(sig.dashStunMs);
+                    // Credit the dash's contact damage as a lightning kill
+                    // (Stormcaller's element) so a killing dash counts toward
+                    // stats/achievements — takeDamage carries no source itself.
+                    opponent.lastHitBy = { by: this.playerNumber, element: ELEMENT_TYPES.LIGHTNING };
                     opponent.takeDamage(sig.dashDamage);
                     this.spawnDashSpark(opponent.x, opponent.y);
                 }
@@ -694,6 +704,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
                 ease: 'Cubic.easeOut',
                 onComplete: () => particle.destroy(),
             });
+        }
+
+        // Phase 6a: kill credit (skipped for suicides — a self-inflicted
+        // death, e.g. an earth wall or a dash's own contact stun, never
+        // fires lastHitBy.by === this.playerNumber since owners don't damage
+        // themselves) + seat-1 personal death tracking for the profile.
+        if (this.lastHitBy && this.lastHitBy.by !== this.playerNumber) {
+            this.scene.events.emit('playerKilled', {
+                victim: this.playerNumber,
+                by: this.lastHitBy.by,
+                element: this.lastHitBy.element,
+            });
+        }
+        if (this.playerNumber === 1) {
+            recordDeath();
+            this.scene._seat1DiedThisMatch = true;
         }
 
         this.scene.events.emit('playerDied', this.playerNumber);

@@ -8,9 +8,13 @@ import { MapSelectScene } from './scenes/MapSelectScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { PauseScene } from './scenes/PauseScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
+import { StatsScene } from './scenes/StatsScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { loadSettings } from './systems/Storage.js';
 import { MATCH_STATE } from './systems/MatchState.js';
+// Side-effect import: loads the persisted stats profile immediately (and, in
+// dev builds, exposes window.__stats/__statsApi) — mirrors loadSettings above.
+import './systems/Stats.js';
 
 // Restore persisted settings (sound, bot difficulty, tunables) before the
 // game boots so every scene sees the saved values from the first frame.
@@ -37,7 +41,7 @@ const config = {
             gravity: { x: 0, y: 0 },
         },
     },
-    scene: [BootScene, MenuScene, SettingsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene],
+    scene: [BootScene, MenuScene, SettingsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene, StatsScene],
     render: {
         pixelArt: true,
         antialias: false,

@@ -52,6 +52,20 @@ export class MenuScene extends Phaser.Scene {
             this.scene.start('SettingsScene');
         }, '20px');
 
+        // Secondary row: compact utility buttons. Phase 6a adds STATS; the
+        // row is centered/sized for THREE slots up front (Daily + Wardrobe
+        // are reserved slots for later phases) so those can drop in later
+        // without reflowing this one. Everything below here (legend/controls/
+        // gamepad/hint) shifts down from its original position to make room —
+        // verified overlap-free by screenshot (see Phase 6a verification).
+        const secondarySpacing = 160;
+        const secondarySlots = 3;
+        const secondaryStartX = width / 2 - ((secondarySlots - 1) * secondarySpacing) / 2;
+        this.makeSmallButton(secondaryStartX, 509, '[ STATS ]', () => {
+            audio.uiClick();
+            this.scene.start('StatsScene');
+        });
+
         // Orb legend
         const orbs = [
             { key: 'rune_fire', label: 'Burn' },
@@ -64,15 +78,15 @@ export class MenuScene extends Phaser.Scene {
         const legendStart = width / 2 - ((orbs.length - 1) * 70) / 2;
         orbs.forEach((orb, i) => {
             const x = legendStart + i * 70;
-            this.add.image(x, 500, orb.key).setScale(1.2);
-            this.add.text(x, 525, orb.label, {
+            this.add.image(x, 552, orb.key).setScale(1.2);
+            this.add.text(x, 577, orb.label, {
                 font: '11px monospace',
                 fill: '#8888aa',
             }).setOrigin(0.5);
         });
 
         // Controls info
-        const controlsP1 = this.add.text(width / 2 - 180, 580,
+        const controlsP1 = this.add.text(width / 2 - 180, 615,
             'Player 1 (Blue)\nWASD - Move\nSPACE - Shoot\nQ - Orb Shot', {
             font: '13px monospace',
             fill: '#5599ff',
@@ -80,7 +94,7 @@ export class MenuScene extends Phaser.Scene {
         });
         controlsP1.setOrigin(0.5);
 
-        const controlsP2 = this.add.text(width / 2 + 180, 580,
+        const controlsP2 = this.add.text(width / 2 + 180, 615,
             'Player 2 (Red)\nArrows - Move\nENTER - Shoot\n/ - Orb Shot', {
             font: '13px monospace',
             fill: '#ff5566',
@@ -89,7 +103,7 @@ export class MenuScene extends Phaser.Scene {
         controlsP2.setOrigin(0.5);
 
         // Gamepad legend, tucked under the keyboard controls
-        const controlsGamepad = this.add.text(width / 2, 622,
+        const controlsGamepad = this.add.text(width / 2, 655,
             'Gamepads: stick/d-pad move · A shoot · X orb · B ability', {
             font: '12px monospace',
             fill: '#666688',
@@ -97,7 +111,7 @@ export class MenuScene extends Phaser.Scene {
         controlsGamepad.setOrigin(0.5);
 
         // Hint
-        const hint = this.add.text(width / 2, 655, '1 / 2 / 3 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
+        const hint = this.add.text(width / 2, 680, '1 / 2 / 3 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
             font: '14px monospace',
             fill: '#666688',
         });
@@ -128,6 +142,24 @@ export class MenuScene extends Phaser.Scene {
         btn.setInteractive({ useHandCursor: true });
         btn.on('pointerover', () => btn.setStyle({ fill: hoverColor }));
         btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' }));
+        btn.on('pointerdown', onClick);
+        return btn;
+    }
+
+    // Smaller, subtler variant of makeButton for the secondary utility row
+    // (STATS, and later Daily/Wardrobe) — a compact 16px label rather than a
+    // full mode button.
+    makeSmallButton(x, y, label, onClick) {
+        const btn = this.add.text(x, y, label, {
+            font: '16px monospace',
+            fill: '#8899cc',
+            backgroundColor: '#1a1a2e',
+            padding: { x: 14, y: 6 },
+        });
+        btn.setOrigin(0.5);
+        btn.setInteractive({ useHandCursor: true });
+        btn.on('pointerover', () => btn.setStyle({ fill: '#aaccff' }));
+        btn.on('pointerout', () => btn.setStyle({ fill: '#8899cc' }));
         btn.on('pointerdown', onClick);
         return btn;
     }

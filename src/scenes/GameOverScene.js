@@ -13,6 +13,10 @@ export class GameOverScene extends Phaser.Scene {
         this.winner = data.winner || 1;
         this.scores = data.scores || { 1: 0, 2: 0 };
         this.rounds = data.rounds || 1;
+        // Phase 6a: achievements unlocked by GameScene's end-of-match check,
+        // passed along since their toast may not have had time to show
+        // before the scene changed.
+        this.unlockedAchievements = data.unlockedAchievements || [];
     }
 
     create() {
@@ -86,6 +90,14 @@ export class GameOverScene extends Phaser.Scene {
             font: '16px monospace',
             fill: '#8888aa',
         }).setOrigin(0.5);
+
+        // Phase 6a: newly-unlocked achievements from this match, if any.
+        if (this.unlockedAchievements.length > 0) {
+            this.add.text(width / 2, 418, `★ New: ${this.unlockedAchievements.join(', ')}`, {
+                font: '14px monospace',
+                fill: '#ffdd44',
+            }).setOrigin(0.5);
+        }
 
         // Rematch button
         const restartBtn = this.add.text(width / 2, 470, '[ REMATCH ]', {
