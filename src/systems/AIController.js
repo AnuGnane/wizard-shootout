@@ -1,11 +1,49 @@
 import Phaser from 'phaser';
 import { ARENA } from './Maps.js';
+import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 
 // Drives player 2 in 1-player mode. Implements the same interface as
 // KeyboardInput (update + getState) so Player is agnostic about who is
 // steering. Behaviour: path toward an orb when unarmed, otherwise hunt
 // the opponent; fire only with clear line of sight along one of the 8
 // aim directions; sidestep incoming projectiles.
+
+// Difficulty presets. reaction* = ms between shot attempts; range = max
+// firing distance; dodgeChance = odds the bot reacts to a given incoming
+// projectile at all (rolled once per projectile); orbHunting = whether it
+// detours to grab orbs when unarmed.
+export const AI_DIFFICULTY = {
+    easy: {
+        label: 'EASY',
+        repathInterval: 550,
+        reactionMin: 1100,
+        reactionMax: 2000,
+        range: 400,
+        dodgeChance: 0.2,
+        dodgeLookahead: 0.35,
+        orbHunting: false,
+    },
+    normal: {
+        label: 'NORMAL',
+        repathInterval: 350,
+        reactionMin: 500,
+        reactionMax: 1200,
+        range: 620,
+        dodgeChance: 0.7,
+        dodgeLookahead: 0.55,
+        orbHunting: true,
+    },
+    hard: {
+        label: 'HARD',
+        repathInterval: 250,
+        reactionMin: 250,
+        reactionMax: 550,
+        range: 820,
+        dodgeChance: 1,
+        dodgeLookahead: 0.7,
+        orbHunting: true,
+    },
+};
 
 const DIRS_8 = [];
 for (let i = 0; i < 8; i++) {
@@ -20,12 +58,17 @@ export class AIController {
         this.scene = scene;
         this.me = null;
         this.opponent = null;
+        this.params = AI_DIFFICULTY[RUNTIME_SETTINGS.aiDifficulty] || AI_DIFFICULTY.normal;
 
         this.state = { up: false, down: false, left: false, right: false, shoot: false, runeShoot: false };
 
         this.path = [];
         this.nextRepath = 0;
         this.nextShotTime = 0;
+
+        // Per-projectile dodge decisions (roll once, not every frame)
+        this.ignoredThreats = new WeakSet();
+        this.knownThreats = new WeakSet();
     }
 
     setPlayers(me, opponent) {
@@ -47,7 +90,7 @@ export class AIController {
         if (this.scene.roundOver) return;
 
         if (time >= this.nextRepath) {
-            this.nextRepath = time + 350;
+            this.nextRepath = time + this.params.repathInterval;
             this.recomputePath();
         }
 
@@ -76,7 +119,7 @@ export class AIController {
 
     pickTarget() {
         // Unarmed and orbs on the field? Grab the closest one.
-        if (!this.me.heldRune && this.me.shieldCharges === 0 && this.scene.runes.length > 0) {
+        if (this.params.orbHunting && !this.me.heldRune && this.me.shieldCharges === 0 && this.scene.runes.length > 0) {
             let best = null;
             let bestDist = Infinity;
             for (const rune of this.scene.runes) {
@@ -184,7 +227,7 @@ export class AIController {
         const toX = this.opponent.x - this.me.x;
         const toY = this.opponent.y - this.me.y;
         const dist = Math.sqrt(toX * toX + toY * toY);
-        if (dist < 24 || dist > 620) return;
+        if (dist < 24 || dist > this.params.range) return;
 
         // Find an 8-way aim direction the shot would actually connect on:
         // the opponent must sit close to the ray (small perpendicular offset).
@@ -219,7 +262,8 @@ export class AIController {
         }
 
         // Human-ish reaction gap between attempts
-        this.nextShotTime = time + 500 + Math.random() * 700;
+        const p = this.params;
+        this.nextShotTime = time + p.reactionMin + Math.random() * (p.reactionMax - p.reactionMin);
     }
 
     tryDodge() {
@@ -227,6 +271,7 @@ export class AIController {
             if (!p || !p.active || !p.body) continue;
             // Ignore our own shots unless they've bounced (those can hurt us)
             if (p.ownerPlayerNumber === this.me.playerNumber && !p.hasHitWall) continue;
+            if (this.ignoredThreats.has(p)) continue;
 
             const rx = this.me.x - p.x;
             const ry = this.me.y - p.y;
@@ -237,11 +282,21 @@ export class AIController {
 
             // Time of closest approach
             const t = (rx * vx + ry * vy) / speedSq;
-            if (t < 0 || t > 0.55) continue;
+            if (t < 0 || t > this.params.dodgeLookahead) continue;
 
             const cx = p.x + vx * t - this.me.x;
             const cy = p.y + vy * t - this.me.y;
             if (cx * cx + cy * cy > 26 * 26) continue;
+
+            // First time we notice this projectile: roll whether the bot
+            // reacts to it at all (worse difficulties miss more threats).
+            if (!this.knownThreats.has(p)) {
+                this.knownThreats.add(p);
+                if (Math.random() > this.params.dodgeChance) {
+                    this.ignoredThreats.add(p);
+                    continue;
+                }
+            }
 
             // Sidestep perpendicular to the projectile's travel
             const len = Math.sqrt(speedSq);

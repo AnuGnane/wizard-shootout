@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import { MAP_DEFS, GameMap } from '../systems/Maps.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
+import { AI_DIFFICULTY } from '../systems/AIController.js';
 import { audio } from '../systems/AudioSystem.js';
+import { saveSettings } from '../systems/Storage.js';
 
 const CARD_W = 225;
 const CARD_H = 155;
@@ -33,6 +35,10 @@ export class MapSelectScene extends Phaser.Scene {
             fill: '#8888aa',
         }).setOrigin(0.5);
 
+        if (this.mode === '1p') {
+            this.createDifficultyPicker(width / 2, 120);
+        }
+
         // Cards: Random first, then every map
         const cards = [
             { mapIndex: null, name: 'Random', sub: 'new map each round' },
@@ -46,7 +52,7 @@ export class MapSelectScene extends Phaser.Scene {
 
         const gridW = COLS * (CARD_W + 12) - 12;
         const startX = (width - gridW) / 2 + CARD_W / 2;
-        const startY = 175;
+        const startY = 215;
 
         cards.forEach((card, i) => {
             const col = i % COLS;
@@ -69,6 +75,43 @@ export class MapSelectScene extends Phaser.Scene {
             audio.uiClick();
             this.scene.start('MenuScene');
         });
+    }
+
+    createDifficultyPicker(cx, y) {
+        this.add.text(cx - 190, y, 'BOT DIFFICULTY:', {
+            font: '14px monospace',
+            fill: '#aaaacc',
+        }).setOrigin(1, 0.5);
+
+        this.difficultyButtons = {};
+        const keys = Object.keys(AI_DIFFICULTY);
+        keys.forEach((key, i) => {
+            const btn = this.add.text(cx - 160 + i * 120, y, `[ ${AI_DIFFICULTY[key].label} ]`, {
+                font: 'bold 14px monospace',
+                fill: '#666688',
+            }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
+
+            btn.on('pointerdown', () => {
+                audio.uiClick();
+                RUNTIME_SETTINGS.aiDifficulty = key;
+                this.refreshDifficultyButtons();
+                saveSettings(RUNTIME_SETTINGS);
+            });
+            btn.on('pointerover', () => {
+                if (RUNTIME_SETTINGS.aiDifficulty !== key) btn.setColor('#aaaacc');
+            });
+            btn.on('pointerout', () => this.refreshDifficultyButtons());
+
+            this.difficultyButtons[key] = btn;
+        });
+        this.refreshDifficultyButtons();
+    }
+
+    refreshDifficultyButtons() {
+        const colors = { easy: '#66ff66', normal: '#5599ff', hard: '#ff6666' };
+        for (const [key, btn] of Object.entries(this.difficultyButtons)) {
+            btn.setColor(RUNTIME_SETTINGS.aiDifficulty === key ? colors[key] : '#666688');
+        }
     }
 
     createCard(x, y, card) {
