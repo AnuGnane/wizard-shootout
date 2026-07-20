@@ -88,8 +88,8 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 
 ## Phase 7 — Big Bets (only after 1–6 prove out)
 
-- [ ] `[O]` Online multiplayer prototype: WebRTC data channel + lockstep, minimal signaling server
-- [ ] `[O]` Fog-of-war mode: line-of-sight shadow casting (experimental toggle)
+- [ ] `[O]` Online multiplayer prototype: WebRTC data channel, host-authoritative state sync, serverless copy-paste signaling
+- [x] `[O]` Fog-of-war mode: line-of-sight shadow casting (experimental toggle)
 
 ---
 
