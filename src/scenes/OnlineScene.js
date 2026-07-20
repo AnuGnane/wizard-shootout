@@ -2,10 +2,13 @@ import Phaser from 'phaser';
 import { audio } from '../systems/AudioSystem.js';
 import { NetConnection } from '../systems/NetConnection.js';
 import { setSession } from '../systems/NetSession.js';
+import { MATCH_STATE } from '../systems/MatchState.js';
+import { MAP_DEFS } from '../systems/Maps.js';
 
-// Online 1v1 lobby (stage 1 of 2 — transport + lobby only; the host-authoritative
-// match integration is a separate later task, so a successful connection here
-// just confirms "connected" instead of starting a game).
+// Online 1v1 lobby. Stage 1 built the transport + code-exchange UI; stage 2a
+// wires the successful connection straight into a live match: the HOST picks
+// the fixed map, sends a 'start' cue, and both peers drop into GameScene (host
+// authoritative, guest as puppets — see GameScene's net-mode branches).
 //
 // Phaser text-input is awkward, so the code-exchange widgets (textareas +
 // copy/action buttons) are plain DOM elements layered over the canvas. They
@@ -306,27 +309,71 @@ export class OnlineScene extends Phaser.Scene {
         conn.onOpen = () => this._onOpen();
         conn.onClose = () => this._onClose();
         conn.onError = (err) => this._onError(err);
-        conn.onMessage = () => {}; // no gameplay traffic in the lobby
+        // The guest listens here for the host's 'start' cue. Wired from the
+        // very start (before the channel opens) so there's no window in which
+        // a 'start' could arrive unhandled — 'open' always precedes 'message'
+        // on the same channel, but this is belt-and-braces regardless.
+        conn.onMessage = (m) => this._onLobbyMessage(m);
+    }
+
+    _onLobbyMessage(m) {
+        if (!this._alive || this.role !== 'guest') return;
+        if (!m || m.t !== 'start') return;
+        // Host has chosen the map + setup — mirror it exactly and enter the match.
+        this._startNetMatch(m.mapIndex, false);
     }
 
     _onOpen() {
         if (!this._alive) return;
-        // Hand the live connection to the app-wide singleton for stage 2.
+        // Hand the live connection to the app-wide singleton so GameScene can
+        // reach it (it will reassign onMessage/onClose to itself on create).
         setSession(this.conn, this.role);
         this.handedOff = true;
 
-        const label = this.role === 'host' ? 'HOST' : 'GUEST';
-        this.statusText.setText('CONNECTED as ' + label);
+        if (this.role === 'host') {
+            // Host is authoritative: pick the one fixed map for the whole match,
+            // tell the guest, and drop into GameScene.
+            const mapIndex = Phaser.Math.Between(0, MAP_DEFS.length - 1);
+            this._startNetMatch(mapIndex, true);
+            return;
+        }
 
-        // Code widgets are spent once connected — replace with a confirmation.
+        // Guest: wait for the host's 'start' (see _onLobbyMessage).
+        this.statusText.setText('CONNECTED as GUEST — waiting for host…');
         this._clearFlow();
         if (this.confirmText) this.confirmText.destroy();
         this.confirmText = this.add.text(this.cameras.main.width / 2, 380,
-            'Connection established.\n(Match integration coming next.)', {
-            font: 'bold 22px monospace',
+            'Connected. Waiting for host to start the match…', {
+            font: 'bold 20px monospace',
             fill: '#66ff66',
             align: 'center',
         }).setOrigin(0.5);
+    }
+
+    // Configure MATCH_STATE for a net match identically on both peers, then
+    // enter GameScene. The host additionally sends the 'start' cue with its
+    // fixed map pick so the guest builds the same arena.
+    _startNetMatch(mapIndex, isHost) {
+        if (!this._alive) return;
+
+        const clamped = (typeof mapIndex === 'number' && mapIndex >= 0 && mapIndex < MAP_DEFS.length)
+            ? mapIndex : 0;
+
+        MATCH_STATE.online = true;
+        MATCH_STATE.mode = '2p';
+        MATCH_STATE.seatTypes = { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
+        MATCH_STATE.playerCount = 2;
+        MATCH_STATE.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+        MATCH_STATE.mapIndex = clamped;
+        MATCH_STATE.round = 1;
+        MATCH_STATE.scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        MATCH_STATE.isDailyChallenge = false;
+
+        if (isHost && this.conn) {
+            this.conn.send({ t: 'start', mapIndex: clamped, classes: { 1: 'arcanist', 2: 'arcanist' } });
+        }
+
+        this.scene.start('GameScene');
     }
 
     _onClose() {

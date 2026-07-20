@@ -9,6 +9,8 @@ import { Rune } from '../entities/Rune.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
+import { NetSession, clearSession } from '../systems/NetSession.js';
+import { NetInput } from '../systems/NetInput.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
@@ -43,6 +45,17 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         this.roundOver = false;
+
+        // Stage 2a — Online netcode. netRole is 'host' | 'guest' during a live
+        // net match, else null. EVERYTHING net-specific below is gated on it;
+        // when null, every code path is byte-identical to a local match. These
+        // fields are harmless no-ops in local mode.
+        this.netRole = (MATCH_STATE.online && NetSession.connected) ? NetSession.role : null;
+        this._lastSnap = null;        // guest: last authoritative snapshot to apply
+        this._netSendAt = 0;          // host: next allowed snapshot send time
+        this._netInputSendAt = 0;     // guest: next allowed input send time
+        this._lastSentInput = null;   // guest: last input sent (send-on-change)
+        this._peerLeft = false;       // true once the peer disconnects mid-match
 
         // Phase 6e: baseline combat intensity for the new round; showRoundBanner
         // below bumps this to 2 if the round starts already at match point.
@@ -142,8 +155,23 @@ export class GameScene extends Phaser.Scene {
         this.setupCollisions();
         this.setupEvents();
         this.createUI();
-        this.startRuneSpawning();
+        // Stage 2a: orbs/runes are out of scope for a net match (they arrive in
+        // 2b), so no rune spawning either peer-side — keeps the sync purely to
+        // position/rotation/health/alive. Local modes are unchanged.
+        if (!this.netRole) this.startRuneSpawning();
         this.showRoundBanner();
+
+        // Stage 2a: take ownership of the live connection's message/close
+        // callbacks (the lobby's are now dead). Done after create() has built
+        // everything, so a buffered snapshot can't be applied before the scene
+        // is ready — message events only dispatch once create() returns.
+        if (this.netRole) {
+            const conn = NetSession.connection;
+            if (conn) {
+                conn.onMessage = (m) => this.onNetMessage(m);
+                conn.onClose = () => this.onNetClose();
+            }
+        }
 
         // Phase 7: build the fog overlay only when the mode is actually active
         // (fogOfWar && 1P). Off-path this constructs nothing at all, so every
@@ -187,6 +215,13 @@ export class GameScene extends Phaser.Scene {
         if (this.touchControls) {
             this.touchControls.destroy();
             this.touchControls = null;
+        }
+
+        // Stage 2a: a net match has its own roster wiring (host = local seat 1 +
+        // remote-driven seat 2; guest = two puppets + a local input it sends up).
+        if (this.netRole) {
+            this.createNetPlayers();
+            return;
         }
 
         const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
@@ -241,6 +276,49 @@ export class GameScene extends Phaser.Scene {
         for (const ai of this.aiControllers) {
             ai.setPlayers(ai._seatPlayer, this.getOpponentsOf(ai._seatPlayer));
         }
+    }
+
+    // Stage 2a — net roster. Always a fixed two-seat arcanist duel; both peers
+    // build the SAME two Player objects (identical map -> identical spawns) so
+    // seat N lines up on both sides. No AIController is ever created.
+    //  - HOST simulates: seat 1 = local human, seat 2 = remote guest's input.
+    //  - GUEST renders: both seats are puppets (real Players for the sprite +
+    //    health bar, but physics disabled) moved only by snapshot application;
+    //    the guest's own controls live in a separate input it sends up.
+    createNetPlayers() {
+        const spawns = this.map.getSpawnPointsFor(2);
+
+        this.players = [];
+        this.aiControllers = [];
+
+        if (this.netRole === 'host') {
+            const localInput = new CompositeInput(new KeyboardInput(this, 1), new GamepadInput(this, 0));
+            const p1 = new Player(this, spawns[0].x, spawns[0].y, 1, localInput);
+
+            this.netInput = new NetInput();
+            const p2 = new Player(this, spawns[1].x, spawns[1].y, 2, this.netInput);
+
+            this.players.push(p1, p2);
+        } else {
+            // Puppets: a dummy all-false input so nothing local drives them, and
+            // disabled bodies so only our snapshot application moves them.
+            const p1 = new Player(this, spawns[0].x, spawns[0].y, 1, new NetInput());
+            const p2 = new Player(this, spawns[1].x, spawns[1].y, 2, new NetInput());
+            for (const p of [p1, p2]) {
+                if (p.body) {
+                    p.body.enable = false;
+                    p.body.moves = false;
+                }
+            }
+            this.players.push(p1, p2);
+
+            // The guest's OWN controls for its wizard (seat 2 in the sim). Read
+            // each frame and sent up to the host; not attached to any Player.
+            this.localNetInput = new CompositeInput(new KeyboardInput(this, 1), new GamepadInput(this, 0));
+        }
+
+        this.player1 = this.players[0] || null;
+        this.player2 = this.players[1] || null;
     }
 
     // All players other than `player` (alive or dead — callers filter by
@@ -307,13 +385,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     setupCollisions() {
-        // Every player collides with walls, and every pair of players collides.
-        for (const p of this.players) {
-            this.physics.add.collider(p, this.walls);
-        }
-        for (let i = 0; i < this.players.length; i++) {
-            for (let j = i + 1; j < this.players.length; j++) {
-                this.physics.add.collider(this.players[i], this.players[j]);
+        // Stage 2a: the guest's players are puppets with disabled bodies, moved
+        // directly by snapshot application — they need no wall/player colliders.
+        // (The projectile/world-bounds shell below is inert on the guest, which
+        // never spawns projectiles, but is kept so nothing downstream errors.)
+        if (this.netRole !== 'guest') {
+            // Every player collides with walls, and every pair of players collides.
+            for (const p of this.players) {
+                this.physics.add.collider(p, this.walls);
+            }
+            for (let i = 0; i < this.players.length; i++) {
+                for (let j = i + 1; j < this.players.length; j++) {
+                    this.physics.add.collider(this.players[i], this.players[j]);
+                }
             }
         }
 
@@ -1787,7 +1871,15 @@ export class GameScene extends Phaser.Scene {
     update(time, delta) {
         if (this.roundOver) return;
 
+        // Stage 2a: the guest runs no local simulation — it only sends its input
+        // up and renders the host's authoritative snapshots as puppets.
+        if (this.netRole === 'guest') {
+            this.updateNetGuest(time, delta);
+            return;
+        }
+
         // Each Player pumps its own input source, so bot AIControllers tick here.
+        // On a net host, seat 2 is pumped by the remote guest's latest input.
         for (const player of this.players) {
             player.update(time, delta);
         }
@@ -1800,16 +1892,23 @@ export class GameScene extends Phaser.Scene {
         // Resolve the round once at most one wizard remains. Checking here
         // (rather than the instant a death fires) lets simultaneous deaths in
         // the same frame settle first, so a mutual kill reads as a DRAW.
-        const alive = this.players.filter(p => p.isAlive);
-        if (alive.length <= 1) {
-            this.resolveRound(alive);
-            return;
+        // Stage 2a: a net match is a single continuous round — the host NEVER
+        // resolves/restarts on a death (round-restart is stage 2b); a fallen
+        // wizard just stays dead + hidden while we keep syncing.
+        if (this.netRole !== 'host') {
+            const alive = this.players.filter(p => p.isAlive);
+            if (alive.length <= 1) {
+                this.resolveRound(alive);
+                return;
+            }
         }
 
         this.roundTimer += delta;
 
         // Orb Surge fires once per round when the clock crosses surgeAtMs.
-        if (!this.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
+        // Stage 2a: no orbs in a net match, so no surge (would be a misleading
+        // banner with nothing to spawn).
+        if (!this.netRole && !this.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
             this.triggerOrbSurge();
         }
 
@@ -1819,6 +1918,11 @@ export class GameScene extends Phaser.Scene {
         this.roundText.setText(`ROUND ${MATCH_STATE.round}  •  ${mins}:${secs.toString().padStart(2, '0')}`);
 
         this.updateUI();
+
+        // Stage 2a: push an authoritative snapshot to the guest (~25Hz).
+        if (this.netRole === 'host') {
+            this.sendHostSnapshot(time);
+        }
 
         // Phase 7: repaint the shroud + refresh what's hidden. Inert unless the
         // overlay exists (fog mode). If fog was toggled off mid-match, reveal
@@ -1835,6 +1939,131 @@ export class GameScene extends Phaser.Scene {
                 }
             }
         }
+    }
+
+    // ============ STAGE 2a — NET SYNC ============
+
+    // Guest frame: send our own input up, then render the host's latest
+    // snapshot as puppets. No local simulation runs (no physics, projectiles,
+    // AI, rune/round logic) — the host owns all of that.
+    updateNetGuest(time, delta) {
+        this.sendGuestInput(time);
+        this.applyGuestSnapshot();
+        // HUD (top health bars + held-orb readout) reflects the puppet health.
+        this.updateUI();
+    }
+
+    // Guest -> host: the guest's control of its wizard. Sent immediately on any
+    // change (so key-up releases land promptly) plus a ~30Hz heartbeat so the
+    // host keeps a fresh value even while a key is held.
+    sendGuestInput(time) {
+        if (this._peerLeft || !this.localNetInput) return;
+        const conn = NetSession.connection;
+        if (!conn || !conn.isOpen()) return;
+
+        const s = this.localNetInput.getState();
+        const prev = this._lastSentInput;
+        const changed = !prev ||
+            s.up !== prev.up || s.down !== prev.down ||
+            s.left !== prev.left || s.right !== prev.right ||
+            s.shoot !== prev.shoot || s.runeShoot !== prev.runeShoot ||
+            s.ability !== prev.ability;
+
+        if (!changed && time < this._netInputSendAt) return;
+
+        conn.send({
+            t: 'input',
+            up: s.up, down: s.down, left: s.left, right: s.right,
+            shoot: s.shoot, runeShoot: s.runeShoot, ability: s.ability,
+        });
+        this._lastSentInput = { ...s };
+        this._netInputSendAt = time + 33; // ~30Hz heartbeat
+    }
+
+    // Apply the most recent host snapshot to the puppets: lerp positions for
+    // smoothing, snap rotation/health, and mirror alive-state (hiding the
+    // sprite + health bars on death, exactly as Player.die() does — minus the
+    // one-shot FX/stats, which are the host's job).
+    applyGuestSnapshot() {
+        const snap = this._lastSnap;
+        if (!snap || !Array.isArray(snap.players)) return;
+
+        for (const ps of snap.players) {
+            if (!ps) continue;
+            const player = this.players[ps.n - 1];
+            if (!player) continue;
+
+            player.x = Phaser.Math.Linear(player.x, ps.x, 0.3);
+            player.y = Phaser.Math.Linear(player.y, ps.y, 0.3);
+            player.rotation = ps.rot;
+            player.health = ps.hp;
+
+            const alive = !!ps.alive;
+            player.isAlive = alive;
+            player.setVisible(alive);
+            if (player.healthBarBg) player.healthBarBg.setVisible(alive);
+            if (player.healthBarFill) player.healthBarFill.setVisible(alive);
+            if (player.shieldBubble) player.shieldBubble.setVisible(alive);
+            // Keep the floating health bar tracking the sprite while alive
+            // (Player.update, which normally does this, doesn't run on the guest).
+            if (alive) player.updateHealthBar();
+        }
+    }
+
+    // Host -> guest: compact authoritative snapshot, throttled to ~25Hz. x/y are
+    // rounded to whole pixels and rotation to 3 decimals to keep packets small.
+    sendHostSnapshot(time) {
+        if (this._peerLeft || time < this._netSendAt) return;
+        this._netSendAt = time + 40; // ~25Hz
+        const conn = NetSession.connection;
+        if (!conn || !conn.isOpen()) return;
+
+        const players = this.players.map(p => ({
+            n: p.playerNumber,
+            x: Math.round(p.x),
+            y: Math.round(p.y),
+            rot: Math.round(p.rotation * 1000) / 1000,
+            hp: Math.round(p.health),
+            alive: p.isAlive,
+        }));
+        conn.send({ t: 'snap', players, round: MATCH_STATE.round });
+    }
+
+    // Inbound net traffic. Host consumes the guest's input; guest buffers the
+    // latest snapshot for the next frame's interpolation. Everything guarded so
+    // a malformed/unknown packet is simply ignored.
+    onNetMessage(m) {
+        if (!m || typeof m !== 'object') return;
+        if (this.netRole === 'host') {
+            if (m.t === 'input' && this.netInput) this.netInput.setState(m);
+        } else if (this.netRole === 'guest') {
+            if (m.t === 'snap') this._lastSnap = m;
+        }
+    }
+
+    // Peer disconnected mid-match. Halt the sync loop, show a message, and bounce
+    // back to the menu — never throw. Idempotent (guarded by _peerLeft).
+    onNetClose() {
+        if (this._peerLeft) return;
+        this._peerLeft = true;
+        this.roundOver = true; // freeze the update loop (both roles)
+
+        if (!this.scene || !this.scene.isActive || !this.scene.isActive()) return;
+
+        const cx = GAME_CONFIG.width / 2;
+        const cy = ARENA.offsetY + ARENA.height / 2;
+        this.add.text(cx, cy, 'OPPONENT LEFT', {
+            font: 'bold 40px monospace', fill: '#ff5566',
+        }).setOrigin(0.5).setDepth(50).setStroke('#000000', 6);
+        this.add.text(cx, cy + 44, 'returning to menu…', {
+            font: '16px monospace', fill: '#aaaacc',
+        }).setOrigin(0.5).setDepth(50).setStroke('#000000', 4);
+
+        this.time.delayedCall(2000, () => {
+            clearSession();
+            MATCH_STATE.online = false;
+            this.scene.start('MenuScene');
+        });
     }
 
     checkProjectileHits() {
