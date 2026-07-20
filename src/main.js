@@ -21,6 +21,7 @@ import './systems/Stats.js';
 // game boots so every scene sees the saved values from the first frame.
 loadSettings(RUNTIME_SETTINGS);
 audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
+audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
 
 const config = {
     type: Phaser.AUTO,
@@ -55,3 +56,10 @@ const game = new Phaser.Game(config);
 window.__game = game;
 window.__match = MATCH_STATE;
 window.__settings = RUNTIME_SETTINGS;
+
+// Dev-only: expose the audio singleton so Playwright/manual testing can
+// inspect/drive music state directly (ctx, musicGain, _musicOn, etc.).
+// Never present in a production build.
+if (import.meta.env && import.meta.env.DEV) {
+    window.__audio = audio;
+}

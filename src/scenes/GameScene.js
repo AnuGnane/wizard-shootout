@@ -3,6 +3,7 @@ import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_C
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
+import { TouchControls } from '../systems/TouchControls.js';
 import { Projectile } from '../entities/Projectile.js';
 import { Rune } from '../entities/Rune.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
@@ -26,6 +27,12 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         this.roundOver = false;
+
+        // Phase 6e: baseline combat intensity for the new round; showRoundBanner
+        // below bumps this to 2 if the round starts already at match point.
+        // Music itself keeps playing uninterrupted across scene restarts —
+        // this only changes which layers the scheduler emits going forward.
+        audio.setMusicIntensity(1);
 
         // Phase 6b: while a daily challenge is running, none of the seat-1
         // profile-recording hooks below should touch the normal stats
@@ -72,6 +79,17 @@ export class GameScene extends Phaser.Scene {
         // The scene restarts between rounds; make sure frost overlays/timers are
         // torn down on shutdown so nothing leaks or double-fires next round.
         this.events.once('shutdown', this.clearAllFrost, this);
+
+        // Phase 6e: same restart-safety for any on-screen touch controls —
+        // createPlayers() also destroys+recreates on every round, but a
+        // genuine scene shutdown (quit to menu, match over) needs its own
+        // teardown since createPlayers() won't run again until next time.
+        this.events.once('shutdown', () => {
+            if (this.touchControls) {
+                this.touchControls.destroy();
+                this.touchControls = null;
+            }
+        });
 
         // Per-round stats for the round-end summary banner, keyed by seat.
         this.roundStats = {};
@@ -123,11 +141,25 @@ export class GameScene extends Phaser.Scene {
     // input wiring below reproduces 1P/2P exactly (seat 1 = kb1+pad0, seat 2 =
     // kb2+pad1) and extends it: seats 3/4 humans are pad-only (pad 2 / pad 3).
     createPlayers() {
+        // Phase 6e: recreate touch controls fresh every round. create() runs
+        // on every scene.restart(), so any prior instance's pointer
+        // listeners/graphics must be torn down first or they'd leak/stack.
+        if (this.touchControls) {
+            this.touchControls.destroy();
+            this.touchControls = null;
+        }
+
         const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
         const spawns = this.map.getSpawnPointsFor(activeSeats.length);
 
         this.players = [];
         this.aiControllers = [];
+
+        // Touch-capable device, checked once per round. On-screen controls
+        // are only ever offered to seat 1 in 1P mode (see below) — desktop,
+        // 2P and party all stay byte-identical to today regardless of this.
+        const touchCapable = this.sys.game.device.input.touch ||
+            ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
         activeSeats.forEach((seat, i) => {
             const spawn = spawns[i];
@@ -143,6 +175,13 @@ export class GameScene extends Phaser.Scene {
                 const sources = [];
                 if (seat <= 2) sources.push(new KeyboardInput(this, seat));
                 sources.push(new GamepadInput(this, seat - 1));
+                // Phase 6e: seat 1 in 1P mode on a touch device also gets an
+                // on-screen joystick + fire buttons, OR'd into the same
+                // composite as keyboard/gamepad.
+                if (seat === 1 && touchCapable && MATCH_STATE.mode === '1p') {
+                    this.touchControls = new TouchControls(this);
+                    sources.push(this.touchControls);
+                }
                 inputSource = sources.length > 1 ? new CompositeInput(...sources) : sources[0];
             }
 
@@ -1231,7 +1270,8 @@ export class GameScene extends Phaser.Scene {
             matchPointY += 24;
         }
 
-        if (MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1) {
+        const isMatchPoint = MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1;
+        if (isMatchPoint) {
             const matchPoint = this.add.text(
                 GAME_CONFIG.width / 2,
                 matchPointY,
@@ -1242,6 +1282,11 @@ export class GameScene extends Phaser.Scene {
                 }
             ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
             bannerTexts.push(matchPoint);
+            // Phase 6e: crank the music to its match-point layer (faster
+            // hi-hat + higher arp) — this round already set intensity 1 in
+            // create(), so this only fires when the round actually opens on
+            // match point.
+            audio.setMusicIntensity(2);
         }
 
         this.tweens.add({

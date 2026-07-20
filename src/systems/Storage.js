@@ -50,6 +50,9 @@ export function loadSettings(settings) {
     if (typeof saved.soundEnabled === 'boolean') {
         settings.soundEnabled = saved.soundEnabled;
     }
+    if (typeof saved.musicEnabled === 'boolean') {
+        settings.musicEnabled = saved.musicEnabled;
+    }
     if (typeof saved.suddenDeath === 'boolean') {
         settings.suddenDeath = saved.suddenDeath;
     }
@@ -85,6 +88,7 @@ export function saveSettings(settings) {
         payload[key] = settings[key];
     }
     payload.soundEnabled = settings.soundEnabled;
+    payload.musicEnabled = settings.musicEnabled;
     payload.suddenDeath = settings.suddenDeath;
     for (const key of MUTATOR_KEYS) {
         payload[key] = settings[key];

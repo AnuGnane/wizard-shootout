@@ -21,9 +21,18 @@ export class MenuScene extends Phaser.Scene {
 
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
-        // First interaction unlocks Web Audio
-        this.input.keyboard.once('keydown', () => audio.unlock());
-        this.input.once('pointerdown', () => audio.unlock());
+        // Phase 6e: back at the menu (fresh boot or returning from a match) —
+        // drop the music straight to its calm intensity. Music itself is
+        // never stopped here (it keeps playing across scene transitions);
+        // only mute/the music toggle silence it.
+        audio.setMusicIntensity(0);
+
+        // First interaction unlocks Web Audio and starts the music loop.
+        // startMusic() is idempotent, so returning to the menu repeatedly
+        // (or a stray keydown after a pointerdown already fired) never
+        // stacks a second scheduler.
+        this.input.keyboard.once('keydown', () => { audio.unlock(); audio.startMusic(); });
+        this.input.once('pointerdown', () => { audio.unlock(); audio.startMusic(); });
 
         // Title flanked by the two wizards
         const title = this.add.text(width / 2, 110, 'WIZARD\nSHOOTOUT', {
