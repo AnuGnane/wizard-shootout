@@ -61,11 +61,21 @@ export class MenuScene extends Phaser.Scene {
         });
         subtitle.setOrigin(0.5);
 
-        // Mode buttons
-        this.makeButton(width / 2, 285, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
-        this.makeButton(width / 2, 343, '[ 2 PLAYERS ]', '#336633', '#66ff66', () => this.startGame('2p'));
-        this.makeButton(width / 2, 401, '[ PARTY  3-4 P ]', '#336633', '#66ff66', () => this.startGame('party'));
-        this.makeButton(width / 2, 459, '[ SETTINGS ]', '#333355', '#5599ff', () => {
+        // Mode buttons. The column is nudged up from its original start (y=285)
+        // and tightened to the design's existing ~4-6px button gaps so an
+        // ONLINE 1v1 entry fits between PARTY and SETTINGS without disturbing
+        // the fixed lower block (secondary row at y=509 onward, which is packed
+        // against the bottom edge). ONLINE + SETTINGS use the compact 20px size
+        // so SETTINGS still clears the secondary row — verified overlap-free by
+        // screenshot.
+        this.makeButton(width / 2, 258, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
+        this.makeButton(width / 2, 314, '[ 2 PLAYERS ]', '#336633', '#66ff66', () => this.startGame('2p'));
+        this.makeButton(width / 2, 370, '[ PARTY  3-4 P ]', '#336633', '#66ff66', () => this.startGame('party'));
+        this.makeButton(width / 2, 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
+            audio.uiClick();
+            this.scene.start('OnlineScene');
+        }, '20px');
+        this.makeButton(width / 2, 468, '[ SETTINGS ]', '#333355', '#5599ff', () => {
             audio.uiClick();
             this.scene.start('SettingsScene');
         }, '20px');
