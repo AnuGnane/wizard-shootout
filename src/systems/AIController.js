@@ -15,14 +15,14 @@ import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 export const AI_DIFFICULTY = {
     easy: {
         label: 'EASY',
-        repathInterval: 550,
-        reactionMin: 1100,
-        reactionMax: 2000,
-        range: 400,
-        dodgeChance: 0.2,
+        repathInterval: 700,
+        reactionMin: 1500,
+        reactionMax: 2600,
+        range: 340,
+        dodgeChance: 0.1,
         dodgeLookahead: 0.35,
         orbHunting: false,
-        abilityChance: 0.3,
+        abilityChance: 0.2,
     },
     normal: {
         label: 'NORMAL',
@@ -60,7 +60,8 @@ export class AIController {
     constructor(scene) {
         this.scene = scene;
         this.me = null;
-        this.opponent = null;
+        this.opponents = [];     // every other player (alive or dead)
+        this.opponent = null;    // current target: nearest living opponent
         this.params = AI_DIFFICULTY[RUNTIME_SETTINGS.aiDifficulty] || AI_DIFFICULTY.normal;
 
         this.state = { up: false, down: false, left: false, right: false, shoot: false, runeShoot: false, ability: false };
@@ -75,13 +76,30 @@ export class AIController {
         this.knownThreats = new WeakSet();
     }
 
-    setPlayers(me, opponent) {
+    // opponents is an array (1P mode passes [player1]). In FFA the bot targets
+    // whichever living opponent is nearest, re-picked on every repath.
+    setPlayers(me, opponents) {
         this.me = me;
-        this.opponent = opponent;
+        this.opponents = Array.isArray(opponents) ? opponents : [opponents];
+        this.opponent = this.nearestLivingOpponent();
     }
 
     getState() {
         return this.state;
+    }
+
+    nearestLivingOpponent() {
+        let best = null;
+        let bestDist = Infinity;
+        for (const o of this.opponents) {
+            if (!o || !o.isAlive) continue;
+            const d = Phaser.Math.Distance.Between(this.me.x, this.me.y, o.x, o.y);
+            if (d < bestDist) {
+                bestDist = d;
+                best = o;
+            }
+        }
+        return best;
     }
 
     update(time) {
@@ -91,20 +109,58 @@ export class AIController {
         s.runeShoot = false;
         s.ability = false; // re-armed per frame; set by tryAbility()
 
-        if (!this.me || !this.me.isAlive || !this.opponent || !this.opponent.isAlive) return;
+        if (!this.me || !this.me.isAlive) return;
         if (this.scene.roundOver) return;
+
+        // Re-pick the target immediately if it died (or we never had one).
+        if (!this.opponent || !this.opponent.isAlive) {
+            this.opponent = this.nearestLivingOpponent();
+        }
+        if (!this.opponent) return; // no living foes left
 
         if (time >= this.nextRepath) {
             this.nextRepath = time + this.params.repathInterval;
+            // Re-pick nearest living target on every repath so the bot tracks
+            // the closest threat in a free-for-all, not a stale one.
+            this.opponent = this.nearestLivingOpponent() || this.opponent;
             this.recomputePath();
         }
 
         // Dodging incoming projectiles beats path-following
         if (this.tryDodge()) return;
 
-        this.followPath();
+        // Personal space: pathing targets the opponent's tile, so at melee
+        // range the bot would otherwise walk into the player's collision
+        // body and pin itself there. Back off instead (and still shoot).
+        if (!this.keepDistance()) {
+            this.followPath();
+        }
         this.tryShoot(time);
         this.tryAbility(time);
+    }
+
+    keepDistance() {
+        const dx = this.me.x - this.opponent.x;
+        const dy = this.me.y - this.opponent.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 56) return false;
+
+        // Retreat directly away; if a wall blocks that axis, strafe
+        // perpendicular so we slide out of corners instead of pinning.
+        let ax = dist > 0 ? dx / dist : 1;
+        let ay = dist > 0 ? dy / dist : 0;
+        const blocked = this.me.body.blocked;
+        if ((ax < -0.3 && blocked.left) || (ax > 0.3 && blocked.right) ||
+            (ay < -0.3 && blocked.up) || (ay > 0.3 && blocked.down)) {
+            [ax, ay] = [-ay, ax];
+        }
+
+        const s = this.state;
+        if (ax < -0.35) s.left = true;
+        if (ax > 0.35) s.right = true;
+        if (ay < -0.35) s.up = true;
+        if (ay > 0.35) s.down = true;
+        return true;
     }
 
     // ---- navigation -------------------------------------------------------
@@ -233,7 +289,9 @@ export class AIController {
         const toX = this.opponent.x - this.me.x;
         const toY = this.opponent.y - this.me.y;
         const dist = Math.sqrt(toX * toX + toY * toY);
-        if (dist < 24 || dist > this.params.range) return;
+        // No minimum range: the player collider holds bodies ~20px apart, so
+        // a point-blank dead zone would let players pin the bot and win free.
+        if (dist < 8 || dist > this.params.range) return;
 
         // Find an 8-way aim direction the shot would actually connect on:
         // the opponent must sit close to the ray (small perpendicular offset).

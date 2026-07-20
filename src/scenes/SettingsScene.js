@@ -26,7 +26,14 @@ export const RUNTIME_SETTINGS = {
     // Game settings
     targetScore: MATCH_CONFIG.targetScore,
     soundEnabled: true,
+    suddenDeath: false,     // 1-HP mutator: any hit is lethal
     aiDifficulty: 'normal', // easy | normal | hard (picked on map select)
+
+    // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
+    mutGiantShots: false,   // 1.8x projectile scale + physics body
+    mutOrbRain: false,      // round starts already in Orb Surge mode
+    mutLowCooldowns: false, // 0.4x normal/orb/signature cooldowns
+    mutMirrorMaps: false,   // every map horizontally flipped at load
 
     // Class picks (persisted, initialize ClassSelectScene cursors)
     p1Class: 'arcanist',
@@ -79,6 +86,14 @@ export class SettingsScene extends Phaser.Scene {
         this.addSlider('Slow Duration (s)', 'iceSlowDuration', 1000, 6000, 500, (v) => (v / 1000).toFixed(1));
         this.addSlider('Slow %', 'iceSlowPercent', 0.2, 0.8, 0.1, (v) => Math.round(v * 100) + '%');
 
+        // ARENA lives in the left column (rather than after MATCH on the
+        // right) to make room for the new MUTATORS section without either
+        // column running past the Save/Back buttons.
+        this.yPos += 20;
+        this.addSectionHeader('ARENA');
+        this.addSlider('Orb Spawn Min (s)', 'runeSpawnMin', 3000, 15000, 1000, (v) => (v / 1000).toFixed(0));
+        this.addSlider('Orb Spawn Max (s)', 'runeSpawnMax', 5000, 20000, 1000, (v) => (v / 1000).toFixed(0));
+
         // === RIGHT COLUMN ===
         this.colX = 530;
         this.yPos = 90;
@@ -93,10 +108,15 @@ export class SettingsScene extends Phaser.Scene {
         this.addSlider('First to (rounds)', 'targetScore', 1, 10, 1);
         this.addToggle('Sound', 'soundEnabled');
 
+        // Sudden Death moved here from MATCH — it's a mutator in spirit
+        // (key/persistence unchanged), alongside the four new Phase 5c ones.
         this.yPos += 20;
-        this.addSectionHeader('ARENA');
-        this.addSlider('Orb Spawn Min (s)', 'runeSpawnMin', 3000, 15000, 1000, (v) => (v / 1000).toFixed(0));
-        this.addSlider('Orb Spawn Max (s)', 'runeSpawnMax', 5000, 20000, 1000, (v) => (v / 1000).toFixed(0));
+        this.addSectionHeader('MUTATORS');
+        this.addToggle('Sudden Death (1 HP)', 'suddenDeath');
+        this.addToggle('Giant Projectiles', 'mutGiantShots');
+        this.addToggle('Orb Rain', 'mutOrbRain');
+        this.addToggle('Low Cooldowns', 'mutLowCooldowns');
+        this.addToggle('Mirror Maps', 'mutMirrorMaps');
 
         // Buttons
         const saveBtn = this.add.text(width / 2 - 120, height - 50, '[ SAVE ]', {

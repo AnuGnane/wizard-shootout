@@ -10,6 +10,7 @@ import { PauseScene } from './scenes/PauseScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { loadSettings } from './systems/Storage.js';
+import { MATCH_STATE } from './systems/MatchState.js';
 
 // Restore persisted settings (sound, bot difficulty, tunables) before the
 // game boots so every scene sees the saved values from the first frame.
@@ -26,6 +27,9 @@ const config = {
         parent: 'game-container',
     },
     backgroundColor: '#0f0f1a',
+    input: {
+        gamepad: true,
+    },
     physics: {
         default: 'arcade',
         arcade: {
@@ -44,3 +48,5 @@ const game = new Phaser.Game(config);
 
 // Handy for debugging from the browser console
 window.__game = game;
+window.__match = MATCH_STATE;
+window.__settings = RUNTIME_SETTINGS;

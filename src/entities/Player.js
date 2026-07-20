@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, TEAM_COLORS, MUTATOR_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
@@ -44,8 +44,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.classDef = WIZARD_CLASSES[classKey];
         this.inputSource = inputSource || new KeyboardInput(scene, playerNumber);
 
-        // Health - use runtime settings
-        this.maxHealth = RUNTIME_SETTINGS.playerHealth;
+        // Health - use runtime settings. Sudden Death overrides to a 1-HP
+        // glass cannon: any hit (and any burn tick) is lethal.
+        this.maxHealth = RUNTIME_SETTINGS.suddenDeath ? 1 : RUNTIME_SETTINGS.playerHealth;
         this.health = this.maxHealth;
         this.isAlive = true;
 
@@ -67,6 +68,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // conjured-wall lifetime, which lives in GameScene, not here).
         if (this.classKey === 'arcanist') this.normalCooldown *= 0.72;
         if (this.classKey === 'stormcaller') this.runeCooldown *= 0.7;
+
+        // Signature ability cooldown, mirrored per-instance from class data
+        // (rather than read live off classDef.signature.cooldown) so the Low
+        // Cooldowns mutator below can scale it the same way as the shot
+        // cooldowns. The arc indicator (updateIndicator) and GameScene's
+        // cooldown commit (onSignatureUsed) both read this field.
+        this.abilityCooldown = this.classDef.signature.cooldown;
+
+        // Low Cooldowns mutator: shrink all three cooldowns AFTER class
+        // passives — multiplicative stacking with passives is intended.
+        if (RUNTIME_SETTINGS.mutLowCooldowns) {
+            this.normalCooldown *= MUTATOR_CONFIG.lowCooldownFactor;
+            this.runeCooldown *= MUTATOR_CONFIG.lowCooldownFactor;
+            this.abilityCooldown *= MUTATOR_CONFIG.lowCooldownFactor;
+        }
 
         // Timestamps (scene.time.now) for when each shot type comes off
         // cooldown - used purely to draw the cooldown indicator arcs; the
@@ -142,7 +158,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.healthBarBg.setStrokeStyle(1, 0x000000, 0.6);
 
         // Health fill
-        this.baseBarColor = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+        this.baseBarColor = TEAM_COLORS[this.playerNumber - 1];
         this.healthBarFill = this.scene.add.rectangle(0, 0, barWidth - 2, barHeight - 2, this.baseBarColor);
         this.healthBarFill.setDepth(21);
 
@@ -189,7 +205,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (!this.isAlive) return;
 
         const now = this.scene.time.now;
-        const teamColor = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+        const teamColor = TEAM_COLORS[this.playerNumber - 1];
 
         // Normal shot cooldown arc - sweeps from -90deg, shrinking to
         // nothing as the shot comes off cooldown.
@@ -217,7 +233,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Signature cooldown arc, gold, further out than the shot arcs
         if (now < this.abilityReadyAt) {
-            const remaining = Phaser.Math.Clamp((this.abilityReadyAt - now) / this.classDef.signature.cooldown, 0, 1);
+            const remaining = Phaser.Math.Clamp((this.abilityReadyAt - now) / this.abilityCooldown, 0, 1);
             const startAngle = Phaser.Math.DegToRad(-90);
             const endAngle = Phaser.Math.DegToRad(-90 + 360 * remaining);
             g.lineStyle(2, 0xffdd44, 0.55);
@@ -323,22 +339,52 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Apply speed with slow modifier
         const speedMod = this.statusEffects.slowed ? this.statusEffects.slowPercent : 1;
-        this.setVelocity(vx * PLAYER_CONFIG.speed * speedMod, vy * PLAYER_CONFIG.speed * speedMod);
+        const dvx = vx * PLAYER_CONFIG.speed * speedMod;
+        const dvy = vy * PLAYER_CONFIG.speed * speedMod;
+
+        // Frosted floor is slippery: blend toward the desired velocity instead
+        // of snapping to it, so players skate with momentum (hard to stop, hard
+        // to turn). The body's strong drag would instantly kill that momentum,
+        // so it's suspended while sliding — off frost, drag stays on and the
+        // direct set makes it inert, so dry-floor behavior is unchanged. The
+        // Cryomancer is sure-footed on their own element (passive immunity).
+        const onFrost = this.classKey !== 'cryomancer' &&
+            this.scene.isFrostedAt && this.scene.isFrostedAt(this.x, this.y);
+
+        if (onFrost) {
+            this.body.allowDrag = false;
+            const cur = this.body.velocity;
+            const g = FROST_CONFIG.grip;
+            const curSpeed = Math.sqrt(cur.x * cur.x + cur.y * cur.y);
+            if (dvx === 0 && dvy === 0 && curSpeed < FROST_CONFIG.slideStopSpeed) {
+                this.setVelocity(0, 0);
+            } else {
+                this.setVelocity(cur.x + (dvx - cur.x) * g, cur.y + (dvy - cur.y) * g);
+            }
+        } else {
+            this.body.allowDrag = true;
+            this.setVelocity(dvx, dvy);
+        }
     }
 
     // Runs each frame while a Zap Dash is active: applies a one-time contact
     // stun to the opponent and lays down a fading afterimage trail.
     updateDash(time) {
         const sig = this.classDef.signature;
-        const opponent = this.playerNumber === 1 ? this.scene.player2 : this.scene.player1;
 
-        if (!this.dashHitDone && opponent && opponent.isAlive) {
-            const dist = Phaser.Math.Distance.Between(this.x, this.y, opponent.x, opponent.y);
-            if (dist <= sig.dashHitRange) {
+        // Contact stun hits EVERY living opponent inside range on this dash;
+        // dashHitDone still limits it to a single trigger per dash.
+        if (!this.dashHitDone) {
+            const inRange = this.scene.getOpponentsOf(this).filter(o =>
+                o.isAlive && Phaser.Math.Distance.Between(this.x, this.y, o.x, o.y) <= sig.dashHitRange
+            );
+            if (inRange.length > 0) {
                 this.dashHitDone = true;
-                opponent.applyStun(sig.dashStunMs);
-                opponent.takeDamage(sig.dashDamage);
-                this.spawnDashSpark(opponent.x, opponent.y);
+                for (const opponent of inRange) {
+                    opponent.applyStun(sig.dashStunMs);
+                    opponent.takeDamage(sig.dashDamage);
+                    this.spawnDashSpark(opponent.x, opponent.y);
+                }
             }
         }
 
@@ -605,7 +651,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         audio.death();
 
         // Death explosion: colored shards + expanding ring + white flash
-        const color = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+        const color = TEAM_COLORS[this.playerNumber - 1];
 
         const flash = this.scene.add.circle(this.x, this.y, 14, 0xffffff, 0.9);
         flash.setDepth(30);

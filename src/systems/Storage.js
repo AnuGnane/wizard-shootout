@@ -16,6 +16,9 @@ const NUMBER_KEYS = [
 
 const RUNE_KEYS = ['fire', 'ice', 'earth', 'lightning', 'shield', 'triple'];
 
+// Phase 5c — Mutators: booleans persisted exactly like suddenDeath below.
+const MUTATOR_KEYS = ['mutGiantShots', 'mutOrbRain', 'mutLowCooldowns', 'mutMirrorMaps'];
+
 // Read the persisted settings blob (if any) and merge known keys into the
 // given RUNTIME_SETTINGS object in place. Unknown keys, wrong types, and any
 // storage/parse errors are silently ignored — a corrupted or hand-edited
@@ -47,6 +50,14 @@ export function loadSettings(settings) {
     if (typeof saved.soundEnabled === 'boolean') {
         settings.soundEnabled = saved.soundEnabled;
     }
+    if (typeof saved.suddenDeath === 'boolean') {
+        settings.suddenDeath = saved.suddenDeath;
+    }
+    for (const key of MUTATOR_KEYS) {
+        if (typeof saved[key] === 'boolean') {
+            settings[key] = saved[key];
+        }
+    }
     if (['easy', 'normal', 'hard'].includes(saved.aiDifficulty)) {
         settings.aiDifficulty = saved.aiDifficulty;
     }
@@ -74,6 +85,10 @@ export function saveSettings(settings) {
         payload[key] = settings[key];
     }
     payload.soundEnabled = settings.soundEnabled;
+    payload.suddenDeath = settings.suddenDeath;
+    for (const key of MUTATOR_KEYS) {
+        payload[key] = settings[key];
+    }
     payload.aiDifficulty = settings.aiDifficulty;
     payload.p1Class = settings.p1Class;
     payload.p2Class = settings.p2Class;

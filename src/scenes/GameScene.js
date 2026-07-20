@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, RUNE_CONFIG, RUNE_ELEMENTS, MATCH_CONFIG } from '../config.js';
+import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, RUNE_CONFIG, RUNE_ELEMENTS, MATCH_CONFIG, FROST_CONFIG, PRESSURE_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
-import { Player } from '../entities/Player.js';
+import { Player, KeyboardInput } from '../entities/Player.js';
+import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { Projectile } from '../entities/Projectile.js';
 import { Rune } from '../entities/Rune.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
@@ -29,16 +30,33 @@ export class GameScene extends Phaser.Scene {
             tempWalls: [],
         };
 
-        this.projectilesByPlayer = { 1: [], 2: [] };
+        this.projectilesByPlayer = { 1: [], 2: [], 3: [], 4: [] };
         this.maxProjectilesPerPlayer = 5;
         this.allProjectiles = [];
         this.runes = [];
 
-        // Per-round stats for the round-end summary banner
-        this.roundStats = {
-            1: { damage: 0, fired: 0, hits: 0, orbs: 0 },
-            2: { damage: 0, fired: 0, hits: 0, orbs: 0 },
-        };
+        // Phase 4: slippery frost floor tiles, keyed by `${gx},${gy}`.
+        this.frostTiles = new Map();
+        // Phase 4: Orb Surge — flips true once the round drags past surgeAtMs.
+        this.surgeActive = false;
+
+        // Orb Rain mutator: start every round already in surge mode — no
+        // banner, no jingle, it's a chosen mode rather than a triggered
+        // event. The Phase 4 trigger in update() already guards on
+        // `!this.surgeActive`, so it simply never fires from here on.
+        if (RUNTIME_SETTINGS.mutOrbRain) {
+            this.surgeActive = true;
+        }
+
+        // The scene restarts between rounds; make sure frost overlays/timers are
+        // torn down on shutdown so nothing leaks or double-fires next round.
+        this.events.once('shutdown', this.clearAllFrost, this);
+
+        // Per-round stats for the round-end summary banner, keyed by seat.
+        this.roundStats = {};
+        for (let n = 1; n <= 4; n++) {
+            this.roundStats[n] = { damage: 0, fired: 0, hits: 0, orbs: 0 };
+        }
 
         // First interaction unlocks Web Audio (browser autoplay policy)
         this.input.keyboard.once('keydown', () => audio.unlock());
@@ -47,7 +65,7 @@ export class GameScene extends Phaser.Scene {
         // Pick a battle map (also sets ARENA geometry for this round).
         // A map chosen on the select screen is used every round; Random
         // rotates maps between rounds.
-        this.map = pickMap(MATCH_STATE.mapIndex);
+        this.map = pickMap(MATCH_STATE.mapIndex, { mirror: RUNTIME_SETTINGS.mutMirrorMaps });
 
         this.createArenaBackground();
         this.createMaze();
@@ -79,23 +97,57 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    // Build the roster from seatTypes (the single source of truth). Every
+    // active seat becomes a Player; bots additionally get an AIController. The
+    // input wiring below reproduces 1P/2P exactly (seat 1 = kb1+pad0, seat 2 =
+    // kb2+pad1) and extends it: seats 3/4 humans are pad-only (pad 2 / pad 3).
     createPlayers() {
-        const spawns = this.map.getSpawnPoints();
-        const p1Spawn = spawns.player1;
-        const p2Spawn = spawns.player2;
+        const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
+        const spawns = this.map.getSpawnPointsFor(activeSeats.length);
 
-        this.player1 = new Player(this, p1Spawn.x, p1Spawn.y, 1);
+        this.players = [];
+        this.aiControllers = [];
 
-        if (MATCH_STATE.mode === '1p') {
-            this.aiController = new AIController(this);
-            this.player2 = new Player(this, p2Spawn.x, p2Spawn.y, 2, this.aiController);
-            this.aiController.setPlayers(this.player2, this.player1);
-        } else {
-            this.aiController = null;
-            this.player2 = new Player(this, p2Spawn.x, p2Spawn.y, 2);
+        activeSeats.forEach((seat, i) => {
+            const spawn = spawns[i];
+            const type = MATCH_STATE.seatTypes[seat];
+            let inputSource;
+            let ai = null;
+
+            if (type === 'bot') {
+                ai = new AIController(this);
+                inputSource = ai;
+            } else {
+                // Human: keyboard for seats 1/2, gamepad (seat-1) for all humans.
+                const sources = [];
+                if (seat <= 2) sources.push(new KeyboardInput(this, seat));
+                sources.push(new GamepadInput(this, seat - 1));
+                inputSource = sources.length > 1 ? new CompositeInput(...sources) : sources[0];
+            }
+
+            const player = new Player(this, spawn.x, spawn.y, seat, inputSource);
+            this.players.push(player);
+            if (ai) {
+                ai._seatPlayer = player;
+                this.aiControllers.push(ai);
+            }
+        });
+
+        // Aliases: much existing code (and 1P/2P HUD) references player1/player2.
+        this.player1 = this.players[0] || null;
+        this.player2 = this.players[1] || null;
+
+        // Wire each bot to the full opponent roster; it targets nearest living.
+        for (const ai of this.aiControllers) {
+            ai.setPlayers(ai._seatPlayer, this.getOpponentsOf(ai._seatPlayer));
         }
+    }
 
-        this.players = [this.player1, this.player2];
+    // All players other than `player` (alive or dead — callers filter by
+    // isAlive where the semantics require it). In 1P/2P this is the single
+    // other wizard, so behaviour is unchanged there.
+    getOpponentsOf(player) {
+        return this.players.filter(p => p !== player);
     }
 
     createArenaBackground() {
@@ -149,9 +201,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     setupCollisions() {
-        this.physics.add.collider(this.player1, this.walls);
-        this.physics.add.collider(this.player2, this.walls);
-        this.physics.add.collider(this.player1, this.player2);
+        // Every player collides with walls, and every pair of players collides.
+        for (const p of this.players) {
+            this.physics.add.collider(p, this.walls);
+        }
+        for (let i = 0; i < this.players.length; i++) {
+            for (let j = i + 1; j < this.players.length; j++) {
+                this.physics.add.collider(this.players[i], this.players[j]);
+            }
+        }
 
         this.physics.add.collider(
             this.projectiles,
@@ -190,7 +248,8 @@ export class GameScene extends Phaser.Scene {
         this.events.on('createIceWall', this.createIceWall, this);
         this.events.on('createTempWall', this.createTempWall, this);
         this.events.on('lightningPierce', this.handleLightningPierce, this);
-        this.events.on('playerDied', this.onPlayerDied, this);
+        // 'playerDied' is emitted by Player.die() but has no handler: round
+        // resolution is polled in update() so simultaneous deaths settle first.
         this.events.on('runeCollected', this.onRuneCollected, this);
         this.events.on('playerDamaged', this.onPlayerDamaged, this);
         this.events.on('signatureUsed', this.onSignatureUsed, this);
@@ -212,7 +271,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (success) {
-            player.abilityReadyAt = this.time.now + player.classDef.signature.cooldown;
+            player.abilityReadyAt = this.time.now + player.abilityCooldown;
             audio.signature(player.classKey);
         } else {
             audio.fizzle();
@@ -221,8 +280,8 @@ export class GameScene extends Phaser.Scene {
 
     // ============ SIGNATURE ABILITIES ============
 
-    opponentOf(player) {
-        return player === this.player1 ? this.player2 : this.player1;
+    livingOpponentsOf(player) {
+        return this.getOpponentsOf(player).filter(o => o.isAlive);
     }
 
     tileOf(worldX, worldY) {
@@ -250,7 +309,7 @@ export class GameScene extends Phaser.Scene {
     // first landing that clears a wall, fits the body, and isn't on the foe.
     abilityBlink(player) {
         const sig = player.classDef.signature;
-        const opponent = this.opponentOf(player);
+        const opponents = this.livingOpponentsOf(player);
         const dir = player.aimDirection;
 
         // Half-body probe: a landing is valid only if the four cardinal
@@ -272,9 +331,11 @@ export class GameScene extends Phaser.Scene {
             const px = player.x + dir.x * d;
             const py = player.y + dir.y * d;
             if (!fits(px, py)) continue;
-            if (opponent && opponent.isAlive) {
-                if (Phaser.Math.Distance.Between(px, py, opponent.x, opponent.y) < sig.clearOpponent) continue;
-            }
+            // Landing must clear every living foe, not just one.
+            const tooCloseToFoe = opponents.some(o =>
+                Phaser.Math.Distance.Between(px, py, o.x, o.y) < sig.clearOpponent
+            );
+            if (tooCloseToFoe) continue;
 
             // Valid — snap to the containing tile's center.
             const t = this.tileOf(px, py);
@@ -356,7 +417,8 @@ export class GameScene extends Phaser.Scene {
 
         this.spawnRing(player.x, player.y, sig.ringColor, sig.ringRadius / 10, sig.ringFadeMs);
 
-        // Frost overlay on open tiles whose center is within range.
+        // Phase 4: frosted tiles become real slippery ice — route the ring's
+        // frost through the shared addFrost system instead of a bare overlay.
         const here = this.tileOf(player.x, player.y);
         const span = Math.ceil(sig.frostRadius / ARENA.tileSize) + 1;
         for (let ty = here.y - span; ty <= here.y + span; ty++) {
@@ -364,23 +426,13 @@ export class GameScene extends Phaser.Scene {
                 if (this.map.isWall(tx, ty)) continue;
                 const c = this.map.tileToWorld(tx, ty);
                 if (Phaser.Math.Distance.Between(c.x, c.y, player.x, player.y) > sig.frostRadius) continue;
-
-                // Phase 4: frosted tiles become slippery
-                const overlay = this.add.rectangle(c.x, c.y, ARENA.tileSize, ARENA.tileSize, sig.overlayColor, 0.25);
-                overlay.setDepth(1);
-                this.tweens.add({
-                    targets: overlay,
-                    alpha: 0,
-                    duration: sig.overlayFadeMs,
-                    onComplete: () => overlay.destroy(),
-                });
+                this.addFrost(tx, ty);
             }
         }
 
-        // Slow the opponent if they're within range (applySlow already
-        // no-ops against a slow-immune Cryomancer).
-        const opponent = this.opponentOf(player);
-        if (opponent && opponent.isAlive) {
+        // Slow every living foe within range (applySlow already no-ops against
+        // a slow-immune Cryomancer).
+        for (const opponent of this.livingOpponentsOf(player)) {
             if (Phaser.Math.Distance.Between(player.x, player.y, opponent.x, opponent.y) <= sig.frostRadius) {
                 opponent.applySlow(sig.slowPercent, sig.slowMs);
             }
@@ -456,6 +508,142 @@ export class GameScene extends Phaser.Scene {
         return true;
     }
 
+    // ============ FROST FLOOR (Phase 4) ============
+
+    // Lay frost on a floor tile. No-op on walls / out of bounds; an already
+    // frosted tile just refreshes its expiry instead of stacking overlays.
+    addFrost(gx, gy) {
+        if (gx < 0 || gx >= ARENA.cols || gy < 0 || gy >= ARENA.rows) return;
+        if (this.map.isWall(gx, gy)) return;
+
+        const key = `${gx},${gy}`;
+        const existing = this.frostTiles.get(key);
+        if (existing) {
+            existing.expiresAt = this.time.now + FROST_CONFIG.durationMs;
+            if (existing.timer) existing.timer.remove(false);
+            existing.timer = this.time.delayedCall(
+                FROST_CONFIG.durationMs, () => this.fadeOutFrost(key)
+            );
+            return;
+        }
+
+        const c = this.map.tileToWorld(gx, gy);
+        const overlay = this.add.image(c.x, c.y, 'frost');
+        overlay.setAlpha(0.55);
+        overlay.setAngle(Phaser.Math.Between(0, 3) * 90); // vary orientation
+        overlay.setDepth(-4); // just above floor (-5), below players
+
+        this.frostTiles.set(key, {
+            overlay,
+            expiresAt: this.time.now + FROST_CONFIG.durationMs,
+            timer: this.time.delayedCall(
+                FROST_CONFIG.durationMs, () => this.fadeOutFrost(key)
+            ),
+        });
+    }
+
+    // World-space entry point used by ice projectiles laying a frost trail.
+    frostTileAtWorld(worldX, worldY) {
+        const t = this.tileOf(worldX, worldY);
+        this.addFrost(t.x, t.y);
+    }
+
+    // Instant removal (used by fire melting). Kills the timer + overlay now.
+    removeFrost(gx, gy) {
+        const key = `${gx},${gy}`;
+        const entry = this.frostTiles.get(key);
+        if (!entry) return false;
+        this.frostTiles.delete(key);
+        if (entry.timer) entry.timer.remove(false);
+        if (entry.overlay && entry.overlay.active) entry.overlay.destroy();
+        return true;
+    }
+
+    // Lifetime expiry: drop the tile from tracking (so it stops being
+    // slippery immediately) then fade the overlay out before destroying it.
+    fadeOutFrost(key) {
+        const entry = this.frostTiles.get(key);
+        if (!entry) return;
+        this.frostTiles.delete(key);
+        const overlay = entry.overlay;
+        if (overlay && overlay.active) {
+            this.tweens.add({
+                targets: overlay,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => { if (overlay.active) overlay.destroy(); },
+            });
+        }
+    }
+
+    isFrostedAt(worldX, worldY) {
+        const t = this.tileOf(worldX, worldY);
+        return this.frostTiles.has(`${t.x},${t.y}`);
+    }
+
+    // Fire passing over a frosted tile melts it and puffs a steam cloud.
+    meltFrostAt(worldX, worldY) {
+        const t = this.tileOf(worldX, worldY);
+        if (!this.frostTiles.has(`${t.x},${t.y}`)) return;
+        this.removeFrost(t.x, t.y);
+        const c = this.map.tileToWorld(t.x, t.y);
+        this.spawnSteam(c.x, c.y);
+        audio.steam();
+    }
+
+    // Purge all frost (round teardown/restart). Guarded so an already
+    // shut-down clock/overlay can't throw.
+    clearAllFrost() {
+        if (!this.frostTiles) return;
+        for (const entry of this.frostTiles.values()) {
+            if (entry.timer) entry.timer.remove(false);
+            if (entry.overlay && entry.overlay.active) entry.overlay.destroy();
+        }
+        this.frostTiles.clear();
+    }
+
+    // Purely-visual steam puff: a small cluster of soft gray-white circles that
+    // drift up, wobble, then fade. Depth 26 = above players (a vision blocker).
+    // No physics body and no LOS change for the bot.
+    spawnSteam(x, y) {
+        const count = Phaser.Math.Between(3, 5);
+        for (let i = 0; i < count; i++) {
+            const puff = this.add.circle(
+                x + Phaser.Math.Between(-8, 8),
+                y + Phaser.Math.Between(-8, 8),
+                Phaser.Math.Between(10, 16),
+                0xdde5ee, 0.8
+            );
+            puff.setDepth(26);
+
+            // Gentle upward drift over its lifetime
+            this.tweens.add({
+                targets: puff,
+                y: puff.y - Phaser.Math.Between(8, 16),
+                scale: 1.35,
+                duration: 2500,
+                ease: 'Sine.easeOut',
+            });
+            // Side-to-side wobble
+            this.tweens.add({
+                targets: puff,
+                x: puff.x + Phaser.Math.Between(-6, 6),
+                duration: 700,
+                yoyo: true,
+                repeat: 2,
+                ease: 'Sine.easeInOut',
+            });
+            // Hold, then fade out and destroy
+            this.tweens.add({
+                targets: puff,
+                alpha: 0,
+                delay: 2100,
+                duration: 400,
+                onComplete: () => { if (puff.active) puff.destroy(); },
+            });
+        }
+    }
+
     // ============ RUNE SPAWNING ============
 
     startRuneSpawning() {
@@ -465,7 +653,10 @@ export class GameScene extends Phaser.Scene {
     scheduleNextRune() {
         if (this.roundOver) return;
 
-        const delay = Phaser.Math.Between(RUNTIME_SETTINGS.runeSpawnMin, RUNTIME_SETTINGS.runeSpawnMax);
+        // Orb Surge tightens the cadence once the round drags on.
+        const min = this.surgeActive ? PRESSURE_CONFIG.spawnIntervalMin : RUNTIME_SETTINGS.runeSpawnMin;
+        const max = this.surgeActive ? PRESSURE_CONFIG.spawnIntervalMax : RUNTIME_SETTINGS.runeSpawnMax;
+        const delay = Phaser.Math.Between(min, max);
         this.time.delayedCall(delay, () => {
             this.spawnRunes();
             this.scheduleNextRune();
@@ -474,7 +665,11 @@ export class GameScene extends Phaser.Scene {
 
     spawnRunes() {
         if (this.roundOver) return;
-        if (this.runes.length >= RUNE_CONFIG.maxRunes) return;
+        // More wizards on the field means more orb demand — scale the cap up by
+        // one per extra seat beyond two (no change in 1P/2P).
+        const baseMax = this.surgeActive ? PRESSURE_CONFIG.maxRunes : RUNE_CONFIG.maxRunes;
+        const maxRunes = baseMax + (MATCH_STATE.playerCount - 2);
+        if (this.runes.length >= maxRunes) return;
 
         // Get enabled elements
         const enabledElements = RUNE_ELEMENTS.filter(e => RUNTIME_SETTINGS.runesEnabled[e]);
@@ -503,7 +698,7 @@ export class GameScene extends Phaser.Scene {
 
         const count = Math.min(
             RUNE_CONFIG.runesPerSpawn,
-            RUNE_CONFIG.maxRunes - this.runes.length,
+            maxRunes - this.runes.length,
             floorTiles.length
         );
         for (let i = 0; i < count; i++) {
@@ -659,6 +854,44 @@ export class GameScene extends Phaser.Scene {
         uiBar.setDepth(10);
         this.add.rectangle(GAME_CONFIG.width / 2, 59, GAME_CONFIG.width, 2, 0x5a5a9a).setDepth(10);
 
+        this.roundTimer = 0;
+
+        // playerCount <= 2 keeps today's HUD EXACTLY; party mode uses compact
+        // per-seat panels across the top bar.
+        if (MATCH_STATE.playerCount <= 2) {
+            this.createStandardHUD();
+        } else {
+            this.createPartyHUD();
+        }
+
+        // --- Bottom hint bar (shared shell) ---
+        this.add.rectangle(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, GAME_CONFIG.width, 30, 0x1a1a2e).setDepth(10);
+
+        if (MATCH_STATE.playerCount <= 2) {
+            const hint = MATCH_STATE.mode === '1p'
+                ? 'WASD move | SPACE shoot | Q orb shot | E ability | Grab orbs for powers | M mute'
+                : 'P1: WASD + SPACE/Q/E  |  P2: Arrows + ENTER//.  |  Grab orbs for powers  |  M mute';
+            this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
+                font: '11px monospace',
+                fill: '#666688',
+            }).setOrigin(0.5).setDepth(11);
+        } else {
+            this.add.text(14, GAME_CONFIG.height - 15, 'P1 WASD · P2 Arrows · P3/P4 pads · M mute', {
+                font: '11px monospace',
+                fill: '#666688',
+            }).setOrigin(0, 0.5).setDepth(11);
+            // Top bar is full of seat panels, so the round timer lives here.
+            this.roundText = this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, '', {
+                font: '12px monospace',
+                fill: '#8888aa',
+            }).setOrigin(0.5).setDepth(11);
+        }
+
+        this.updateScoreText();
+    }
+
+    // Today's two-player HUD, verbatim. Only reached when playerCount <= 2.
+    createStandardHUD() {
         const p1ClassName = WIZARD_CLASSES[MATCH_STATE.classes[1]].name.toUpperCase();
         const p2ClassName = WIZARD_CLASSES[MATCH_STATE.classes[2]].name.toUpperCase();
 
@@ -725,24 +958,48 @@ export class GameScene extends Phaser.Scene {
             }).setOrigin(0.5).setDepth(11);
         }
 
-        this.roundTimer = 0;
         this.roundText = this.add.text(GAME_CONFIG.width / 2, 45, '', {
             font: '12px monospace',
             fill: '#8888aa',
         }).setOrigin(0.5).setDepth(11);
+    }
 
-        // --- Bottom hint bar ---
-        this.add.rectangle(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, GAME_CONFIG.width, 30, 0x1a1a2e).setDepth(10);
+    // Party HUD: one compact team-colored panel per active seat, spread across
+    // the top bar, with per-player score pips beneath each panel.
+    createPartyHUD() {
+        this.usePips = true;
+        this.scorePips = this.add.graphics().setDepth(11);
+        this.partyPanels = [];
 
-        const hint = MATCH_STATE.mode === '1p'
-            ? 'WASD move | SPACE shoot | Q orb shot | E ability | Grab orbs for powers | M mute'
-            : 'P1: WASD + SPACE/Q/E  |  P2: Arrows + ENTER//.  |  Grab orbs for powers  |  M mute';
-        this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
-            font: '11px monospace',
-            fill: '#666688',
-        }).setOrigin(0.5).setDepth(11);
+        const n = this.players.length;
+        const panelW = GAME_CONFIG.width / n;
 
-        this.updateScoreText();
+        this.players.forEach((player, i) => {
+            const seat = player.playerNumber;
+            const cx = panelW * i + panelW / 2;
+            const color = TEAM_COLORS[seat - 1];
+            const colorStr = '#' + color.toString(16).padStart(6, '0');
+            const className = WIZARD_CLASSES[player.classKey].name.toUpperCase();
+            const isBot = MATCH_STATE.seatTypes[seat] === 'bot';
+            const label = `${TEAM_NAMES[seat - 1]} · ${className}${isBot ? ' (BOT)' : ''}`;
+
+            const nameText = this.add.text(cx, 5, label, {
+                font: 'bold 10px monospace',
+                fill: colorStr,
+            }).setOrigin(0.5, 0).setDepth(11);
+
+            const barW = Math.min(150, panelW - 40);
+            const bg = this.add.rectangle(cx, 22, barW, 8, 0x222233).setOrigin(0.5, 0).setDepth(11);
+            bg.setStrokeStyle(1, 0x000000, 0.8);
+            const fill = this.add.rectangle(cx - barW / 2 + 1, 23, barW - 2, 6, color).setOrigin(0, 0).setDepth(12);
+
+            const elemText = this.add.text(cx, 34, '', {
+                font: '10px monospace',
+                fill: '#8888aa',
+            }).setOrigin(0.5, 0).setDepth(11);
+
+            this.partyPanels.push({ player, cx, color, barW, bg, fill, nameText, elemText });
+        });
     }
 
     updateScoreText() {
@@ -762,6 +1019,30 @@ export class GameScene extends Phaser.Scene {
         g.clear();
 
         const target = MATCH_STATE.targetScore;
+
+        if (MATCH_STATE.playerCount > 2) {
+            // One centered row of pips beneath each seat panel, team-colored.
+            const y = 50;
+            const spacing = Math.min(11, (this.players[0] ? (GAME_CONFIG.width / this.players.length - 24) / target : 11));
+            const radius = Math.max(2.5, Math.min(4, spacing / 2 - 1));
+            for (const panel of this.partyPanels) {
+                const seat = panel.player.playerNumber;
+                const score = MATCH_STATE.scores[seat];
+                const startX = panel.cx - ((target - 1) * spacing) / 2;
+                for (let i = 0; i < target; i++) {
+                    const cx = startX + i * spacing;
+                    if (i < score) {
+                        g.fillStyle(panel.color, 1);
+                        g.fillCircle(cx, y, radius);
+                    } else {
+                        g.lineStyle(1.5, 0x333344, 1);
+                        g.strokeCircle(cx, y, radius);
+                    }
+                }
+            }
+            return;
+        }
+
         const radius = 5;
         const spacing = 16;
         const gap = 12; // distance from center to the pip nearest it
@@ -786,6 +1067,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     updateUI() {
+        if (MATCH_STATE.playerCount > 2) {
+            this.updatePartyUI();
+            return;
+        }
+
         // Health bars
         const p1Pct = Math.max(0, this.player1.health / this.player1.maxHealth);
         const p2Pct = Math.max(0, this.player2.health / this.player2.maxHealth);
@@ -799,6 +1085,29 @@ export class GameScene extends Phaser.Scene {
         // Held orb display
         this.updateRuneDisplay(this.player1, this.p1RuneIcon, this.p1RuneText, this.p1ShieldIcon);
         this.updateRuneDisplay(this.player2, this.p2RuneIcon, this.p2RuneText, this.p2ShieldIcon);
+    }
+
+    updatePartyUI() {
+        for (const panel of this.partyPanels) {
+            const p = panel.player;
+            const pct = Math.max(0, p.health / p.maxHealth);
+            panel.fill.width = (panel.barW - 2) * pct;
+            panel.fill.fillColor = pct <= 0.25 ? 0xff3333 : panel.color;
+
+            let txt = '';
+            if (p.heldRune) {
+                const name = p.heldRune.charAt(0).toUpperCase() + p.heldRune.slice(1);
+                txt = `${name} x${p.runeShots}`;
+            } else if (p.shieldCharges > 0) {
+                txt = 'Shield';
+            }
+            panel.elemText.setText(txt);
+
+            // Dim a fallen wizard's panel so the standings read at a glance.
+            const alpha = p.isAlive ? 1 : 0.4;
+            panel.nameText.setAlpha(alpha);
+            panel.elemText.setAlpha(alpha);
+        }
     }
 
     updateRuneDisplay(player, icon, text, shieldIcon) {
@@ -817,6 +1126,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ============ BANNERS ============
+
+    // Short labels for whatever mutators are currently active, in display
+    // order. Empty array when nothing (including Sudden Death) is on.
+    getActiveMutatorLabels() {
+        const labels = [];
+        if (RUNTIME_SETTINGS.suddenDeath) labels.push('sudden death');
+        if (RUNTIME_SETTINGS.mutGiantShots) labels.push('giant shots');
+        if (RUNTIME_SETTINGS.mutOrbRain) labels.push('orb rain');
+        if (RUNTIME_SETTINGS.mutLowCooldowns) labels.push('low cooldowns');
+        if (RUNTIME_SETTINGS.mutMirrorMaps) labels.push('mirror maps');
+        return labels;
+    }
 
     showRoundBanner() {
         const target = MATCH_STATE.targetScore;
@@ -842,10 +1163,30 @@ export class GameScene extends Phaser.Scene {
 
         const bannerTexts = [banner, sub];
 
+        // Mutator flair: one small muted-gold line listing whatever's active
+        // (including Sudden Death), directly under the map/first-to line.
+        // With everything off this adds nothing, so the banner stays
+        // byte-identical to pre-Phase-5c behavior.
+        let matchPointY = ARENA.offsetY + ARENA.height / 2 + 80;
+        const activeMutators = this.getActiveMutatorLabels();
+        if (activeMutators.length > 0) {
+            const mutatorsLine = this.add.text(
+                GAME_CONFIG.width / 2,
+                ARENA.offsetY + ARENA.height / 2 + 68,
+                `mutators: ${activeMutators.join(' · ')}`,
+                {
+                    font: '13px monospace',
+                    fill: '#ccaa66',
+                }
+            ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+            bannerTexts.push(mutatorsLine);
+            matchPointY += 24;
+        }
+
         if (MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1) {
             const matchPoint = this.add.text(
                 GAME_CONFIG.width / 2,
-                ARENA.offsetY + ARENA.height / 2 + 80,
+                matchPointY,
                 'MATCH POINT',
                 {
                     font: 'bold 24px monospace',
@@ -866,7 +1207,116 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    // Orb Surge: flip the spawner into surge mode (faster cadence + higher
+    // cap, both read live in scheduleNextRune/spawnRunes), announce it, jingle.
+    triggerOrbSurge() {
+        this.surgeActive = true;
+        this.showSurgeBanner();
+        audio.surge();
+    }
+
+    showSurgeBanner() {
+        const banner = this.add.text(
+            GAME_CONFIG.width / 2,
+            ARENA.offsetY + ARENA.height / 2,
+            'ORB SURGE!',
+            {
+                font: 'bold 52px monospace',
+                fill: '#ffdd44',
+            }
+        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
+
+        const sub = this.add.text(
+            GAME_CONFIG.width / 2,
+            ARENA.offsetY + ARENA.height / 2 + 44,
+            'orbs flood the arena',
+            {
+                font: '16px monospace',
+                fill: '#ffeeaa',
+            }
+        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+
+        banner.setScale(0.3);
+        this.tweens.add({
+            targets: banner,
+            scale: 1,
+            duration: 300,
+            ease: 'Back.easeOut',
+        });
+        this.tweens.add({
+            targets: [banner, sub],
+            alpha: 0,
+            delay: 1000,
+            duration: 400,
+            onComplete: () => { banner.destroy(); sub.destroy(); },
+        });
+    }
+
     showScoreBanner(winnerNumber, isMatchWin) {
+        if (MATCH_STATE.playerCount > 2) {
+            this.showPartyScoreBanner(winnerNumber, isMatchWin);
+        } else {
+            this.showScoreBannerStandard(winnerNumber, isMatchWin);
+        }
+    }
+
+    // Party round-end: winner line in team color, then one compact stat line
+    // per player (DMG · ORBS — ACC dropped to keep the lines short).
+    showPartyScoreBanner(winnerNumber, isMatchWin) {
+        const cx = GAME_CONFIG.width / 2;
+        const cy = ARENA.offsetY + ARENA.height / 2;
+        const color = '#' + TEAM_COLORS[winnerNumber - 1].toString(16).padStart(6, '0');
+        const name = TEAM_NAMES[winnerNumber - 1];
+        const text = isMatchWin ? `${name}\nWINS THE MATCH!` : `${name} SCORES!`;
+
+        const banner = this.add.text(cx, cy - 60, text, {
+            font: 'bold 40px monospace',
+            fill: color,
+            align: 'center',
+        }).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
+
+        const lines = [];
+        this.players.forEach((p, i) => {
+            const seat = p.playerNumber;
+            const st = this.roundStats[seat];
+            const lineColor = '#' + TEAM_COLORS[seat - 1].toString(16).padStart(6, '0');
+            const line = this.add.text(
+                cx,
+                cy + 20 + i * 22,
+                `${TEAM_NAMES[seat - 1]}   DMG ${Math.round(st.damage)} · ORBS ${st.orbs}`,
+                { font: '15px monospace', fill: lineColor }
+            ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+            lines.push(line);
+        });
+
+        banner.setScale(0.3);
+        this.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.easeOut' });
+        lines.forEach(l => l.setAlpha(0));
+        this.tweens.add({ targets: lines, alpha: 1, delay: 250, duration: 250 });
+    }
+
+    // Nobody left standing: gray DRAW banner (existing banner style), no score.
+    showDrawBanner() {
+        const cx = GAME_CONFIG.width / 2;
+        const cy = ARENA.offsetY + ARENA.height / 2;
+
+        const banner = this.add.text(cx, cy, 'DRAW', {
+            font: 'bold 52px monospace',
+            fill: '#999999',
+        }).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
+
+        const sub = this.add.text(cx, cy + 44, 'no wizard left standing', {
+            font: '16px monospace',
+            fill: '#bbbbbb',
+        }).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+
+        banner.setScale(0.3);
+        this.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.easeOut' });
+        sub.setAlpha(0);
+        this.tweens.add({ targets: sub, alpha: 1, delay: 250, duration: 250 });
+    }
+
+    showScoreBannerStandard(winnerNumber, isMatchWin) {
         const color = winnerNumber === 1 ? '#5599ff' : '#ff5566';
         const name = winnerNumber === 1
             ? PLAYER_CONFIG.names.player1
@@ -944,15 +1394,32 @@ export class GameScene extends Phaser.Scene {
     update(time, delta) {
         if (this.roundOver) return;
 
-        this.player1.update(time, delta);
-        this.player2.update(time, delta);
+        // Each Player pumps its own input source, so bot AIControllers tick here.
+        for (const player of this.players) {
+            player.update(time, delta);
+        }
 
         this.cleanupProjectiles();
         this.checkProjectileHits();
         this.checkRuneCollection();
         this.checkWallEffects();
 
+        // Resolve the round once at most one wizard remains. Checking here
+        // (rather than the instant a death fires) lets simultaneous deaths in
+        // the same frame settle first, so a mutual kill reads as a DRAW.
+        const alive = this.players.filter(p => p.isAlive);
+        if (alive.length <= 1) {
+            this.resolveRound(alive);
+            return;
+        }
+
         this.roundTimer += delta;
+
+        // Orb Surge fires once per round when the clock crosses surgeAtMs.
+        if (!this.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
+            this.triggerOrbSurge();
+        }
+
         const seconds = Math.floor(this.roundTimer / 1000);
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
@@ -1001,7 +1468,7 @@ export class GameScene extends Phaser.Scene {
 
     cleanupProjectiles() {
         this.allProjectiles = this.allProjectiles.filter(p => p && p.active);
-        for (const playerNum of [1, 2]) {
+        for (const playerNum of [1, 2, 3, 4]) {
             this.projectilesByPlayer[playerNum] = this.projectilesByPlayer[playerNum].filter(p => p && p.active);
         }
     }
@@ -1164,24 +1631,34 @@ export class GameScene extends Phaser.Scene {
 
     // ============ ROUND / MATCH FLOW ============
 
-    onPlayerDied(playerNumber) {
+    // Called from the update loop when at most one wizard is left alive.
+    // Exactly one survivor scores; zero survivors (mutual kill) is a DRAW and
+    // nobody scores. Match win is still first to targetScore.
+    resolveRound(aliveList) {
         if (this.roundOver) return;
         this.roundOver = true;
 
-        const winner = playerNumber === 1 ? 2 : 1;
-        MATCH_STATE.scores[winner]++;
-        this.updateScoreText();
+        const winner = aliveList.length === 1 ? aliveList[0].playerNumber : null;
 
-        const isMatchWin = MATCH_STATE.scores[winner] >= MATCH_STATE.targetScore;
+        if (winner !== null) {
+            MATCH_STATE.scores[winner]++;
+            this.updateScoreText();
+        }
+
+        const isMatchWin = winner !== null && MATCH_STATE.scores[winner] >= MATCH_STATE.targetScore;
 
         this.cameras.main.shake(300, 0.012);
         this.time.delayedCall(300, () => {
-            if (isMatchWin) {
-                audio.matchWin();
+            if (winner === null) {
+                this.showDrawBanner();
             } else {
-                audio.roundWin();
+                if (isMatchWin) {
+                    audio.matchWin();
+                } else {
+                    audio.roundWin();
+                }
+                this.showScoreBanner(winner, isMatchWin);
             }
-            this.showScoreBanner(winner, isMatchWin);
         });
 
         this.time.delayedCall(MATCH_CONFIG.roundEndDelay, () => {

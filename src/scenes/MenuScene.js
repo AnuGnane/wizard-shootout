@@ -44,9 +44,10 @@ export class MenuScene extends Phaser.Scene {
         subtitle.setOrigin(0.5);
 
         // Mode buttons
-        this.makeButton(width / 2, 300, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
-        this.makeButton(width / 2, 365, '[ 2 PLAYERS ]', '#336633', '#66ff66', () => this.startGame('2p'));
-        this.makeButton(width / 2, 430, '[ SETTINGS ]', '#333355', '#5599ff', () => {
+        this.makeButton(width / 2, 285, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
+        this.makeButton(width / 2, 343, '[ 2 PLAYERS ]', '#336633', '#66ff66', () => this.startGame('2p'));
+        this.makeButton(width / 2, 401, '[ PARTY  3-4 P ]', '#336633', '#66ff66', () => this.startGame('party'));
+        this.makeButton(width / 2, 459, '[ SETTINGS ]', '#333355', '#5599ff', () => {
             audio.uiClick();
             this.scene.start('SettingsScene');
         }, '20px');
@@ -63,8 +64,8 @@ export class MenuScene extends Phaser.Scene {
         const legendStart = width / 2 - ((orbs.length - 1) * 70) / 2;
         orbs.forEach((orb, i) => {
             const x = legendStart + i * 70;
-            this.add.image(x, 490, orb.key).setScale(1.2);
-            this.add.text(x, 515, orb.label, {
+            this.add.image(x, 500, orb.key).setScale(1.2);
+            this.add.text(x, 525, orb.label, {
                 font: '11px monospace',
                 fill: '#8888aa',
             }).setOrigin(0.5);
@@ -87,8 +88,16 @@ export class MenuScene extends Phaser.Scene {
         });
         controlsP2.setOrigin(0.5);
 
+        // Gamepad legend, tucked under the keyboard controls
+        const controlsGamepad = this.add.text(width / 2, 622,
+            'Gamepads: stick/d-pad move · A shoot · X orb · B ability', {
+            font: '12px monospace',
+            fill: '#666688',
+        });
+        controlsGamepad.setOrigin(0.5);
+
         // Hint
-        const hint = this.add.text(width / 2, 655, '1 / 2 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
+        const hint = this.add.text(width / 2, 655, '1 / 2 / 3 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
             font: '14px monospace',
             fill: '#666688',
         });
@@ -104,6 +113,7 @@ export class MenuScene extends Phaser.Scene {
 
         this.input.keyboard.on('keydown-ONE', () => this.startGame('1p'));
         this.input.keyboard.on('keydown-TWO', () => this.startGame('2p'));
+        this.input.keyboard.on('keydown-THREE', () => this.startGame('party'));
         this.input.keyboard.once('keydown-SPACE', () => this.startGame('2p'));
     }
 

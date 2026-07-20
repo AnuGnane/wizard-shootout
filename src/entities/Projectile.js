@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG } from '../config.js';
+import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, FROST_CONFIG, MUTATOR_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 
@@ -41,6 +41,24 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.isDestroying = false;
 
         scene.add.existing(this);
+
+        // Giant Projectiles mutator: scale the visual sprite BEFORE the
+        // physics body is created below. Arcade's Body caches the Game
+        // Object's scale once at creation time (`_sx`/`_sy`) and multiplies
+        // the body's size/offset by it every frame from then on — so as long
+        // as the sprite is already at its final scale when the body is
+        // created, the size/offset math right below can stay in plain
+        // "source pixel" units (unchanged from pre-mutator code) and Phaser
+        // scales it for us automatically and consistently. (Scaling the
+        // sprite AFTER body creation, or pre-multiplying bodySize here,
+        // both cause a double-scale once the body's cached scale
+        // self-corrects on the next physics step — confirmed against
+        // Phaser's Body.setSize()/preUpdate() source.) scaleFactor === 1
+        // (mutator off) skips setScale entirely, reproducing today's
+        // behavior exactly.
+        const scaleFactor = RUNTIME_SETTINGS.mutGiantShots ? MUTATOR_CONFIG.giantScale : 1;
+        if (scaleFactor !== 1) this.setScale(scaleFactor);
+
         scene.physics.add.existing(this);
 
         const bodySize = config.size;
@@ -66,6 +84,42 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.body.setCollideWorldBounds(true);
         this.body.onWorldBounds = true;
         this.body.setVelocity(this.dirX * this.speed, this.dirY * this.speed);
+    }
+
+    // Frost interaction, sampled along the flight path (physics drives the
+    // body; we just read position each frame). Ice rune shots lay a frost
+    // trail every FROST_CONFIG.frostEveryPx of travel; any fire projectile
+    // (rune shots AND Flame Burst sparks) melts frost it passes over into steam.
+    preUpdate(time, delta) {
+        super.preUpdate(time, delta);
+
+        if (!this.active || this.isDestroying || !this.scene) return;
+
+        const lays = this.isRuneShot && this.element === ELEMENT_TYPES.ICE;
+        const melts = this.element === ELEMENT_TYPES.FIRE;
+        if (!lays && !melts) return;
+
+        if (this._frostSampleX === undefined) {
+            this._frostSampleX = this.x;
+            this._frostSampleY = this.y;
+            this._frostAccum = 0;
+        }
+
+        if (melts) {
+            // Fire melts on contact — a cheap Map lookup, fine every frame.
+            if (this.scene.meltFrostAt) this.scene.meltFrostAt(this.x, this.y);
+            return;
+        }
+
+        const dx = this.x - this._frostSampleX;
+        const dy = this.y - this._frostSampleY;
+        this._frostSampleX = this.x;
+        this._frostSampleY = this.y;
+        this._frostAccum += Math.sqrt(dx * dx + dy * dy);
+        if (this._frostAccum >= FROST_CONFIG.frostEveryPx) {
+            this._frostAccum = 0;
+            if (this.scene.frostTileAtWorld) this.scene.frostTileAtWorld(this.x, this.y);
+        }
     }
 
     onWorldBoundsHit() {

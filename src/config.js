@@ -28,6 +28,11 @@ export const PLAYER_CONFIG = {
     },
 };
 
+// Per-seat team identity (index = playerNumber - 1). Seats 1 & 2 match the
+// legacy blue/red exactly so 1P/2P visuals are unchanged; 3 & 4 add green/gold.
+export const TEAM_COLORS = [0x5599ff, 0xff5566, 0x66cc66, 0xffcc44]; // blue, red, green, gold
+export const TEAM_NAMES = ['BLUE', 'RED', 'GREEN', 'GOLD'];
+
 // Normal shot (no rune required)
 export const NORMAL_SHOT_CONFIG = {
     damage: 35,
@@ -139,6 +144,29 @@ export const RUNE_CONFIG = {
     shotsPerPickup: 3,
     tripleShotsPerPickup: 2,
     minPlayerDistanceTiles: 3, // Don't spawn on top of a player
+};
+
+// Phase 4 — slippery ice floor tiles
+export const FROST_CONFIG = {
+    grip: 0.06,              // velocity lerp factor per frame while on frost
+    durationMs: 6500,        // frost tile lifetime
+    frostEveryPx: 20,        // ice projectile lays frost every N px traveled
+    slideStopSpeed: 8,       // below this speed, snap to 0
+};
+
+// Phase 4 — Orb Surge: pressure once a round drags on
+export const PRESSURE_CONFIG = {
+    surgeAtMs: 60000,        // round time before surge kicks in
+    spawnIntervalMin: 2500,  // surge-mode rune spawn cadence
+    spawnIntervalMax: 4000,
+    maxRunes: 6,             // raised cap during surge
+};
+
+// Phase 5c — Mutators: numbers for the combinable, default-OFF match modifiers
+// (see RUNTIME_SETTINGS.mut* in scenes/SettingsScene.js).
+export const MUTATOR_CONFIG = {
+    giantScale: 1.8,        // Giant Projectiles: visual scale + physics body multiplier
+    lowCooldownFactor: 0.4, // Low Cooldowns: multiplier applied after class passives
 };
 
 export const CONTROLS = {

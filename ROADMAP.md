@@ -65,16 +65,16 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 
 ## Phase 4 — Battlefield Identity (the maze is mutable)
 
-- [ ] `[O]` Ice floor tiles: ice shots frost tiles they pass over; frosted tiles are slippery (momentum physics); fire melts them; Cryomancer unaffected
-- [ ] `[S]` Steam clouds: fire hitting an ice patch makes a vision-blocking cloud
-- [ ] `[S]` Round-stall pressure: after 60s, orb rain or arena edge closes in with fire tiles
-- [ ] `[H]` Sudden-death mutator: 1 HP classic mode toggle in settings
+- [x] `[O]` Ice floor tiles: ice shots frost tiles they pass over; frosted tiles are slippery (momentum physics); fire melts them; Cryomancer unaffected
+- [x] `[S]` Steam clouds: fire hitting an ice patch makes a vision-blocking cloud
+- [x] `[S]` Round-stall pressure: after 60s, Orb Surge floods the arena with pickups
+- [x] `[H]` Sudden-death mutator: 1 HP classic mode toggle in settings
 
 ## Phase 5 — Party Pass (couch multiplayer)
 
-- [ ] `[S]` Gamepad support (Phaser Gamepad API), pads join seamlessly
-- [ ] `[O]` 3–4 player local matches (player array refactor, HUD for 4, FFA scoring)
-- [ ] `[S]` Mutators menu: giant projectiles, orb rain, low cooldowns, mirror maps
+- [x] `[S]` Gamepad support (Phaser Gamepad API), pads join seamlessly
+- [x] `[O]` 3–4 player local matches (player array refactor, HUD for 4, FFA scoring)
+- [x] `[S]` Mutators menu: giant projectiles, orb rain, low cooldowns, mirror maps
 
 ## Phase 6 — Reach (retention + audience)
 
