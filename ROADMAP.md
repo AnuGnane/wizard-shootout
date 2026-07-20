@@ -83,7 +83,7 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 - [x] `[S]` Local stats + achievements (wins, streaks, per-element kills)
 - [x] `[S]` Daily challenge: seeded map + mutator + bot, local best tracked
 - [ ] `[S]` Procedural chiptune music loop, intensity up on match point
-- [ ] `[H]` Map theming: per-map wall/floor palettes (catacombs, ruins, forge, ice cavern)
+- [x] `[H]` Map theming: per-map wall/floor palettes (catacombs, ruins, forge, ice cavern)
 - [x] `[S]` Wizard animation: walk bob, cast flash, idle staff sparkle
 
 ## Phase 7 — Big Bets (only after 1–6 prove out)
