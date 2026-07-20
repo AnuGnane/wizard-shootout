@@ -58,8 +58,8 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 - [ ] `[F]` Finalize class stats/cooldowns (balance pass on the table above)
 - [x] `[S]` Class data module + class-select scene (both players pick; bot picks randomly in 1P)
 - [x] `[S]` Class-colored sprites: robe = class color, hat band/health bar = team color (procedural palettes)
-- [ ] `[O]` Signature abilities implementation (Blink wall traversal, Breach map mutation, dash + hit detection, novas)
-- [ ] `[O]` Bot uses signature abilities sensibly per class
+- [x] `[O]` Signature abilities implementation (Blink wall traversal, Breach map mutation, dash + hit detection, novas)
+- [x] `[O]` Bot uses signature abilities sensibly per class
 - [x] `[S]` Cooldown UI for signatures (extends Phase 2 indicators); orb spawn rebalance
 - [ ] `[F]` Playtest + balance pass
 
