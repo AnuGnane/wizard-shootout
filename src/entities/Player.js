@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, RUNE_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 
@@ -57,6 +57,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.normalCooldown = NORMAL_SHOT_CONFIG.cooldown;
         this.runeCooldown = 800; // Slightly faster for rune shots
 
+        // Timestamps (scene.time.now) for when each shot type comes off
+        // cooldown - used purely to draw the cooldown indicator arcs; the
+        // boolean flags above remain the source of truth for gameplay.
+        this.normalReadyAt = 0;
+        this.runeReadyAt = 0;
+
         // Edge detection for shoot buttons (works for keyboard and AI alike)
         this.prevShoot = false;
         this.prevRuneShoot = false;
@@ -97,6 +103,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Create health bar
         this.createHealthBar();
+
+        // Cooldown arcs + aim hint, redrawn every update()
+        this.indicator = scene.add.graphics();
+        this.indicator.setDepth(18);
     }
 
     createHealthBar() {
@@ -140,6 +150,50 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.shieldBubble) {
             this.shieldBubble.setPosition(this.x, this.y);
         }
+
+        // Redraw cooldown arcs + aim hint
+        this.updateIndicator();
+    }
+
+    updateIndicator() {
+        const g = this.indicator;
+        g.clear();
+
+        if (!this.isAlive) return;
+
+        const now = this.scene.time.now;
+        const teamColor = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+
+        // Normal shot cooldown arc - sweeps from -90deg, shrinking to
+        // nothing as the shot comes off cooldown.
+        if (now < this.normalReadyAt) {
+            const remaining = Phaser.Math.Clamp((this.normalReadyAt - now) / this.normalCooldown, 0, 1);
+            const startAngle = Phaser.Math.DegToRad(-90);
+            const endAngle = Phaser.Math.DegToRad(-90 + 360 * remaining);
+            g.lineStyle(2, 0xffffff, 0.5);
+            g.beginPath();
+            g.arc(this.x, this.y, 17, startAngle, endAngle, false);
+            g.strokePath();
+        }
+
+        // Orb shot cooldown arc, colored by the held element
+        if (this.heldRune && now < this.runeReadyAt) {
+            const remaining = Phaser.Math.Clamp((this.runeReadyAt - now) / this.runeCooldown, 0, 1);
+            const startAngle = Phaser.Math.DegToRad(-90);
+            const endAngle = Phaser.Math.DegToRad(-90 + 360 * remaining);
+            const runeColor = ELEMENT_COLORS[this.heldRune] || 0xffffff;
+            g.lineStyle(2, runeColor, 0.5);
+            g.beginPath();
+            g.arc(this.x, this.y, 20, startAngle, endAngle, false);
+            g.strokePath();
+        }
+
+        // Aim hint: faint line along current facing direction
+        g.lineStyle(2, teamColor, 0.28);
+        g.beginPath();
+        g.moveTo(this.x + this.aimDirection.x * 14, this.y + this.aimDirection.y * 14);
+        g.lineTo(this.x + this.aimDirection.x * 30, this.y + this.aimDirection.y * 30);
+        g.strokePath();
     }
 
     updateStatusEffects(time, delta) {
@@ -246,6 +300,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     shootNormal() {
         this.canNormalShot = false;
+        this.normalReadyAt = this.scene.time.now + this.normalCooldown;
 
         this.scene.events.emit('playerShoot', {
             player: this,
@@ -268,6 +323,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         }
 
         this.canRuneShot = false;
+        this.runeReadyAt = this.scene.time.now + this.runeCooldown;
 
         this.scene.events.emit('playerShoot', {
             player: this,
@@ -419,6 +475,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.shieldBubble) {
             this.shieldBubble.destroy();
             this.shieldBubble = null;
+        }
+        if (this.indicator) {
+            this.indicator.destroy();
+            this.indicator = null;
         }
 
         audio.death();

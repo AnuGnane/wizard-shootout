@@ -33,6 +33,12 @@ export class GameScene extends Phaser.Scene {
         this.allProjectiles = [];
         this.runes = [];
 
+        // Per-round stats for the round-end summary banner
+        this.roundStats = {
+            1: { damage: 0, fired: 0, hits: 0, orbs: 0 },
+            2: { damage: 0, fired: 0, hits: 0, orbs: 0 },
+        };
+
         // First interaction unlocks Web Audio (browser autoplay policy)
         this.input.keyboard.once('keydown', () => audio.unlock());
         this.input.once('pointerdown', () => audio.unlock());
@@ -244,9 +250,13 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
-    onRuneCollected(rune) {
+    onRuneCollected({ rune, player }) {
         const idx = this.runes.indexOf(rune);
         if (idx > -1) this.runes.splice(idx, 1);
+
+        if (player && this.roundStats[player.playerNumber]) {
+            this.roundStats[player.playerNumber].orbs++;
+        }
     }
 
     checkRuneCollection() {
@@ -434,10 +444,21 @@ export class GameScene extends Phaser.Scene {
         this.p2ShieldIcon = this.add.image(GAME_CONFIG.width - 150, 51, 'rune_shield').setDepth(11).setScale(0.6).setVisible(false);
 
         // --- Center: score + round/timer ---
-        this.scoreText = this.add.text(GAME_CONFIG.width / 2, 20, '', {
-            font: 'bold 28px monospace',
-            fill: '#ffffff',
-        }).setOrigin(0.5).setDepth(11);
+        // Small target scores read better as filled/empty pips than as a
+        // bare "0 - 0"; larger targets fall back to the numeric display.
+        this.usePips = MATCH_STATE.targetScore <= 7;
+        if (this.usePips) {
+            this.scorePips = this.add.graphics().setDepth(11);
+            this.add.text(GAME_CONFIG.width / 2, 20, '-', {
+                font: 'bold 16px monospace',
+                fill: '#ffffff',
+            }).setOrigin(0.5).setDepth(11);
+        } else {
+            this.scoreText = this.add.text(GAME_CONFIG.width / 2, 20, '', {
+                font: 'bold 28px monospace',
+                fill: '#ffffff',
+            }).setOrigin(0.5).setDepth(11);
+        }
 
         this.roundTimer = 0;
         this.roundText = this.add.text(GAME_CONFIG.width / 2, 45, '', {
@@ -460,7 +481,43 @@ export class GameScene extends Phaser.Scene {
     }
 
     updateScoreText() {
-        this.scoreText.setText(`${MATCH_STATE.scores[1]}  -  ${MATCH_STATE.scores[2]}`);
+        this.updateScoreDisplay();
+    }
+
+    updateScoreDisplay() {
+        if (this.usePips) {
+            this.drawScorePips();
+        } else if (this.scoreText) {
+            this.scoreText.setText(`${MATCH_STATE.scores[1]}  -  ${MATCH_STATE.scores[2]}`);
+        }
+    }
+
+    drawScorePips() {
+        const g = this.scorePips;
+        g.clear();
+
+        const target = MATCH_STATE.targetScore;
+        const radius = 5;
+        const spacing = 16;
+        const gap = 12; // distance from center to the pip nearest it
+        const centerX = GAME_CONFIG.width / 2;
+        const y = 20;
+
+        const drawSide = (sign, score, color) => {
+            for (let i = 0; i < target; i++) {
+                const cx = centerX + sign * (gap + i * spacing);
+                if (i < score) {
+                    g.fillStyle(color, 1);
+                    g.fillCircle(cx, y, radius);
+                } else {
+                    g.lineStyle(1.5, 0x333344, 1);
+                    g.strokeCircle(cx, y, radius);
+                }
+            }
+        };
+
+        drawSide(-1, MATCH_STATE.scores[1], 0x5599ff); // player 1: right-aligned toward center
+        drawSide(1, MATCH_STATE.scores[2], 0xff5566);  // player 2: left-aligned toward center
     }
 
     updateUI() {
@@ -518,14 +575,28 @@ export class GameScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
 
+        const bannerTexts = [banner, sub];
+
+        if (MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1) {
+            const matchPoint = this.add.text(
+                GAME_CONFIG.width / 2,
+                ARENA.offsetY + ARENA.height / 2 + 80,
+                'MATCH POINT',
+                {
+                    font: 'bold 24px monospace',
+                    fill: '#ffdd44',
+                }
+            ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+            bannerTexts.push(matchPoint);
+        }
+
         this.tweens.add({
-            targets: [banner, sub],
+            targets: bannerTexts,
             alpha: 0,
             delay: 1100,
             duration: 400,
             onComplete: () => {
-                banner.destroy();
-                sub.destroy();
+                bannerTexts.forEach(t => t.destroy());
             },
         });
     }
@@ -559,6 +630,32 @@ export class GameScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setDepth(40).setStroke('#000000', 5);
 
+        // Round-end summary: damage dealt / accuracy / orbs used, per player
+        const p1Stats = this.roundStats[1];
+        const p2Stats = this.roundStats[2];
+        const p1Acc = p1Stats.fired > 0 ? Math.round((p1Stats.hits / p1Stats.fired) * 100) : 0;
+        const p2Acc = p2Stats.fired > 0 ? Math.round((p2Stats.hits / p2Stats.fired) * 100) : 0;
+
+        const p1Summary = this.add.text(
+            GAME_CONFIG.width / 2,
+            ARENA.offsetY + ARENA.height / 2 + 78,
+            `DMG ${Math.round(p1Stats.damage)}  ·  ACC ${p1Acc}%  ·  ORBS ${p1Stats.orbs}`,
+            {
+                font: '13px monospace',
+                fill: '#5599ff',
+            }
+        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+
+        const p2Summary = this.add.text(
+            GAME_CONFIG.width / 2,
+            ARENA.offsetY + ARENA.height / 2 + 96,
+            `DMG ${Math.round(p2Stats.damage)}  ·  ACC ${p2Acc}%  ·  ORBS ${p2Stats.orbs}`,
+            {
+                font: '13px monospace',
+                fill: '#ff5566',
+            }
+        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+
         banner.setScale(0.3);
         this.tweens.add({
             targets: banner,
@@ -567,8 +664,10 @@ export class GameScene extends Phaser.Scene {
             ease: 'Back.easeOut',
         });
         score.setAlpha(0);
+        p1Summary.setAlpha(0);
+        p2Summary.setAlpha(0);
         this.tweens.add({
-            targets: score,
+            targets: [score, p1Summary, p2Summary],
             alpha: 1,
             delay: 250,
             duration: 250,
@@ -616,10 +715,14 @@ export class GameScene extends Phaser.Scene {
                         continue;
                     }
 
+                    const ownerStats = this.roundStats[projectile.ownerPlayerNumber];
+                    if (ownerStats) ownerStats.hits++;
+
                     if (player.shieldCharges > 0) {
                         player.breakShield();
                     } else {
                         audio.hit();
+                        if (ownerStats) ownerStats.damage += projectile.damage;
                         projectile.applyEffectsToPlayer(player);
                     }
 
@@ -653,6 +756,9 @@ export class GameScene extends Phaser.Scene {
 
     handlePlayerShoot(data) {
         const playerNum = data.player.playerNumber;
+
+        // Once per trigger pull, even for triple-shot's multiple pellets
+        if (this.roundStats[playerNum]) this.roundStats[playerNum].fired++;
 
         this.cleanupProjectiles();
         if (this.projectilesByPlayer[playerNum].length >= this.maxProjectilesPerPlayer) {
