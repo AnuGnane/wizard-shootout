@@ -26,6 +26,7 @@ export const RUNTIME_SETTINGS = {
     // Game settings
     targetScore: MATCH_CONFIG.targetScore,
     soundEnabled: true,
+    musicEnabled: true,     // Phase 6e — procedural background music toggle
     suddenDeath: false,     // 1-HP mutator: any hit is lethal
     aiDifficulty: 'normal', // easy | normal | hard (picked on map select)
 
@@ -107,6 +108,7 @@ export class SettingsScene extends Phaser.Scene {
         this.addSectionHeader('MATCH');
         this.addSlider('First to (rounds)', 'targetScore', 1, 10, 1);
         this.addToggle('Sound', 'soundEnabled');
+        this.addToggle('Music', 'musicEnabled');
 
         // Sudden Death moved here from MATCH — it's a mutator in spirit
         // (key/persistence unchanged), alongside the four new Phase 5c ones.
@@ -231,6 +233,7 @@ export class SettingsScene extends Phaser.Scene {
             runesEnabled: { ...this.settings.runesEnabled },
         });
         audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
+        audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
         MATCH_STATE.targetScore = RUNTIME_SETTINGS.targetScore;
         saveSettings(RUNTIME_SETTINGS);
     }

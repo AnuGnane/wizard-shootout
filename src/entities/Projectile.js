@@ -214,6 +214,13 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
 
     // Called when hitting a player
     applyEffectsToPlayer(player) {
+        // Phase 6a: record who/what is credited for a kill BEFORE the damage
+        // lands, so die() (called synchronously inside takeDamage below when
+        // this hit is lethal) can read it. A later burn-tick death also reads
+        // this — the DOT's source is whoever landed the fire hit that started
+        // it, so no extra tracking is needed there.
+        player.lastHitBy = { by: this.ownerPlayerNumber, element: this.element };
+
         // Apply damage
         player.takeDamage(this.damage);
 

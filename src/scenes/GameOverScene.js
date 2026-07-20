@@ -3,6 +3,7 @@ import { PLAYER_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
+import * as DailyChallenge from '../systems/DailyChallenge.js';
 
 export class GameOverScene extends Phaser.Scene {
     constructor() {
@@ -13,6 +14,15 @@ export class GameOverScene extends Phaser.Scene {
         this.winner = data.winner || 1;
         this.scores = data.scores || { 1: 0, 2: 0 };
         this.rounds = data.rounds || 1;
+        // Phase 6a: achievements unlocked by GameScene's end-of-match check,
+        // passed along since their toast may not have had time to show
+        // before the scene changed.
+        this.unlockedAchievements = data.unlockedAchievements || [];
+        // Phase 6b: daily challenge framing — when true, this scene reads as
+        // a daily result and REMATCH re-runs the daily instead of a normal
+        // match (see rematch()).
+        this.isDaily = !!data.isDaily;
+        this.dailyStatus = data.dailyStatus || null;
     }
 
     create() {
@@ -20,6 +30,15 @@ export class GameOverScene extends Phaser.Scene {
 
         // Background
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
+
+        // Phase 6b: daily challenge header, framing this as a daily result
+        // rather than a normal match.
+        if (this.isDaily) {
+            this.add.text(width / 2, 40, 'DAILY CHALLENGE', {
+                font: 'bold 22px monospace',
+                fill: '#ffdd44',
+            }).setOrigin(0.5);
+        }
 
         const isParty = MATCH_STATE.playerCount > 2;
         const winnerColor = '#' + TEAM_COLORS[this.winner - 1].toString(16).padStart(6, '0');
@@ -44,8 +63,13 @@ export class GameOverScene extends Phaser.Scene {
             ease: 'Sine.easeInOut',
         });
 
-        // Winner announcement
-        const winText = this.add.text(width / 2, 250, `${winnerName}\nWINS THE MATCH!`, {
+        // Winner announcement. Daily framing reads as "you won/lost" rather
+        // than the normal-match phrasing.
+        const youWon = this.winner === 1;
+        const winTextContent = this.isDaily
+            ? (youWon ? 'YOU WON!' : 'YOU LOST')
+            : `${winnerName}\nWINS THE MATCH!`;
+        const winText = this.add.text(width / 2, 250, winTextContent, {
             font: 'bold 48px monospace',
             fill: winnerColor,
             align: 'center',
@@ -86,6 +110,31 @@ export class GameOverScene extends Phaser.Scene {
             font: '16px monospace',
             fill: '#8888aa',
         }).setOrigin(0.5);
+
+        // Phase 6a: newly-unlocked achievements from this match, if any.
+        // Never happens for a daily (achievements are skipped during one —
+        // see GameScene's trackProfile guard), so this and the daily's
+        // best-today line below share the same y and never collide.
+        if (this.unlockedAchievements.length > 0) {
+            this.add.text(width / 2, 418, `★ New: ${this.unlockedAchievements.join(', ')}`, {
+                font: '14px monospace',
+                fill: '#ffdd44',
+            }).setOrigin(0.5);
+        }
+
+        // Phase 6b: today's best result, so a daily loss still shows what
+        // there is to beat tomorrow (or today, on a rematch).
+        if (this.isDaily) {
+            const status = this.dailyStatus || { bestRounds: null };
+            const hasBest = status.bestRounds != null;
+            const bestText = hasBest
+                ? `Best today: ${status.bestRounds} round${status.bestRounds === 1 ? '' : 's'}`
+                : 'Not beaten yet';
+            this.add.text(width / 2, 418, bestText, {
+                font: '16px monospace',
+                fill: hasBest ? '#66ff66' : '#8888aa',
+            }).setOrigin(0.5);
+        }
 
         // Rematch button
         const restartBtn = this.add.text(width / 2, 470, '[ REMATCH ]', {
@@ -131,6 +180,13 @@ export class GameOverScene extends Phaser.Scene {
 
     rematch() {
         audio.uiClick();
+        if (this.isDaily) {
+            // Phase 6b: re-run today's daily rather than starting a normal
+            // match — re-applies the same seeded config and counts as
+            // another attempt.
+            DailyChallenge.startChallenge(this);
+            return;
+        }
         resetMatch(MATCH_STATE.mode);
         MATCH_STATE.targetScore = RUNTIME_SETTINGS.targetScore;
         this.scene.start('GameScene');

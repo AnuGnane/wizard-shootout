@@ -14,6 +14,11 @@ export const MATCH_STATE = {
     // Set when a mode is chosen (see MenuScene / ClassSelectScene) so downstream
     // code branches on seatTypes rather than the mode string.
     seatTypes: { 1: 'human', 2: 'human', 3: 'bot', 4: 'off' },
+    // Phase 6b — Daily Challenge: true only while a daily run is in progress.
+    // Gates the seat-1 profile-recording hooks in GameScene/Player (a daily
+    // must never pollute the normal stats profile) and is the flag
+    // DailyChallenge.endChallenge() clears on its way back to the menu.
+    isDailyChallenge: false,
 };
 
 export function resetMatch(mode = MATCH_STATE.mode) {

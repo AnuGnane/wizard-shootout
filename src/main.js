@@ -8,14 +8,20 @@ import { MapSelectScene } from './scenes/MapSelectScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { PauseScene } from './scenes/PauseScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
+import { StatsScene } from './scenes/StatsScene.js';
+import { WardrobeScene } from './scenes/WardrobeScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { loadSettings } from './systems/Storage.js';
 import { MATCH_STATE } from './systems/MatchState.js';
+// Side-effect import: loads the persisted stats profile immediately (and, in
+// dev builds, exposes window.__stats/__statsApi) — mirrors loadSettings above.
+import './systems/Stats.js';
 
 // Restore persisted settings (sound, bot difficulty, tunables) before the
 // game boots so every scene sees the saved values from the first frame.
 loadSettings(RUNTIME_SETTINGS);
 audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
+audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
 
 const config = {
     type: Phaser.AUTO,
@@ -37,7 +43,7 @@ const config = {
             gravity: { x: 0, y: 0 },
         },
     },
-    scene: [BootScene, MenuScene, SettingsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene],
+    scene: [BootScene, MenuScene, SettingsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene, StatsScene, WardrobeScene],
     render: {
         pixelArt: true,
         antialias: false,
@@ -50,3 +56,10 @@ const game = new Phaser.Game(config);
 window.__game = game;
 window.__match = MATCH_STATE;
 window.__settings = RUNTIME_SETTINGS;
+
+// Dev-only: expose the audio singleton so Playwright/manual testing can
+// inspect/drive music state directly (ctx, musicGain, _musicOn, etc.).
+// Never present in a production build.
+if (import.meta.env && import.meta.env.DEV) {
+    window.__audio = audio;
+}

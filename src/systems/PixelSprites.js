@@ -4,6 +4,7 @@
 
 import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG, PLAYER_CONFIG, TEAM_COLORS } from '../config.js';
 import { WIZARD_CLASSES, CLASS_KEYS } from './Classes.js';
+import { THEMES, DEFAULT_THEME } from './Themes.js';
 
 const SCALE = 2;
 
@@ -42,15 +43,25 @@ const HAND_SKIN = 0xf0c090;
 // tip and brim highlight are derived from the wizard's TEAM color instead,
 // so a class reads in the robe while the team still reads at a glance.
 // The staff gem is always the class's ELEMENT color.
-function paintWizardTexture(scene, key, classColor, teamColor, elementColor) {
+//
+// Phase 6c — optional `opts` recolors seat-1 cosmetics without disturbing the
+// team read: `opts.robeColor` derives the robe/hat/hatLight/edge shades from a
+// custom color instead of classColor; `opts.staffColor` recolors the shaft
+// (plus a darkened underside). Omitted/undefined opts → byte-identical to the
+// pre-6c output, so every baked generateAllTextures() call is unchanged.
+function paintWizardTexture(scene, key, classColor, teamColor, elementColor, opts = {}) {
     const W = 20;
     const H = 18;
     const cx = 8.5;
     const cy = 8.5;
 
-    const edge = darken(classColor, 70);
-    const hat = darken(classColor, 35);
-    const hatLight = lighten(classColor, 60);
+    const robeBase = (opts.robeColor !== undefined && opts.robeColor !== null) ? opts.robeColor : classColor;
+    const staffTop = (opts.staffColor !== undefined && opts.staffColor !== null) ? opts.staffColor : STAFF_WOOD;
+    const staffBot = (opts.staffColor !== undefined && opts.staffColor !== null) ? darken(opts.staffColor, 43) : STAFF_DARK;
+
+    const edge = darken(robeBase, 70);
+    const hat = darken(robeBase, 35);
+    const hatLight = lighten(robeBase, 60);
     const tip = lighten(teamColor, 55);
     const brimHighlight = lighten(teamColor, 15);
 
@@ -66,7 +77,7 @@ function paintWizardTexture(scene, key, classColor, teamColor, elementColor) {
 
         // Staff shaft, two pixels tall so it reads chunky
         if ((y === 8 || y === 9) && x >= 13 && x <= 16) {
-            return { color: y === 8 ? STAFF_WOOD : STAFF_DARK };
+            return { color: y === 8 ? staffTop : staffBot };
         }
 
         // Hands gripping near the staff
@@ -83,9 +94,9 @@ function paintWizardTexture(scene, key, classColor, teamColor, elementColor) {
             return { color: d <= 2.8 ? hatLight : hat };
         }
         if (d <= 6.3) {
-            // Brim with top-left highlight
+            // Brim with top-left highlight (highlight stays team-colored)
             if (dx + dy < -4.2) return { color: brimHighlight };
-            return { color: classColor };
+            return { color: robeBase };
         }
         if (d <= 7.3) return { color: edge };
 
@@ -117,16 +128,18 @@ function brickPainter(colors, seed) {
     };
 }
 
-function createWallTextures(scene) {
-    paintPixels(scene, 'wall', 16, 16, brickPainter({
-        mortar: 0x232338,
-        base: 0x4a4a6e,
-        baseAlt: 0x50507a,
-        light: 0x5e5e88,
-        dark: 0x3c3c5c,
-    }, 7));
+// Phase 6d — Map theming. `wallColors` is a THEMES[id].wall palette; every
+// theme bakes at seed 7 so the brick layout/character stays identical across
+// themes and only the colors shift. `wall_dungeon` uses the same palette (and
+// seed) the plain 'wall' key always used, so the two are byte-identical.
+function createWallTextures(scene, themeId, wallColors) {
+    paintPixels(scene, `wall_${themeId}`, 16, 16, brickPainter(wallColors, 7));
+}
 
-    // Earth wall — mossy green bricks so conjured walls stand out
+// Earth wall — mossy green bricks so conjured walls stand out. Always
+// 'temp_wall' regardless of map theme (a gameplay element that must stay
+// recognizable), baked once, unchanged from before Phase 6d.
+function createTempWallTexture(scene) {
     paintPixels(scene, 'temp_wall', 16, 16, brickPainter({
         mortar: 0x1c2a16,
         base: 0x55743a,
@@ -136,15 +149,18 @@ function createWallTextures(scene) {
     }, 13));
 }
 
-function createFloorTextures(scene) {
+// Phase 6d — Map theming. `floorColors` is a THEMES[id].floor palette. Same
+// noise seeds/thresholds as before Phase 6d (variant * 97 + 5, >0.93/<0.06)
+// so tile character is unchanged; only the colors come from the theme.
+function createFloorTextures(scene, themeId, floorColors) {
     for (let variant = 0; variant < 3; variant++) {
-        paintPixels(scene, `floor_${variant}`, 16, 16, (x, y) => {
+        paintPixels(scene, `floor_${themeId}_${variant}`, 16, 16, (x, y) => {
             // Faint tile seams on two edges give a subtle grid
-            if (x === 0 || y === 0) return { color: 0x10101c };
+            if (x === 0 || y === 0) return { color: floorColors.seam };
             const n = hash2(x, y, variant * 97 + 5);
-            if (n > 0.93) return { color: 0x1e1e30 };  // sparse light flecks
-            if (n < 0.06) return { color: 0x111120 };  // sparse dark flecks
-            return { color: 0x16162a };
+            if (n > 0.93) return { color: floorColors.fleckLight };  // sparse light flecks
+            if (n < 0.06) return { color: floorColors.fleckDark };   // sparse dark flecks
+            return { color: floorColors.base };
         });
     }
 }
@@ -304,8 +320,28 @@ export function generateAllTextures(scene) {
         }
     }
 
-    createWallTextures(scene);
-    createFloorTextures(scene);
+    // Phase 6d — Map theming: bake wall/floor textures for every theme.
+    createTempWallTexture(scene);
+    for (const themeId of Object.keys(THEMES)) {
+        createWallTextures(scene, themeId, THEMES[themeId].wall);
+        createFloorTextures(scene, themeId, THEMES[themeId].floor);
+    }
+    // Back-compat plain keys ('wall', 'floor_0/1/2') for any code still
+    // referencing them directly. Baked from the dungeon palette — the same
+    // colors the old hardcoded 'wall'/'floor_*' textures used — so `wall` and
+    // `wall_dungeon` (and `floor_0..2` / `floor_dungeon_0..2`) are byte-identical.
+    paintPixels(scene, 'wall', 16, 16, brickPainter(THEMES[DEFAULT_THEME].wall, 7));
+    for (let variant = 0; variant < 3; variant++) {
+        const floorColors = THEMES[DEFAULT_THEME].floor;
+        paintPixels(scene, `floor_${variant}`, 16, 16, (x, y) => {
+            if (x === 0 || y === 0) return { color: floorColors.seam };
+            const n = hash2(x, y, variant * 97 + 5);
+            if (n > 0.93) return { color: floorColors.fleckLight };
+            if (n < 0.06) return { color: floorColors.fleckDark };
+            return { color: floorColors.base };
+        });
+    }
+
     createFrostTexture(scene);
 
     for (const [element, glyph] of Object.entries(GLYPHS)) {
@@ -317,4 +353,35 @@ export function generateAllTextures(scene) {
         const cfg = PROJECTILE_CONFIG[element];
         createProjectileTexture(scene, `projectile_${element}`, cfg.size, cfg.color);
     }
+}
+
+// Phase 6c — return a texture key for a seat's wizard with the given cosmetic
+// colors, painting it on first request and caching by content so repeated
+// calls (and round rebuilds) never leak textures. `robeColor`/`staffColor` may
+// be null/undefined to mean "default"; when BOTH are the plain defaults the
+// key resolves to the standard baked `wizard_<class>_<seat>` so the default
+// look is byte-identical to a no-cosmetics build. Otherwise the robe/staff
+// override goes through paintWizardTexture's opts while class/team/element
+// stay their canonical values (team + gem read is preserved).
+export function ensureCosmeticWizardTexture(scene, classKey, seat, robeColor, staffColor) {
+    const cls = WIZARD_CLASSES[classKey];
+    const classColor = cls ? cls.color : 0xffffff;
+    const elementColor = cls ? ELEMENT_COLORS[cls.element] : ELEMENT_COLORS.arcane;
+    const teamColor = TEAM_COLORS[seat - 1];
+
+    const robeIsDefault = robeColor == null || robeColor === classColor;
+    const staffIsDefault = staffColor == null || staffColor === STAFF_WOOD;
+
+    if (robeIsDefault && staffIsDefault) {
+        return `wizard_${classKey}_${seat}`;
+    }
+
+    const key = `wizard_${classKey}_${seat}__r${robeColor ?? 'x'}_s${staffColor ?? 'x'}`;
+    if (!scene.textures.exists(key)) {
+        const opts = {};
+        if (!robeIsDefault) opts.robeColor = robeColor;
+        if (!staffIsDefault) opts.staffColor = staffColor;
+        paintWizardTexture(scene, key, classColor, teamColor, elementColor, opts);
+    }
+    return key;
 }

@@ -5,6 +5,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { AI_DIFFICULTY } from '../systems/AIController.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
+import { THEMES } from '../systems/Themes.js';
 
 const CARD_W = 225;
 const CARD_H = 155;
@@ -157,15 +158,18 @@ export class MapSelectScene extends Phaser.Scene {
 
     drawThumbnail(cx, cy, def) {
         const map = new GameMap(def, { mirror: RUNTIME_SETTINGS.mutMirrorMaps });
+        const theme = THEMES[map.theme];
         const w = map.cols * THUMB_TILE;
         const h = map.rows * THUMB_TILE;
         const x0 = cx - w / 2;
         const y0 = cy - h / 2;
 
         const g = this.add.graphics();
-        g.fillStyle(0x0a0a15, 1);
+        // Phase 6d — Map theming: thumbnail floor/wall colors come from the
+        // map's theme palette instead of one fixed color for every map.
+        g.fillStyle(theme.floor.base, 1);
         g.fillRect(x0, y0, w, h);
-        g.fillStyle(0x5c5c84, 1);
+        g.fillStyle(theme.wall.base, 1);
         for (let ty = 0; ty < map.rows; ty++) {
             for (let tx = 0; tx < map.cols; tx++) {
                 if (map.grid[ty][tx] === 1) {
@@ -186,6 +190,15 @@ export class MapSelectScene extends Phaser.Scene {
             y0 + map.spawnTiles['2'].y * THUMB_TILE - 1,
             THUMB_TILE + 2, THUMB_TILE + 2
         );
+
+        // Theme name, small, right under the thumbnail. The map-name label
+        // sits at card-local y+42 == cy+64 here (cy is already y-22); even
+        // the tallest thumbnail (19 rows -> h/2=38) leaves a clear gap before
+        // that, so this never overlaps the map name or the sub label below it.
+        this.add.text(cx, y0 + h + 7, theme.name, {
+            font: '9px monospace',
+            fill: '#777799',
+        }).setOrigin(0.5);
     }
 
     startMatch(mapIndex) {

@@ -3,6 +3,7 @@ import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_C
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
+import { TouchControls } from '../systems/TouchControls.js';
 import { Projectile } from '../entities/Projectile.js';
 import { Rune } from '../entities/Rune.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
@@ -11,10 +12,12 @@ import { MATCH_STATE } from '../systems/MatchState.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
+import { recordKill, recordOrb, recordShot, recordDamage, recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from '../systems/Stats.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
     'lightningPierce', 'playerDied', 'runeCollected', 'playerDamaged', 'signatureUsed',
+    'playerKilled',
 ];
 
 export class GameScene extends Phaser.Scene {
@@ -24,6 +27,31 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         this.roundOver = false;
+
+        // Phase 6e: baseline combat intensity for the new round; showRoundBanner
+        // below bumps this to 2 if the round starts already at match point.
+        // Music itself keeps playing uninterrupted across scene restarts —
+        // this only changes which layers the scheduler emits going forward.
+        audio.setMusicIntensity(1);
+
+        // Phase 6b: while a daily challenge is running, none of the seat-1
+        // profile-recording hooks below should touch the normal stats
+        // profile (kills/orbs/shots/damage/rounds/matches/achievements) —
+        // the daily has its own isolated result tracking (recordDailyResult).
+        this.trackProfile = !MATCH_STATE.isDailyChallenge;
+
+        // Phase 6a: seat-1 "died at least once this match" flag, used for the
+        // Flawless achievement/stat. create() runs on every scene.restart()
+        // between rounds, so this must persist across those restarts — it
+        // only resets at the start of a genuinely fresh match (round 1, no
+        // score on the board yet).
+        const isFreshMatch = MATCH_STATE.round === 1 &&
+            MATCH_STATE.scores[1] === 0 && MATCH_STATE.scores[2] === 0 &&
+            MATCH_STATE.scores[3] === 0 && MATCH_STATE.scores[4] === 0;
+        if (isFreshMatch) {
+            this._seat1DiedThisMatch = false;
+        }
+
         this.effects = {
             fireWalls: [],   // Burn effect on walls
             iceWalls: [],    // Slow effect on walls
@@ -51,6 +79,17 @@ export class GameScene extends Phaser.Scene {
         // The scene restarts between rounds; make sure frost overlays/timers are
         // torn down on shutdown so nothing leaks or double-fires next round.
         this.events.once('shutdown', this.clearAllFrost, this);
+
+        // Phase 6e: same restart-safety for any on-screen touch controls —
+        // createPlayers() also destroys+recreates on every round, but a
+        // genuine scene shutdown (quit to menu, match over) needs its own
+        // teardown since createPlayers() won't run again until next time.
+        this.events.once('shutdown', () => {
+            if (this.touchControls) {
+                this.touchControls.destroy();
+                this.touchControls = null;
+            }
+        });
 
         // Per-round stats for the round-end summary banner, keyed by seat.
         this.roundStats = {};
@@ -102,11 +141,25 @@ export class GameScene extends Phaser.Scene {
     // input wiring below reproduces 1P/2P exactly (seat 1 = kb1+pad0, seat 2 =
     // kb2+pad1) and extends it: seats 3/4 humans are pad-only (pad 2 / pad 3).
     createPlayers() {
+        // Phase 6e: recreate touch controls fresh every round. create() runs
+        // on every scene.restart(), so any prior instance's pointer
+        // listeners/graphics must be torn down first or they'd leak/stack.
+        if (this.touchControls) {
+            this.touchControls.destroy();
+            this.touchControls = null;
+        }
+
         const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
         const spawns = this.map.getSpawnPointsFor(activeSeats.length);
 
         this.players = [];
         this.aiControllers = [];
+
+        // Touch-capable device, checked once per round. On-screen controls
+        // are only ever offered to seat 1 in 1P mode (see below) — desktop,
+        // 2P and party all stay byte-identical to today regardless of this.
+        const touchCapable = this.sys.game.device.input.touch ||
+            ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
         activeSeats.forEach((seat, i) => {
             const spawn = spawns[i];
@@ -122,6 +175,13 @@ export class GameScene extends Phaser.Scene {
                 const sources = [];
                 if (seat <= 2) sources.push(new KeyboardInput(this, seat));
                 sources.push(new GamepadInput(this, seat - 1));
+                // Phase 6e: seat 1 in 1P mode on a touch device also gets an
+                // on-screen joystick + fire buttons, OR'd into the same
+                // composite as keyboard/gamepad.
+                if (seat === 1 && touchCapable && MATCH_STATE.mode === '1p') {
+                    this.touchControls = new TouchControls(this);
+                    sources.push(this.touchControls);
+                }
                 inputSource = sources.length > 1 ? new CompositeInput(...sources) : sources[0];
             }
 
@@ -180,13 +240,19 @@ export class GameScene extends Phaser.Scene {
     createMaze() {
         this.walls = this.physics.add.staticGroup();
 
+        // Phase 6d — Map theming: each map picks a wall/floor palette; the
+        // border/interior walls and floor tiles use the map's themed texture
+        // keys (a dungeon-themed map's keys are byte-identical to the old
+        // plain 'wall'/'floor_*' keys).
+        const theme = this.map.theme;
+
         for (let y = 0; y < ARENA.rows; y++) {
             for (let x = 0; x < ARENA.cols; x++) {
                 const worldX = ARENA.offsetX + x * ARENA.tileSize + ARENA.tileSize / 2;
                 const worldY = ARENA.offsetY + y * ARENA.tileSize + ARENA.tileSize / 2;
 
                 if (this.map.grid[y][x] === 1) {
-                    const wall = this.walls.create(worldX, worldY, 'wall');
+                    const wall = this.walls.create(worldX, worldY, 'wall_' + theme);
                     wall.setImmovable(true);
                     wall.refreshBody();
                     wall.gridX = x;
@@ -194,7 +260,7 @@ export class GameScene extends Phaser.Scene {
                 } else {
                     // Vary the floor texture per tile for a less flat look
                     const variant = (x * 7 + y * 13) % 3;
-                    this.add.image(worldX, worldY, `floor_${variant}`).setDepth(-5);
+                    this.add.image(worldX, worldY, 'floor_' + theme + '_' + variant).setDepth(-5);
                 }
             }
         }
@@ -253,6 +319,18 @@ export class GameScene extends Phaser.Scene {
         this.events.on('runeCollected', this.onRuneCollected, this);
         this.events.on('playerDamaged', this.onPlayerDamaged, this);
         this.events.on('signatureUsed', this.onSignatureUsed, this);
+        // Phase 6a: stats-only — purely observes kills, never touches round
+        // resolution (that stays polled in update(), unaffected by this event).
+        this.events.on('playerKilled', this.onPlayerKilled, this);
+    }
+
+    // Phase 6a: seat-1 kill credit + achievement check/toast.
+    onPlayerKilled(data) {
+        if (data.by !== 1) return;
+        if (this.trackProfile) {
+            recordKill(data.element);
+            this.showAchievementToasts(checkAchievements());
+        }
     }
 
     // A player requested their signature. Attempt the class-specific effect;
@@ -273,6 +351,9 @@ export class GameScene extends Phaser.Scene {
         if (success) {
             player.abilityReadyAt = this.time.now + player.abilityCooldown;
             audio.signature(player.classKey);
+            // Phase 6c — cast flash at the staff tip, only on a real cast (a
+            // fizzled ability stays ready and shouldn't flash).
+            if (player.castFlash) player.castFlash();
         } else {
             audio.fizzle();
         }
@@ -467,7 +548,7 @@ export class GameScene extends Phaser.Scene {
             // createMaze never drew a floor under a wall tile — add one now.
             const c = this.map.tileToWorld(t.x, t.y);
             const variant = (t.x * 7 + t.y * 13) % 3;
-            this.add.image(c.x, c.y, `floor_${variant}`).setDepth(-5);
+            this.add.image(c.x, c.y, 'floor_' + this.map.theme + '_' + variant).setDepth(-5);
 
             // Debris + shake
             for (let i = 0; i < 7; i++) {
@@ -713,6 +794,12 @@ export class GameScene extends Phaser.Scene {
 
         if (player && this.roundStats[player.playerNumber]) {
             this.roundStats[player.playerNumber].orbs++;
+        }
+
+        // Phase 6a: seat-1 personal orb count + achievement check.
+        if (player && player.playerNumber === 1 && this.trackProfile) {
+            recordOrb();
+            this.showAchievementToasts(checkAchievements());
         }
     }
 
@@ -1183,7 +1270,8 @@ export class GameScene extends Phaser.Scene {
             matchPointY += 24;
         }
 
-        if (MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1) {
+        const isMatchPoint = MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1;
+        if (isMatchPoint) {
             const matchPoint = this.add.text(
                 GAME_CONFIG.width / 2,
                 matchPointY,
@@ -1194,6 +1282,11 @@ export class GameScene extends Phaser.Scene {
                 }
             ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
             bannerTexts.push(matchPoint);
+            // Phase 6e: crank the music to its match-point layer (faster
+            // hi-hat + higher arp) — this round already set intensity 1 in
+            // create(), so this only fires when the round actually opens on
+            // match point.
+            audio.setMusicIntensity(2);
         }
 
         this.tweens.add({
@@ -1389,6 +1482,71 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    // ============ ACHIEVEMENTS (Phase 6a) ============
+
+    // Show one toast per newly-unlocked achievement, staggered so multiple
+    // unlocks landing in the same call (e.g. a kill completing both
+    // Elementalist and Killer Instinct at once) don't overlap.
+    showAchievementToasts(unlocked) {
+        if (!unlocked || unlocked.length === 0) return;
+        unlocked.forEach((ach, i) => {
+            this.time.delayedCall(i * 600, () => {
+                if (this.scene.isActive()) this.showAchievementToast(ach);
+            });
+        });
+    }
+
+    // Compact gold-bordered panel that slides in from the top-right, holds
+    // ~2.5s, then slides back out and fades before destroying itself.
+    // Restart-safe: every deferred step is guarded by an .active/isActive
+    // check, matching the pattern used elsewhere for delayed calls/tweens
+    // that can outlive a round restart (see fadeOutFrost, createTempWall).
+    showAchievementToast(ach) {
+        audio.uiClick();
+
+        const panelW = 260;
+        const panelH = 54;
+        const y = 90;
+        const targetX = GAME_CONFIG.width - panelW / 2 - 16;
+        const startX = GAME_CONFIG.width + panelW / 2 + 10;
+
+        const panel = this.add.rectangle(startX, y, panelW, panelH, 0x1a1a2e, 0.95);
+        panel.setStrokeStyle(2, 0xffdd44, 1);
+        panel.setDepth(60);
+
+        const label = this.add.text(startX, y - 13, '★ ACHIEVEMENT UNLOCKED', {
+            font: 'bold 11px monospace',
+            fill: '#ffdd44',
+        }).setOrigin(0.5).setDepth(61);
+
+        const nameText = this.add.text(startX, y + 10, ach.name, {
+            font: 'bold 16px monospace',
+            fill: '#ffffff',
+        }).setOrigin(0.5).setDepth(61);
+
+        const parts = [panel, label, nameText];
+
+        this.tweens.add({
+            targets: parts,
+            x: targetX,
+            duration: 300,
+            ease: 'Back.easeOut',
+            onComplete: () => {
+                if (!panel.active || !this.scene.isActive()) return;
+                this.time.delayedCall(2500, () => {
+                    if (!panel.active) return;
+                    this.tweens.add({
+                        targets: parts,
+                        x: startX,
+                        alpha: 0,
+                        duration: 300,
+                        onComplete: () => parts.forEach(p => { if (p.active) p.destroy(); }),
+                    });
+                });
+            },
+        });
+    }
+
     // ============ UPDATE LOOP ============
 
     update(time, delta) {
@@ -1455,6 +1613,8 @@ export class GameScene extends Phaser.Scene {
                     } else {
                         audio.hit();
                         if (ownerStats) ownerStats.damage += projectile.damage;
+                        // Phase 6a: seat-1 personal damage-dealt count.
+                        if (projectile.ownerPlayerNumber === 1 && this.trackProfile) recordDamage(projectile.damage);
                         projectile.applyEffectsToPlayer(player);
                     }
 
@@ -1491,6 +1651,8 @@ export class GameScene extends Phaser.Scene {
 
         // Once per trigger pull, even for triple-shot's multiple pellets
         if (this.roundStats[playerNum]) this.roundStats[playerNum].fired++;
+        // Phase 6a: seat-1 personal shot count.
+        if (playerNum === 1 && this.trackProfile) recordShot();
 
         this.cleanupProjectiles();
         if (this.projectilesByPlayer[playerNum].length >= this.maxProjectilesPerPlayer) {
@@ -1640,6 +1802,17 @@ export class GameScene extends Phaser.Scene {
 
         const winner = aliveList.length === 1 ? aliveList[0].playerNumber : null;
 
+        // Phase 6a: seat-1 personal round result. A draw (winner === null,
+        // mutual kill) records neither a win nor a loss. Skipped entirely
+        // during a daily challenge (Phase 6b) — see this.trackProfile.
+        if (this.trackProfile) {
+            if (winner === 1) {
+                recordRound(true);
+            } else if (winner !== null) {
+                recordRound(false);
+            }
+        }
+
         if (winner !== null) {
             MATCH_STATE.scores[winner]++;
             this.updateScoreText();
@@ -1663,11 +1836,39 @@ export class GameScene extends Phaser.Scene {
 
         this.time.delayedCall(MATCH_CONFIG.roundEndDelay, () => {
             if (isMatchWin) {
-                this.scene.start('GameOverScene', {
-                    winner,
-                    scores: { ...MATCH_STATE.scores },
-                    rounds: MATCH_STATE.round,
-                });
+                const youWon = (winner === 1);
+
+                if (MATCH_STATE.isDailyChallenge) {
+                    // Phase 6b: the daily has its own isolated result
+                    // tracking — it must never touch the normal profile's
+                    // kills/wins/streak/achievements (see this.trackProfile
+                    // above, which already skipped every per-round hook).
+                    recordDailyResult(youWon, MATCH_STATE.round);
+
+                    this.scene.start('GameOverScene', {
+                        winner,
+                        scores: { ...MATCH_STATE.scores },
+                        rounds: MATCH_STATE.round,
+                        isDaily: true,
+                        dailyStatus: getDailyStatus(),
+                    });
+                } else {
+                    // Phase 6a: this is the ONE place a match completes. Record
+                    // the seat-1 personal match result (flawless = won without
+                    // ever dying this match) before leaving the scene; the toast
+                    // itself may not have time to show here, so pass the newly-
+                    // unlocked achievements along for GameOverScene to surface.
+                    const flawless = youWon && !this._seat1DiedThisMatch;
+                    recordMatch(youWon, MATCH_STATE.classes[1], flawless);
+                    const newlyUnlocked = checkAchievements();
+
+                    this.scene.start('GameOverScene', {
+                        winner,
+                        scores: { ...MATCH_STATE.scores },
+                        rounds: MATCH_STATE.round,
+                        unlockedAchievements: newlyUnlocked.map(a => a.name),
+                    });
+                }
             } else {
                 MATCH_STATE.round++;
                 this.scene.restart();
