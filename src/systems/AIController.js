@@ -60,7 +60,8 @@ export class AIController {
     constructor(scene) {
         this.scene = scene;
         this.me = null;
-        this.opponent = null;
+        this.opponents = [];     // every other player (alive or dead)
+        this.opponent = null;    // current target: nearest living opponent
         this.params = AI_DIFFICULTY[RUNTIME_SETTINGS.aiDifficulty] || AI_DIFFICULTY.normal;
 
         this.state = { up: false, down: false, left: false, right: false, shoot: false, runeShoot: false, ability: false };
@@ -75,13 +76,30 @@ export class AIController {
         this.knownThreats = new WeakSet();
     }
 
-    setPlayers(me, opponent) {
+    // opponents is an array (1P mode passes [player1]). In FFA the bot targets
+    // whichever living opponent is nearest, re-picked on every repath.
+    setPlayers(me, opponents) {
         this.me = me;
-        this.opponent = opponent;
+        this.opponents = Array.isArray(opponents) ? opponents : [opponents];
+        this.opponent = this.nearestLivingOpponent();
     }
 
     getState() {
         return this.state;
+    }
+
+    nearestLivingOpponent() {
+        let best = null;
+        let bestDist = Infinity;
+        for (const o of this.opponents) {
+            if (!o || !o.isAlive) continue;
+            const d = Phaser.Math.Distance.Between(this.me.x, this.me.y, o.x, o.y);
+            if (d < bestDist) {
+                bestDist = d;
+                best = o;
+            }
+        }
+        return best;
     }
 
     update(time) {
@@ -91,11 +109,20 @@ export class AIController {
         s.runeShoot = false;
         s.ability = false; // re-armed per frame; set by tryAbility()
 
-        if (!this.me || !this.me.isAlive || !this.opponent || !this.opponent.isAlive) return;
+        if (!this.me || !this.me.isAlive) return;
         if (this.scene.roundOver) return;
+
+        // Re-pick the target immediately if it died (or we never had one).
+        if (!this.opponent || !this.opponent.isAlive) {
+            this.opponent = this.nearestLivingOpponent();
+        }
+        if (!this.opponent) return; // no living foes left
 
         if (time >= this.nextRepath) {
             this.nextRepath = time + this.params.repathInterval;
+            // Re-pick nearest living target on every repath so the bot tracks
+            // the closest threat in a free-for-all, not a stale one.
+            this.opponent = this.nearestLivingOpponent() || this.opponent;
             this.recomputePath();
         }
 

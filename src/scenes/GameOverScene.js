@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -21,13 +21,19 @@ export class GameOverScene extends Phaser.Scene {
         // Background
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
-        const winnerColor = this.winner === 1 ? '#5599ff' : '#ff5566';
-        const winnerName = this.winner === 1
-            ? PLAYER_CONFIG.names.player1
-            : (MATCH_STATE.mode === '1p' ? 'BOT WIZARD' : PLAYER_CONFIG.names.player2);
+        const isParty = MATCH_STATE.playerCount > 2;
+        const winnerColor = '#' + TEAM_COLORS[this.winner - 1].toString(16).padStart(6, '0');
+        const winnerName = isParty
+            ? TEAM_NAMES[this.winner - 1]
+            : (this.winner === 1
+                ? PLAYER_CONFIG.names.player1
+                : (MATCH_STATE.mode === '1p' ? 'BOT WIZARD' : PLAYER_CONFIG.names.player2));
 
-        // Winner's wizard sprite
-        const wizKey = this.winner === 1 ? 'wizard_blue' : 'wizard_red';
+        // Winner's wizard sprite. 1P/2P keep the plain blue/red wizard; party
+        // shows the winner's actual class in their team color.
+        const wizKey = isParty
+            ? `wizard_${MATCH_STATE.classes[this.winner]}_${this.winner}`
+            : (this.winner === 1 ? 'wizard_blue' : 'wizard_red');
         const wiz = this.add.image(width / 2, 130, wizKey).setScale(5);
         this.tweens.add({
             targets: wiz,
@@ -56,12 +62,25 @@ export class GameOverScene extends Phaser.Scene {
             repeat: -1,
         });
 
-        // Final score
-        const scoreText = this.add.text(width / 2, 350, `${this.scores[1]}  -  ${this.scores[2]}`, {
-            font: 'bold 44px monospace',
-            fill: '#ffffff',
-        });
-        scoreText.setOrigin(0.5);
+        // Final score. 1P/2P show the classic "a - b"; party lists only the
+        // active seats, each in its team color.
+        if (isParty) {
+            const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
+            const segGap = 150;
+            const startX = width / 2 - ((activeSeats.length - 1) * segGap) / 2;
+            activeSeats.forEach((n, i) => {
+                this.add.text(startX + i * segGap, 350, `${TEAM_NAMES[n - 1]} ${this.scores[n]}`, {
+                    font: 'bold 26px monospace',
+                    fill: '#' + TEAM_COLORS[n - 1].toString(16).padStart(6, '0'),
+                }).setOrigin(0.5);
+            });
+        } else {
+            const scoreText = this.add.text(width / 2, 350, `${this.scores[1]}  -  ${this.scores[2]}`, {
+                font: 'bold 44px monospace',
+                fill: '#ffffff',
+            });
+            scoreText.setOrigin(0.5);
+        }
 
         this.add.text(width / 2, 392, `${this.rounds} rounds played`, {
             font: '16px monospace',

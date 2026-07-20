@@ -274,6 +274,75 @@ export class GameMap {
             player2: this.tileToWorld(this.spawnTiles['2'].x, this.spawnTiles['2'].y),
         };
     }
+
+    // World spawn positions for `count` wizards, as an array of {x, y}.
+    // count <= 2 returns exactly the legacy two-spawn layout (spawn '1' then
+    // '2') so 1P/2P are untouched. count 3/4 is corner-based: BFS out from each
+    // arena corner to the nearest open floor tile that isn't already claimed
+    // (and not within 2 tiles of a claimed spawn), taking the first `count`.
+    // Deterministic and works on every shipped map without ASCII edits.
+    getSpawnPointsFor(count) {
+        if (count <= 2) {
+            return [
+                this.tileToWorld(this.spawnTiles['1'].x, this.spawnTiles['1'].y),
+                this.tileToWorld(this.spawnTiles['2'].x, this.spawnTiles['2'].y),
+            ];
+        }
+
+        const corners = [
+            { x: 0, y: 0 },                          // top-left
+            { x: this.cols - 1, y: this.rows - 1 },  // bottom-right
+            { x: this.cols - 1, y: 0 },              // top-right
+            { x: 0, y: this.rows - 1 },              // bottom-left
+        ];
+
+        const claimed = [];
+        for (const corner of corners) {
+            if (claimed.length >= count) break;
+            const tile = this._bfsNearestSpawn(corner, claimed);
+            if (tile) claimed.push(tile);
+        }
+
+        // Safety net (never hit on the shipped maps): fill any shortfall with
+        // the first well-separated open tiles found scanning the interior.
+        for (let y = 1; y < this.rows - 1 && claimed.length < count; y++) {
+            for (let x = 1; x < this.cols - 1 && claimed.length < count; x++) {
+                if (this.isWall(x, y)) continue;
+                if (this._tooCloseToClaimed(x, y, claimed)) continue;
+                claimed.push({ x, y });
+            }
+        }
+
+        return claimed.slice(0, count).map(t => this.tileToWorld(t.x, t.y));
+    }
+
+    _tooCloseToClaimed(x, y, claimed) {
+        return claimed.some(c => Math.max(Math.abs(c.x - x), Math.abs(c.y - y)) <= 2);
+    }
+
+    // Breadth-first from a (possibly wall) corner tile, returning the nearest
+    // open floor tile that is unclaimed and clear of already-claimed spawns.
+    _bfsNearestSpawn(start, claimed) {
+        const seen = new Set([`${start.x},${start.y}`]);
+        const queue = [start];
+        const neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        while (queue.length) {
+            const cur = queue.shift();
+            if (!this.isWall(cur.x, cur.y) && !this._tooCloseToClaimed(cur.x, cur.y, claimed)) {
+                return { x: cur.x, y: cur.y };
+            }
+            for (const [dx, dy] of neighbors) {
+                const nx = cur.x + dx;
+                const ny = cur.y + dy;
+                if (nx < 0 || nx >= this.cols || ny < 0 || ny >= this.rows) continue;
+                const key = `${nx},${ny}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                queue.push({ x: nx, y: ny });
+            }
+        }
+        return null;
+    }
 }
 
 // Center the arena for the given map inside the window, between the top

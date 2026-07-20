@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, TEAM_COLORS } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
@@ -143,7 +143,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.healthBarBg.setStrokeStyle(1, 0x000000, 0.6);
 
         // Health fill
-        this.baseBarColor = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+        this.baseBarColor = TEAM_COLORS[this.playerNumber - 1];
         this.healthBarFill = this.scene.add.rectangle(0, 0, barWidth - 2, barHeight - 2, this.baseBarColor);
         this.healthBarFill.setDepth(21);
 
@@ -190,7 +190,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (!this.isAlive) return;
 
         const now = this.scene.time.now;
-        const teamColor = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+        const teamColor = TEAM_COLORS[this.playerNumber - 1];
 
         // Normal shot cooldown arc - sweeps from -90deg, shrinking to
         // nothing as the shot comes off cooldown.
@@ -356,15 +356,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // stun to the opponent and lays down a fading afterimage trail.
     updateDash(time) {
         const sig = this.classDef.signature;
-        const opponent = this.playerNumber === 1 ? this.scene.player2 : this.scene.player1;
 
-        if (!this.dashHitDone && opponent && opponent.isAlive) {
-            const dist = Phaser.Math.Distance.Between(this.x, this.y, opponent.x, opponent.y);
-            if (dist <= sig.dashHitRange) {
+        // Contact stun hits EVERY living opponent inside range on this dash;
+        // dashHitDone still limits it to a single trigger per dash.
+        if (!this.dashHitDone) {
+            const inRange = this.scene.getOpponentsOf(this).filter(o =>
+                o.isAlive && Phaser.Math.Distance.Between(this.x, this.y, o.x, o.y) <= sig.dashHitRange
+            );
+            if (inRange.length > 0) {
                 this.dashHitDone = true;
-                opponent.applyStun(sig.dashStunMs);
-                opponent.takeDamage(sig.dashDamage);
-                this.spawnDashSpark(opponent.x, opponent.y);
+                for (const opponent of inRange) {
+                    opponent.applyStun(sig.dashStunMs);
+                    opponent.takeDamage(sig.dashDamage);
+                    this.spawnDashSpark(opponent.x, opponent.y);
+                }
             }
         }
 
@@ -631,7 +636,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         audio.death();
 
         // Death explosion: colored shards + expanding ring + white flash
-        const color = this.playerNumber === 1 ? 0x5599ff : 0xff5566;
+        const color = TEAM_COLORS[this.playerNumber - 1];
 
         const flash = this.scene.add.circle(this.x, this.y, 14, 0xffffff, 0.9);
         flash.setDepth(30);

@@ -28,6 +28,11 @@ export const PLAYER_CONFIG = {
     },
 };
 
+// Per-seat team identity (index = playerNumber - 1). Seats 1 & 2 match the
+// legacy blue/red exactly so 1P/2P visuals are unchanged; 3 & 4 add green/gold.
+export const TEAM_COLORS = [0x5599ff, 0xff5566, 0x66cc66, 0xffcc44]; // blue, red, green, gold
+export const TEAM_NAMES = ['BLUE', 'RED', 'GREEN', 'GOLD'];
+
 // Normal shot (no rune required)
 export const NORMAL_SHOT_CONFIG = {
     damage: 35,

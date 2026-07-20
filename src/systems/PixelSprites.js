@@ -2,7 +2,7 @@
 // pixel grid (then scaled up) so circles and edges stay crisp with
 // pixelArt rendering — no binary assets needed.
 
-import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG, PLAYER_CONFIG } from '../config.js';
+import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG, PLAYER_CONFIG, TEAM_COLORS } from '../config.js';
 import { WIZARD_CLASSES, CLASS_KEYS } from './Classes.js';
 
 const SCALE = 2;
@@ -295,12 +295,13 @@ export function generateAllTextures(scene) {
     paintWizardTexture(scene, 'wizard_red', PLAYER_CONFIG.colors.player2, PLAYER_CONFIG.colors.player2, ELEMENT_COLORS.arcane);
 
     // Class-colored wizards: robe/hat show the class, hat tip + brim
-    // highlight show the team, one texture per class per player slot.
+    // highlight show the team, one texture per class per seat (1..4).
     for (const classKey of CLASS_KEYS) {
         const cls = WIZARD_CLASSES[classKey];
         const elementColor = ELEMENT_COLORS[cls.element];
-        paintWizardTexture(scene, `wizard_${classKey}_1`, cls.color, PLAYER_CONFIG.colors.player1, elementColor);
-        paintWizardTexture(scene, `wizard_${classKey}_2`, cls.color, PLAYER_CONFIG.colors.player2, elementColor);
+        for (let n = 1; n <= 4; n++) {
+            paintWizardTexture(scene, `wizard_${classKey}_${n}`, cls.color, TEAM_COLORS[n - 1], elementColor);
+        }
     }
 
     createWallTextures(scene);

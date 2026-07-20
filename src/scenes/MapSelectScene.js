@@ -30,12 +30,17 @@ export class MapSelectScene extends Phaser.Scene {
             fill: '#5599ff',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, 78, this.mode === '1p' ? '1 Player vs Bot' : '2 Players', {
+        const subtitle = this.mode === '1p' ? '1 Player vs Bot'
+            : this.mode === 'party' ? `Party — ${MATCH_STATE.playerCount} Wizards`
+            : '2 Players';
+        this.add.text(width / 2, 78, subtitle, {
             font: '15px monospace',
             fill: '#8888aa',
         }).setOrigin(0.5);
 
-        if (this.mode === '1p') {
+        // The difficulty picker applies to any bot seat, not just 1P mode.
+        const anyBot = Object.values(MATCH_STATE.seatTypes).some(t => t === 'bot');
+        if (anyBot) {
             this.createDifficultyPicker(width / 2, 120);
         }
 
