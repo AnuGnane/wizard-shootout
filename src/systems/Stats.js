@@ -37,6 +37,12 @@ export const STATS = {
     matchWinsByClass: { arcanist: 0, pyromancer: 0, cryomancer: 0, stonecaller: 0, stormcaller: 0 },
 
     unlocked: {},       // achievementId -> true
+
+    // Phase 6b — Daily Challenge: a small separate sub-record, isolated from
+    // every counter above (a daily run never touches kills/wins/streak/
+    // achievements — see GameScene's trackProfile guard). `date` gates a
+    // once-a-day rollover; `bestRounds` is rounds-to-win, lower is better.
+    daily: { date: '', attempts: 0, won: false, bestRounds: null },
 };
 
 // Plain numeric counters, copied verbatim when the stored value is a finite number.
@@ -99,6 +105,22 @@ export function loadStats() {
             if (value === true) {
                 STATS.unlocked[id] = true;
             }
+        }
+    }
+
+    if (saved.daily && typeof saved.daily === 'object') {
+        if (typeof saved.daily.date === 'string') {
+            STATS.daily.date = saved.daily.date;
+        }
+        if (typeof saved.daily.attempts === 'number' && Number.isFinite(saved.daily.attempts)) {
+            STATS.daily.attempts = saved.daily.attempts;
+        }
+        if (typeof saved.daily.won === 'boolean') {
+            STATS.daily.won = saved.daily.won;
+        }
+        if (saved.daily.bestRounds === null ||
+            (typeof saved.daily.bestRounds === 'number' && Number.isFinite(saved.daily.bestRounds))) {
+            STATS.daily.bestRounds = saved.daily.bestRounds;
         }
     }
 }
@@ -208,6 +230,53 @@ export function checkAchievements() {
     return unlockedNow;
 }
 
+// ============ DAILY CHALLENGE (Phase 6b) ====================================
+// A small, self-contained sub-record (STATS.daily) tracking only today's
+// attempts/best result — entirely separate from the counters above so a
+// daily run never pollutes the normal profile. Local-date key, matching
+// DailyChallenge.todayKey()'s definition (duplicated here rather than
+// imported, to keep this module's own dependency-free load order intact).
+
+function _todayKey() {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+// Reset STATS.daily whenever the calendar date has moved on since the last
+// recorded attempt/result. Idempotent — a same-day call is a no-op.
+function _rolloverDaily(todayKey) {
+    if (STATS.daily.date !== todayKey) {
+        STATS.daily = { date: todayKey, attempts: 0, won: false, bestRounds: null };
+        saveStats();
+    }
+}
+
+export function recordDailyAttempt() {
+    _rolloverDaily(_todayKey());
+    STATS.daily.attempts++;
+    saveStats();
+}
+
+// roundsPlayed = MATCH_STATE.round at match end (total rounds it took) —
+// lower is better, so bestRounds only ever moves down on a win.
+export function recordDailyResult(youWon, roundsPlayed) {
+    _rolloverDaily(_todayKey());
+    if (youWon) {
+        STATS.daily.won = true;
+        STATS.daily.bestRounds = STATS.daily.bestRounds == null
+            ? roundsPlayed
+            : Math.min(STATS.daily.bestRounds, roundsPlayed);
+    }
+    saveStats();
+}
+
+export function getDailyStatus() {
+    _rolloverDaily(_todayKey());
+    return { ...STATS.daily };
+}
+
 // Dev-only debug handles (mirrors window.__game/__match/__settings in
 // main.js) so Playwright/manual testing can drive and inspect stats directly.
 // Never present in a production build.
@@ -217,5 +286,6 @@ if (import.meta.env && import.meta.env.DEV) {
         recordKill, recordDeath, recordOrb, recordShot, recordDamage,
         recordRound, recordMatch, checkAchievements, loadStats, saveStats,
         ACHIEVEMENTS,
+        recordDailyAttempt, recordDailyResult, getDailyStatus,
     };
 }

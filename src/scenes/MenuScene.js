@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
+import * as DailyChallenge from '../systems/DailyChallenge.js';
+import { getDailyStatus } from '../systems/Stats.js';
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -8,6 +10,13 @@ export class MenuScene extends Phaser.Scene {
     }
 
     create() {
+        // Phase 6b safety net: a daily challenge can be exited via several
+        // paths (win -> GameOver -> Menu, or pause -> quit -> Menu). Menu
+        // entry is the one point every path passes through, so this
+        // unconditionally restores any in-memory settings overrides the
+        // daily applied — a no-op when no daily is active.
+        DailyChallenge.endChallenge();
+
         const { width, height } = this.cameras.main;
 
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
@@ -66,6 +75,32 @@ export class MenuScene extends Phaser.Scene {
             this.scene.start('StatsScene');
         });
 
+        // Phase 6b: [ DAILY ] takes the reserved CENTER slot (Wardrobe stays
+        // reserved on the right for a later phase). A tiny subtitle beneath
+        // it shows today's status — gold "new!" when unbeaten, green
+        // "best N" once won. The 8px gap between the secondary row (ends
+        // y=524.5) and the orb legend (was y=552, top edge ~532.8) was too
+        // thin for a subtitle to sit in without touching one side or the
+        // other, so — following the exact same "shift everything below down
+        // to make room" technique this file's Phase 6a comment already
+        // documents for the secondary row itself — the legend/controls/
+        // gamepad/hint block below is nudged down by 10px, opening enough
+        // clearance for this subtitle at y=532 to clear both neighbors.
+        const dailyX = secondaryStartX + secondarySpacing;
+        this.makeSmallButton(dailyX, 509, '[ DAILY ]', () => {
+            audio.uiClick();
+            DailyChallenge.startChallenge(this);
+        });
+
+        const dailyStatus = getDailyStatus();
+        const dailySubtitle = dailyStatus.won
+            ? `today: best ${dailyStatus.bestRounds}`
+            : 'today: new!';
+        this.add.text(dailyX, 532, dailySubtitle, {
+            font: '11px monospace',
+            fill: dailyStatus.won ? '#66ff66' : '#ffdd44',
+        }).setOrigin(0.5);
+
         // Orb legend
         const orbs = [
             { key: 'rune_fire', label: 'Burn' },
@@ -78,15 +113,15 @@ export class MenuScene extends Phaser.Scene {
         const legendStart = width / 2 - ((orbs.length - 1) * 70) / 2;
         orbs.forEach((orb, i) => {
             const x = legendStart + i * 70;
-            this.add.image(x, 552, orb.key).setScale(1.2);
-            this.add.text(x, 577, orb.label, {
+            this.add.image(x, 562, orb.key).setScale(1.2);
+            this.add.text(x, 587, orb.label, {
                 font: '11px monospace',
                 fill: '#8888aa',
             }).setOrigin(0.5);
         });
 
         // Controls info
-        const controlsP1 = this.add.text(width / 2 - 180, 615,
+        const controlsP1 = this.add.text(width / 2 - 180, 625,
             'Player 1 (Blue)\nWASD - Move\nSPACE - Shoot\nQ - Orb Shot', {
             font: '13px monospace',
             fill: '#5599ff',
@@ -94,7 +129,7 @@ export class MenuScene extends Phaser.Scene {
         });
         controlsP1.setOrigin(0.5);
 
-        const controlsP2 = this.add.text(width / 2 + 180, 615,
+        const controlsP2 = this.add.text(width / 2 + 180, 625,
             'Player 2 (Red)\nArrows - Move\nENTER - Shoot\n/ - Orb Shot', {
             font: '13px monospace',
             fill: '#ff5566',
@@ -103,7 +138,7 @@ export class MenuScene extends Phaser.Scene {
         controlsP2.setOrigin(0.5);
 
         // Gamepad legend, tucked under the keyboard controls
-        const controlsGamepad = this.add.text(width / 2, 655,
+        const controlsGamepad = this.add.text(width / 2, 665,
             'Gamepads: stick/d-pad move · A shoot · X orb · B ability', {
             font: '12px monospace',
             fill: '#666688',
@@ -111,7 +146,7 @@ export class MenuScene extends Phaser.Scene {
         controlsGamepad.setOrigin(0.5);
 
         // Hint
-        const hint = this.add.text(width / 2, 680, '1 / 2 / 3 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
+        const hint = this.add.text(width / 2, 690, '1 / 2 / 3 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
             font: '14px monospace',
             fill: '#666688',
         });

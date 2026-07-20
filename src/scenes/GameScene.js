@@ -11,7 +11,7 @@ import { MATCH_STATE } from '../systems/MatchState.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
-import { recordKill, recordOrb, recordShot, recordDamage, recordRound, recordMatch, checkAchievements } from '../systems/Stats.js';
+import { recordKill, recordOrb, recordShot, recordDamage, recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from '../systems/Stats.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
@@ -26,6 +26,12 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         this.roundOver = false;
+
+        // Phase 6b: while a daily challenge is running, none of the seat-1
+        // profile-recording hooks below should touch the normal stats
+        // profile (kills/orbs/shots/damage/rounds/matches/achievements) —
+        // the daily has its own isolated result tracking (recordDailyResult).
+        this.trackProfile = !MATCH_STATE.isDailyChallenge;
 
         // Phase 6a: seat-1 "died at least once this match" flag, used for the
         // Flawless achievement/stat. create() runs on every scene.restart()
@@ -276,8 +282,10 @@ export class GameScene extends Phaser.Scene {
     // Phase 6a: seat-1 kill credit + achievement check/toast.
     onPlayerKilled(data) {
         if (data.by !== 1) return;
-        recordKill(data.element);
-        this.showAchievementToasts(checkAchievements());
+        if (this.trackProfile) {
+            recordKill(data.element);
+            this.showAchievementToasts(checkAchievements());
+        }
     }
 
     // A player requested their signature. Attempt the class-specific effect;
@@ -741,7 +749,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         // Phase 6a: seat-1 personal orb count + achievement check.
-        if (player && player.playerNumber === 1) {
+        if (player && player.playerNumber === 1 && this.trackProfile) {
             recordOrb();
             this.showAchievementToasts(checkAchievements());
         }
@@ -1552,7 +1560,7 @@ export class GameScene extends Phaser.Scene {
                         audio.hit();
                         if (ownerStats) ownerStats.damage += projectile.damage;
                         // Phase 6a: seat-1 personal damage-dealt count.
-                        if (projectile.ownerPlayerNumber === 1) recordDamage(projectile.damage);
+                        if (projectile.ownerPlayerNumber === 1 && this.trackProfile) recordDamage(projectile.damage);
                         projectile.applyEffectsToPlayer(player);
                     }
 
@@ -1590,7 +1598,7 @@ export class GameScene extends Phaser.Scene {
         // Once per trigger pull, even for triple-shot's multiple pellets
         if (this.roundStats[playerNum]) this.roundStats[playerNum].fired++;
         // Phase 6a: seat-1 personal shot count.
-        if (playerNum === 1) recordShot();
+        if (playerNum === 1 && this.trackProfile) recordShot();
 
         this.cleanupProjectiles();
         if (this.projectilesByPlayer[playerNum].length >= this.maxProjectilesPerPlayer) {
@@ -1741,11 +1749,14 @@ export class GameScene extends Phaser.Scene {
         const winner = aliveList.length === 1 ? aliveList[0].playerNumber : null;
 
         // Phase 6a: seat-1 personal round result. A draw (winner === null,
-        // mutual kill) records neither a win nor a loss.
-        if (winner === 1) {
-            recordRound(true);
-        } else if (winner !== null) {
-            recordRound(false);
+        // mutual kill) records neither a win nor a loss. Skipped entirely
+        // during a daily challenge (Phase 6b) — see this.trackProfile.
+        if (this.trackProfile) {
+            if (winner === 1) {
+                recordRound(true);
+            } else if (winner !== null) {
+                recordRound(false);
+            }
         }
 
         if (winner !== null) {
@@ -1771,22 +1782,39 @@ export class GameScene extends Phaser.Scene {
 
         this.time.delayedCall(MATCH_CONFIG.roundEndDelay, () => {
             if (isMatchWin) {
-                // Phase 6a: this is the ONE place a match completes. Record
-                // the seat-1 personal match result (flawless = won without
-                // ever dying this match) before leaving the scene; the toast
-                // itself may not have time to show here, so pass the newly-
-                // unlocked achievements along for GameOverScene to surface.
                 const youWon = (winner === 1);
-                const flawless = youWon && !this._seat1DiedThisMatch;
-                recordMatch(youWon, MATCH_STATE.classes[1], flawless);
-                const newlyUnlocked = checkAchievements();
 
-                this.scene.start('GameOverScene', {
-                    winner,
-                    scores: { ...MATCH_STATE.scores },
-                    rounds: MATCH_STATE.round,
-                    unlockedAchievements: newlyUnlocked.map(a => a.name),
-                });
+                if (MATCH_STATE.isDailyChallenge) {
+                    // Phase 6b: the daily has its own isolated result
+                    // tracking — it must never touch the normal profile's
+                    // kills/wins/streak/achievements (see this.trackProfile
+                    // above, which already skipped every per-round hook).
+                    recordDailyResult(youWon, MATCH_STATE.round);
+
+                    this.scene.start('GameOverScene', {
+                        winner,
+                        scores: { ...MATCH_STATE.scores },
+                        rounds: MATCH_STATE.round,
+                        isDaily: true,
+                        dailyStatus: getDailyStatus(),
+                    });
+                } else {
+                    // Phase 6a: this is the ONE place a match completes. Record
+                    // the seat-1 personal match result (flawless = won without
+                    // ever dying this match) before leaving the scene; the toast
+                    // itself may not have time to show here, so pass the newly-
+                    // unlocked achievements along for GameOverScene to surface.
+                    const flawless = youWon && !this._seat1DiedThisMatch;
+                    recordMatch(youWon, MATCH_STATE.classes[1], flawless);
+                    const newlyUnlocked = checkAchievements();
+
+                    this.scene.start('GameOverScene', {
+                        winner,
+                        scores: { ...MATCH_STATE.scores },
+                        rounds: MATCH_STATE.round,
+                        unlockedAchievements: newlyUnlocked.map(a => a.name),
+                    });
+                }
             } else {
                 MATCH_STATE.round++;
                 this.scene.restart();

@@ -718,7 +718,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             });
         }
         if (this.playerNumber === 1) {
-            recordDeath();
+            // Phase 6b: a daily challenge must never touch the normal
+            // profile (see GameScene's trackProfile guard) — _seat1DiedThisMatch
+            // still updates since it's scene-local and harmless either way.
+            if (!MATCH_STATE.isDailyChallenge) recordDeath();
             this.scene._seat1DiedThisMatch = true;
         }
 
