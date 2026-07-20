@@ -25,6 +25,7 @@ export const RUNTIME_SETTINGS = {
     // Game settings
     targetScore: MATCH_CONFIG.targetScore,
     soundEnabled: true,
+    aiDifficulty: 'normal', // easy | normal | hard (picked on map select)
 
     // Effect settings
     fireBurnDuration: 4000,

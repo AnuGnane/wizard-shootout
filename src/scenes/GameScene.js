@@ -375,7 +375,9 @@ export class GameScene extends Phaser.Scene {
         uiBar.setDepth(10);
         this.add.rectangle(GAME_CONFIG.width / 2, 59, GAME_CONFIG.width, 2, 0x5a5a9a).setDepth(10);
 
-        const p2Name = MATCH_STATE.mode === '1p' ? 'BOT WIZARD' : PLAYER_CONFIG.names.player2;
+        const p2Name = MATCH_STATE.mode === '1p'
+            ? `BOT · ${RUNTIME_SETTINGS.aiDifficulty.toUpperCase()}`
+            : PLAYER_CONFIG.names.player2;
 
         // --- Player 1 (left) ---
         this.add.text(20, 8, PLAYER_CONFIG.names.player1, {

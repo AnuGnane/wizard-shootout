@@ -20,6 +20,10 @@ npm run build    # production build in dist/
 
 - **1 Player vs Bot** — an AI wizard that pathfinds through the maze, grabs
   orbs, dodges incoming shots, and only fires with clear line of sight.
+  Three difficulty levels (picked on the map-select screen): **Easy** is
+  slow to react, short-sighted, rarely dodges and ignores orbs; **Normal**
+  is the balanced default; **Hard** reacts in a few hundred ms, fires from
+  across the map and dodges everything it sees.
 - **2 Players** — local versus on one keyboard.
 
 ## Controls
