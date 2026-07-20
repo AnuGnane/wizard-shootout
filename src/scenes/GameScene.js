@@ -8,6 +8,7 @@ import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
+import { saveSettings } from '../systems/Storage.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
@@ -57,6 +58,17 @@ export class GameScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-M', () => {
             RUNTIME_SETTINGS.soundEnabled = !RUNTIME_SETTINGS.soundEnabled;
             audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
+            saveSettings(RUNTIME_SETTINGS);
+        });
+
+        // Pause menu. scene.pause() halts this scene's update loop (physics,
+        // timers, input processing) so the ESC listener below can't re-fire
+        // while PauseScene is up; the isPaused() guard is a second layer of
+        // safety in case a queued event slips through.
+        this.input.keyboard.on('keydown-ESC', () => {
+            if (this.scene.isPaused()) return;
+            this.scene.launch('PauseScene');
+            this.scene.pause();
         });
     }
 

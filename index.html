@@ -11,18 +11,21 @@
       padding: 0;
       box-sizing: border-box;
     }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
     body {
       background: #1a1a2e;
       display: flex;
       justify-content: center;
       align-items: center;
-      min-height: 100vh;
       font-family: 'Courier New', monospace;
     }
     #game-container {
-      border: 4px solid #4a4a6a;
-      border-radius: 8px;
-      box-shadow: 0 0 40px rgba(100, 100, 200, 0.3);
+      width: 100vw;
+      height: 100vh;
     }
   </style>
 </head>

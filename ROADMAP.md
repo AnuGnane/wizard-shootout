@@ -25,11 +25,11 @@ cheapest model tier that can do it well.
 
 ## Phase 1 — Ship It (make it playable by anyone)
 
-- [ ] `[H]` GitHub Actions workflow: validate maps + build on push; deploy `dist/` to GitHub Pages
-- [ ] `[H]` Vite `base: './'` so the build works on Pages/itch.io
-- [ ] `[S]` Scale-to-fit: Phaser Scale.FIT + autoCenter — fills any screen, no clipping
-- [ ] `[S]` Pause menu on ESC: resume / restart round / quit to menu (physics + timers pause)
-- [ ] `[S]` localStorage persistence: settings, sound, bot difficulty survive refresh
+- [x] `[H]` GitHub Actions workflow: validate maps + build on push; deploy `dist/` to GitHub Pages
+- [x] `[H]` Vite `base: './'` so the build works on Pages/itch.io (was already set)
+- [x] `[S]` Scale-to-fit: Phaser Scale.FIT + autoCenter — fills any screen, no clipping
+- [x] `[S]` Pause menu on ESC: resume / restart round / quit to menu (physics + timers pause)
+- [x] `[S]` localStorage persistence: settings, sound, bot difficulty survive refresh
 - [ ] `[F]` Enable GitHub Pages in repo settings (manual, one-time — Settings → Pages → Source: GitHub Actions)
 
 ## Phase 2 — Feel Pass (combat readability)

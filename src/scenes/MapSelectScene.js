@@ -4,6 +4,7 @@ import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { AI_DIFFICULTY } from '../systems/AIController.js';
 import { audio } from '../systems/AudioSystem.js';
+import { saveSettings } from '../systems/Storage.js';
 
 const CARD_W = 225;
 const CARD_H = 155;
@@ -94,6 +95,7 @@ export class MapSelectScene extends Phaser.Scene {
                 audio.uiClick();
                 RUNTIME_SETTINGS.aiDifficulty = key;
                 this.refreshDifficultyButtons();
+                saveSettings(RUNTIME_SETTINGS);
             });
             btn.on('pointerover', () => {
                 if (RUNTIME_SETTINGS.aiDifficulty !== key) btn.setColor('#aaaacc');
