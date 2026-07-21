@@ -19,12 +19,20 @@ export const MATCH_STATE = {
     // must never pollute the normal stats profile) and is the flag
     // DailyChallenge.endChallenge() clears on its way back to the menu.
     isDailyChallenge: false,
+    // Stage 2a — Online netcode: true only during a host-authoritative net
+    // match. Gates every net-mode branch in GameScene (createPlayers/
+    // setupCollisions/update). Every local start path clears it via
+    // resetMatch(), so 1P/2P/party stay byte-identical.
+    online: false,
 };
 
 export function resetMatch(mode = MATCH_STATE.mode) {
     MATCH_STATE.mode = mode;
     MATCH_STATE.scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
     MATCH_STATE.round = 1;
+    // A fresh local match is never online — clearing here keeps every local
+    // start path (MapSelect/GameOver rematch/DailyChallenge) out of net mode.
+    MATCH_STATE.online = false;
     // classes, mapIndex, playerCount and seatTypes intentionally untouched —
     // they carry over into rematches (they describe the match setup, not the score).
 }

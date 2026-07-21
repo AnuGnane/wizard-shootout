@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PLAYER_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
+import { clearSession } from '../systems/NetSession.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
@@ -136,19 +137,35 @@ export class GameOverScene extends Phaser.Scene {
             }).setOrigin(0.5);
         }
 
-        // Rematch button
-        const restartBtn = this.add.text(width / 2, 470, '[ REMATCH ]', {
-            font: '28px monospace',
-            fill: '#ffffff',
-            backgroundColor: '#336633',
-            padding: { x: 25, y: 12 },
-        });
-        restartBtn.setOrigin(0.5);
-        restartBtn.setInteractive({ useHandCursor: true });
+        // Rematch button. Stage 2b: a net match has no rematch — re-hosting is a
+        // fresh lobby flow, not a scene restart — so the button is hidden and the
+        // SPACE shortcut below is suppressed when the match was online.
+        const isNet = MATCH_STATE.online;
+        if (!isNet) {
+            const restartBtn = this.add.text(width / 2, 470, '[ REMATCH ]', {
+                font: '28px monospace',
+                fill: '#ffffff',
+                backgroundColor: '#336633',
+                padding: { x: 25, y: 12 },
+            });
+            restartBtn.setOrigin(0.5);
+            restartBtn.setInteractive({ useHandCursor: true });
 
-        restartBtn.on('pointerover', () => restartBtn.setStyle({ fill: '#66ff66' }));
-        restartBtn.on('pointerout', () => restartBtn.setStyle({ fill: '#ffffff' }));
-        restartBtn.on('pointerdown', () => this.rematch());
+            restartBtn.on('pointerover', () => restartBtn.setStyle({ fill: '#66ff66' }));
+            restartBtn.on('pointerout', () => restartBtn.setStyle({ fill: '#ffffff' }));
+            restartBtn.on('pointerdown', () => this.rematch());
+        }
+
+        // Leaving to the menu tears down a live net session first (close the
+        // connection + drop online mode) so the next match starts clean. In
+        // local mode this branch is skipped and behavior is unchanged.
+        const goToMenu = () => {
+            if (MATCH_STATE.online) {
+                clearSession();
+                MATCH_STATE.online = false;
+            }
+            this.scene.start('MenuScene');
+        };
 
         // Menu button
         const menuBtn = this.add.text(width / 2, 545, '[ MAIN MENU ]', {
@@ -163,15 +180,15 @@ export class GameOverScene extends Phaser.Scene {
         menuBtn.on('pointerout', () => menuBtn.setStyle({ fill: '#888888' }));
         menuBtn.on('pointerdown', () => {
             audio.uiClick();
-            this.scene.start('MenuScene');
+            goToMenu();
         });
 
-        // Keyboard shortcuts
-        this.input.keyboard.once('keydown-SPACE', () => this.rematch());
-        this.input.keyboard.once('keydown-ESC', () => this.scene.start('MenuScene'));
+        // Keyboard shortcuts. SPACE (rematch) is suppressed in net mode.
+        if (!isNet) this.input.keyboard.once('keydown-SPACE', () => this.rematch());
+        this.input.keyboard.once('keydown-ESC', () => goToMenu());
 
         // Hint
-        const hint = this.add.text(width / 2, 630, 'SPACE - Rematch | ESC - Menu', {
+        const hint = this.add.text(width / 2, 630, isNet ? 'ESC - Menu' : 'SPACE - Rematch | ESC - Menu', {
             font: '14px monospace',
             fill: '#666688',
         });
