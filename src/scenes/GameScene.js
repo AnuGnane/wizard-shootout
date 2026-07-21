@@ -38,6 +38,17 @@ const FOG_CONFIG = {
     litCoreFraction: 0.7,   // fraction of the disc that's fully lit before it fades
 };
 
+// Stage 2b — Online netcode. Orbs allowed to spawn in a net match: only the
+// elements whose effects DON'T mutate the map or collision geometry, so the
+// guest's static map never desyncs. Earth (conjures collidable walls) and ice
+// (frosts the floor / alters movement) are deliberately excluded.
+const NET_RUNE_POOL = [
+    ELEMENT_TYPES.FIRE,
+    ELEMENT_TYPES.LIGHTNING,
+    ELEMENT_TYPES.SHIELD,
+    ELEMENT_TYPES.TRIPLE,
+];
+
 export class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
@@ -56,6 +67,18 @@ export class GameScene extends Phaser.Scene {
         this._netInputSendAt = 0;     // guest: next allowed input send time
         this._lastSentInput = null;   // guest: last input sent (send-on-change)
         this._peerLeft = false;       // true once the peer disconnects mid-match
+
+        // Stage 2b — net entity sync. The HOST tags each spawned projectile/rune
+        // with a monotonic net id (these two counters) so the GUEST can reconcile
+        // lightweight puppet sprites by id, held in these Maps (netId -> sprite).
+        // All four are harmless no-ops in local mode and on the "wrong" role.
+        this._netProjId = 0;
+        this._netRuneId = 0;
+        this._projPuppets = new Map();
+        this._runePuppets = new Map();
+        // Tear down guest puppets on scene shutdown (quit, match over, round
+        // restart) so no orphan projectile/rune sprites leak across rounds.
+        this.events.once('shutdown', this.clearNetPuppets, this);
 
         // Phase 6e: baseline combat intensity for the new round; showRoundBanner
         // below bumps this to 2 if the round starts already at match point.
@@ -155,10 +178,11 @@ export class GameScene extends Phaser.Scene {
         this.setupCollisions();
         this.setupEvents();
         this.createUI();
-        // Stage 2a: orbs/runes are out of scope for a net match (they arrive in
-        // 2b), so no rune spawning either peer-side — keeps the sync purely to
-        // position/rotation/health/alive. Local modes are unchanged.
-        if (!this.netRole) this.startRuneSpawning();
+        // Stage 2b: the HOST runs rune spawning (restricted to the map-safe net
+        // pool — see spawnRunes) and syncs the orbs to the guest, which only
+        // renders rune puppets from snapshots and never simulates its own.
+        // Local modes (netRole null) are unchanged.
+        if (this.netRole !== 'guest') this.startRuneSpawning();
         this.showRoundBanner();
 
         // Stage 2a: take ownership of the live connection's message/close
@@ -1072,7 +1096,15 @@ export class GameScene extends Phaser.Scene {
         if (this.runes.length >= maxRunes) return;
 
         // Get enabled elements
-        const enabledElements = RUNE_ELEMENTS.filter(e => RUNTIME_SETTINGS.runesEnabled[e]);
+        let enabledElements = RUNE_ELEMENTS.filter(e => RUNTIME_SETTINGS.runesEnabled[e]);
+        // Stage 2b: in a net match, restrict orbs to elements that do NOT mutate
+        // the map/collision — earth conjures collidable walls and ice frosts the
+        // floor, both of which would desync the guest's static map. Fire/lightning/
+        // shield/triple are safe (their only host-side visuals, e.g. fire's wall
+        // scorch, simply won't appear on the guest — damage still syncs via health).
+        if (this.netRole) {
+            enabledElements = enabledElements.filter(e => NET_RUNE_POOL.includes(e));
+        }
         if (enabledElements.length === 0) return;
 
         // Find floor tiles away from both players
@@ -1103,6 +1135,8 @@ export class GameScene extends Phaser.Scene {
         );
         for (let i = 0; i < count; i++) {
             const rune = new Rune(this, floorTiles[i].x, floorTiles[i].y, element);
+            // Stage 2b: tag host runes so the guest can reconcile puppets by id.
+            if (this.netRole === 'host') rune.netId = this._netRuneId++;
             this.runes.push(rune);
         }
     }
@@ -1892,15 +1926,13 @@ export class GameScene extends Phaser.Scene {
         // Resolve the round once at most one wizard remains. Checking here
         // (rather than the instant a death fires) lets simultaneous deaths in
         // the same frame settle first, so a mutual kill reads as a DRAW.
-        // Stage 2a: a net match is a single continuous round — the host NEVER
-        // resolves/restarts on a death (round-restart is stage 2b); a fallen
-        // wizard just stays dead + hidden while we keep syncing.
-        if (this.netRole !== 'host') {
-            const alive = this.players.filter(p => p.isAlive);
-            if (alive.length <= 1) {
-                this.resolveRound(alive);
-                return;
-            }
+        // Stage 2b: the host resolves rounds authoritatively (like a local
+        // match) and mirrors the transition to the guest via round events (see
+        // resolveRound). The guest never reaches here — it early-returns above.
+        const alive = this.players.filter(p => p.isAlive);
+        if (alive.length <= 1) {
+            this.resolveRound(alive);
+            return;
         }
 
         this.roundTimer += delta;
@@ -1947,6 +1979,9 @@ export class GameScene extends Phaser.Scene {
     // snapshot as puppets. No local simulation runs (no physics, projectiles,
     // AI, rune/round logic) — the host owns all of that.
     updateNetGuest(time, delta) {
+        // update() already early-returns on roundOver; this is a second guard so
+        // the guest never streams input or lerps puppets after a round resolves.
+        if (this.roundOver) return;
         this.sendGuestInput(time);
         this.applyGuestSnapshot();
         // HUD (top health bars + held-orb readout) reflects the puppet health.
@@ -1993,10 +2028,21 @@ export class GameScene extends Phaser.Scene {
             const player = this.players[ps.n - 1];
             if (!player) continue;
 
+            // Stage 2b: guest-side hit SFX. A snapshot hp below the puppet's
+            // current health means the host landed damage this interval; play
+            // the hit sound once, before we overwrite the puppet's health.
+            if (typeof ps.hp === 'number' && ps.hp < player.health) audio.hit();
+
             player.x = Phaser.Math.Linear(player.x, ps.x, 0.3);
             player.y = Phaser.Math.Linear(player.y, ps.y, 0.3);
             player.rotation = ps.rot;
             player.health = ps.hp;
+
+            // Stage 2b: mirror held-orb / shield so the existing HUD (updateUI ->
+            // updateRuneDisplay) shows the orb + shield icon for both wizards.
+            player.heldRune = ps.rune || null;
+            player.runeShots = ps.shots | 0;
+            player.shieldCharges = ps.shield | 0;
 
             const alive = !!ps.alive;
             player.isAlive = alive;
@@ -2007,6 +2053,77 @@ export class GameScene extends Phaser.Scene {
             // Keep the floating health bar tracking the sprite while alive
             // (Player.update, which normally does this, doesn't run on the guest).
             if (alive) player.updateHealthBar();
+        }
+
+        // Stage 2b: reconcile projectile + rune puppets against this snapshot.
+        this.reconcileProjPuppets(snap.proj);
+        this.reconcileRunePuppets(snap.runes);
+    }
+
+    // Guest: keep the projectile puppet Map (netId -> image) in step with the
+    // host's live projectile list. New ids spawn a sprite (and a guest-side
+    // shoot SFX); existing ids lightly lerp toward their new position; any
+    // puppet whose id is absent from the snapshot is destroyed and dropped.
+    reconcileProjPuppets(list) {
+        const seen = new Set();
+        if (Array.isArray(list)) {
+            for (const pr of list) {
+                if (!pr || pr.id == null) continue;
+                seen.add(pr.id);
+                let sprite = this._projPuppets.get(pr.id);
+                if (!sprite) {
+                    sprite = this.add.image(pr.x, pr.y, 'projectile_' + pr.el).setDepth(8);
+                    this._projPuppets.set(pr.id, sprite);
+                    audio.shoot(); // a new projectile appeared on the host
+                } else {
+                    sprite.x = Phaser.Math.Linear(sprite.x, pr.x, 0.5);
+                    sprite.y = Phaser.Math.Linear(sprite.y, pr.y, 0.5);
+                }
+            }
+        }
+        for (const [id, sprite] of this._projPuppets) {
+            if (seen.has(id)) continue;
+            if (sprite && sprite.active) sprite.destroy();
+            this._projPuppets.delete(id);
+        }
+    }
+
+    // Guest: same reconcile for rune puppets (netId -> image). Runes are static,
+    // so existing ids need no position update; a rune leaving the host list
+    // (picked up / round end) drops from the snapshot and its puppet is removed.
+    reconcileRunePuppets(list) {
+        const seen = new Set();
+        if (Array.isArray(list)) {
+            for (const r of list) {
+                if (!r || r.id == null) continue;
+                seen.add(r.id);
+                if (!this._runePuppets.has(r.id)) {
+                    const sprite = this.add.image(r.x, r.y, 'rune_' + r.el).setDepth(5);
+                    this._runePuppets.set(r.id, sprite);
+                }
+            }
+        }
+        for (const [id, sprite] of this._runePuppets) {
+            if (seen.has(id)) continue;
+            if (sprite && sprite.active) sprite.destroy();
+            this._runePuppets.delete(id);
+        }
+    }
+
+    // Destroy + drop every guest projectile/rune puppet. Safe to call repeatedly
+    // (shutdown, round restart, gameover all route here). No-op for the host.
+    clearNetPuppets() {
+        if (this._projPuppets) {
+            for (const sprite of this._projPuppets.values()) {
+                if (sprite && sprite.active) sprite.destroy();
+            }
+            this._projPuppets.clear();
+        }
+        if (this._runePuppets) {
+            for (const sprite of this._runePuppets.values()) {
+                if (sprite && sprite.active) sprite.destroy();
+            }
+            this._runePuppets.clear();
         }
     }
 
@@ -2025,8 +2142,21 @@ export class GameScene extends Phaser.Scene {
             rot: Math.round(p.rotation * 1000) / 1000,
             hp: Math.round(p.health),
             alive: p.isAlive,
+            // Stage 2b: held-orb / shield HUD state, so the guest can drive its
+            // existing updateUI()/updateRuneDisplay for BOTH wizards.
+            rune: p.heldRune || null,
+            shots: p.runeShots | 0,
+            shield: p.shieldCharges | 0,
         }));
-        conn.send({ t: 'snap', players, round: MATCH_STATE.round });
+        // Stage 2b: live projectiles + runes, each keyed by its host net id so
+        // the guest reconciles puppet sprites (create-new / update / drop-absent).
+        const proj = this.allProjectiles
+            .filter(p => p && p.active)
+            .map(p => ({ id: p.netId, x: Math.round(p.x), y: Math.round(p.y), el: p.element }));
+        const runes = this.runes
+            .filter(r => r && r.active)
+            .map(r => ({ id: r.netId, x: Math.round(r.spawnX), y: Math.round(r.spawnY), el: r.element }));
+        conn.send({ t: 'snap', players, proj, runes, round: MATCH_STATE.round });
     }
 
     // Inbound net traffic. Host consumes the guest's input; guest buffers the
@@ -2037,8 +2167,49 @@ export class GameScene extends Phaser.Scene {
         if (this.netRole === 'host') {
             if (m.t === 'input' && this.netInput) this.netInput.setState(m);
         } else if (this.netRole === 'guest') {
+            // Stage 2b: host-authoritative round flow, mirrored on the guest.
             if (m.t === 'snap') this._lastSnap = m;
+            else if (m.t === 'roundend') this.onNetRoundEnd(m);
+            else if (m.t === 'restart') this.onNetRestart(m);
+            else if (m.t === 'gameover') this.onNetGameOver(m);
         }
+    }
+
+    // Guest: the host resolved the round. Freeze the sync loop, adopt the
+    // authoritative scores, and show the matching banner (draw when winner null).
+    onNetRoundEnd(m) {
+        if (this.roundOver) return;
+        this.roundOver = true; // stops guest input/puppet lerp (update early-returns)
+        if (m.scores) MATCH_STATE.scores = { ...m.scores };
+        this.updateScoreText();
+        this.cameras.main.shake(300, 0.012);
+        if (m.winner == null) {
+            this.showDrawBanner();
+        } else {
+            if (m.isMatchWin) audio.matchWin(); else audio.roundWin();
+            this.showScoreBanner(m.winner, !!m.isMatchWin);
+        }
+    }
+
+    // Guest: the host advanced to the next round. Adopt the round number and
+    // rebuild the scene fresh (new puppets at spawns; the fixed map matches the
+    // host). Puppets are cleared here too, though shutdown would also clear them.
+    onNetRestart(m) {
+        if (typeof m.round === 'number') MATCH_STATE.round = m.round;
+        this.clearNetPuppets();
+        this.scene.restart();
+    }
+
+    // Guest: the host won the match. Freeze and transition to the game-over
+    // screen with the host's authoritative winner/scores/rounds.
+    onNetGameOver(m) {
+        this.roundOver = true;
+        this.clearNetPuppets();
+        this.scene.start('GameOverScene', {
+            winner: m.winner,
+            scores: m.scores || { ...MATCH_STATE.scores },
+            rounds: m.rounds,
+        });
     }
 
     // Peer disconnected mid-match. Halt the sync loop, show a message, and bounce
@@ -2175,6 +2346,10 @@ export class GameScene extends Phaser.Scene {
             data.isRuneShot
         );
 
+        // Stage 2b: tag host projectiles (normal + each triple/rune pellet routes
+        // through here) so the guest can reconcile puppets by id.
+        if (this.netRole === 'host') projectile.netId = this._netProjId++;
+
         this.projectiles.add(projectile);
         this.projectilesByPlayer[playerNum].push(projectile);
         this.allProjectiles.push(projectile);
@@ -2300,6 +2475,15 @@ export class GameScene extends Phaser.Scene {
 
         const isMatchWin = winner !== null && MATCH_STATE.scores[winner] >= MATCH_STATE.targetScore;
 
+        // Stage 2b: the host mirrors the resolution to the guest immediately, so
+        // both peers freeze + banner in lockstep. winner may be null for a draw.
+        if (this.netRole === 'host') {
+            const conn = NetSession.connection;
+            if (conn && conn.isOpen()) {
+                conn.send({ t: 'roundend', winner, scores: { ...MATCH_STATE.scores }, isMatchWin });
+            }
+        }
+
         this.cameras.main.shake(300, 0.012);
         this.time.delayedCall(300, () => {
             if (winner === null) {
@@ -2317,6 +2501,16 @@ export class GameScene extends Phaser.Scene {
         this.time.delayedCall(MATCH_CONFIG.roundEndDelay, () => {
             if (isMatchWin) {
                 const youWon = (winner === 1);
+
+                // Stage 2b: tell the guest to jump to game-over with the same
+                // authoritative winner/scores/rounds right before we do (a net
+                // match is never a daily, so this precedes the normal path).
+                if (this.netRole === 'host') {
+                    const conn = NetSession.connection;
+                    if (conn && conn.isOpen()) {
+                        conn.send({ t: 'gameover', winner, scores: { ...MATCH_STATE.scores }, rounds: MATCH_STATE.round });
+                    }
+                }
 
                 if (MATCH_STATE.isDailyChallenge) {
                     // Phase 6b: the daily has its own isolated result
@@ -2351,6 +2545,14 @@ export class GameScene extends Phaser.Scene {
                 }
             } else {
                 MATCH_STATE.round++;
+                // Stage 2b: advance the guest to the same next round right before
+                // we restart (order: bump round, send it, then restart locally).
+                if (this.netRole === 'host') {
+                    const conn = NetSession.connection;
+                    if (conn && conn.isOpen()) {
+                        conn.send({ t: 'restart', round: MATCH_STATE.round });
+                    }
+                }
                 this.scene.restart();
             }
         });
