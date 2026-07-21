@@ -93,6 +93,36 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 
 ---
 
+## Phase 8 — Foundation (harden what's built; unblocks everything after)
+
+The game is feature-complete through Phase 7 but the codebase is carrying
+maintenance debt. Pay it down before adding more surface area.
+
+- [x] `[S]` Rewrite README to match reality (all modes, classes, controls incl. the `E`/`.` ability key, online, fog, party, mutators, daily, stats)
+- [x] `[O]` Committed headless smoke suite (`tests/smoke.mjs`) + wire into CI alongside `validateMap`/`build` (boot, all scenes registered, a bot round plays, WebRTC loopback handshake, zero console errors)
+- [ ] `[O]` Decompose `GameScene` (2.5k lines) into focused modules: `FogController`, `NetGameSync`, `RoundFlow`, `SpawnDirector` (the net/fog branches are already cleanly gated — mechanical, low-risk)
+- [ ] `[S]` Accessibility pass (cheap while we're in the menus): remappable keys, colorblind-safe team palettes, screen-shake toggle, controller-navigable UI
+
+## Phase 9 — Content (highest player value; cheap because everything's procedural)
+
+- [ ] `[O]` Map editor UI (maps are already ASCII + `validateMap`-checked — build a grid editor that saves to localStorage and feeds MapSelect)
+- [ ] `[O]` PvE co-op wave-survival mode (reuse AI + spawning + classes: 1–2 players vs escalating bot waves, shared score)
+- [ ] `[S]` One or two new classes/elements to prove the class framework extends cleanly
+
+## Phase 10 — Online for real (rides on Phase 8's `NetGameSync` extraction)
+
+- [ ] `[O]` Friendlier signaling: short room code or QR instead of copy-paste SDP
+- [ ] `[O]` Lift the prototype limits: any class, any map, render host-only FX (muzzle/death/steam) on the guest
+- [ ] `[F]` Decide on a relay (free TURN) so strict-symmetric-NAT players can connect at all
+
+## Phase 11 — Ship & reach (release the finished thing)
+
+- [ ] `[S]` itch.io release + installable mobile PWA (offline play, add-to-home-screen)
+- [ ] `[H]` Auto-generate a trailer GIF from a headless bot match for store/README
+- [ ] `[F]` Pre-launch playtest + balance pass
+
+---
+
 ## Working agreements
 
 - Every layout/mechanic change: `npm run build` must pass; smoke-test in
