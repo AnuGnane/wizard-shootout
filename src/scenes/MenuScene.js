@@ -79,7 +79,15 @@ export class MenuScene extends Phaser.Scene {
         this.makeButton(width / 2, 258, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
         this.makeButton(width / 2, 314, '[ 2 PLAYERS ]', '#336633', '#66ff66', () => this.startGame('2p'));
         this.makeButton(width / 2, 370, '[ PARTY  3-4 P ]', '#336633', '#66ff66', () => this.startGame('party'));
-        this.makeButton(width / 2, 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
+        // Phase 9b: [ SURVIVAL ] shares the ONLINE row rather than taking a new
+        // one — the mode column is already packed against the fixed lower block
+        // (secondary row at y=509), so there is no vertical room left. Both are
+        // compact 20px buttons: SURVIVAL is ~194px wide and ONLINE ~218px, so
+        // at ±112 from center they span 303-497 and 515-733, an 18px gap
+        // between them and ~290px clear on either outer edge.
+        this.makeButton(width / 2 - 112, 421, '[ SURVIVAL ]', '#5a3a1a', '#ffbb55',
+            () => this.startGame('survival'), '20px');
+        this.makeButton(width / 2 + 112, 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
             audio.uiClick();
             this.scene.start('OnlineScene');
         }, '20px');
@@ -199,7 +207,7 @@ export class MenuScene extends Phaser.Scene {
         controlsGamepad.setOrigin(0.5);
 
         // Hint
-        const hint = this.add.text(width / 2, 690, '1 / 2 / 3 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
+        const hint = this.add.text(width / 2, 690, '1 / 2 / 3 / 4 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
             font: '14px monospace',
             fill: '#666688',
         });
@@ -216,6 +224,7 @@ export class MenuScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-ONE', () => this.startGame('1p'));
         this.input.keyboard.on('keydown-TWO', () => this.startGame('2p'));
         this.input.keyboard.on('keydown-THREE', () => this.startGame('party'));
+        this.input.keyboard.on('keydown-FOUR', () => this.startGame('survival'));
         this.input.keyboard.once('keydown-SPACE', () => this.startGame('2p'));
     }
 

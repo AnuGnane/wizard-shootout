@@ -36,6 +36,14 @@ export const STATS = {
     flawlessWins: 0,    // matches won without seat 1 dying
     matchWinsByClass: { arcanist: 0, pyromancer: 0, cryomancer: 0, stonecaller: 0, stormcaller: 0 },
 
+    // Phase 9b — PvE co-op wave survival. Plain counters alongside the rest of
+    // the profile (unlike the daily's isolated sub-record) because a survival
+    // run IS a normal run from seat 1's perspective: its kills/orbs/damage/
+    // deaths already flow through the hooks above, so its headline result
+    // belongs here too. survivalBestWave = most waves ever CLEARED in one run.
+    survivalRuns: 0,
+    survivalBestWave: 0,
+
     unlocked: {},       // achievementId -> true
 
     // Phase 6b — Daily Challenge: a small separate sub-record, isolated from
@@ -58,6 +66,7 @@ const NUMBER_KEYS = [
     'kills', 'deaths',
     'orbsCollected', 'shotsFired', 'damageDealt',
     'flawlessWins',
+    'survivalRuns', 'survivalBestWave',
 ];
 
 // Read the persisted blob (if any) and merge known keys into STATS in place.
@@ -213,6 +222,15 @@ export function recordMatch(youWon, yourClassKey, flawless) {
     saveStats();
 }
 
+// Phase 9b — one survival run finished. Recorded once, at run end, from the
+// SAME seat-1 perspective as everything above (see SurvivalDirector.endRun,
+// which gates on scene.trackProfile exactly like the other end-of-match hooks).
+export function recordSurvivalRun(wavesSurvived) {
+    STATS.survivalRuns++;
+    STATS.survivalBestWave = Math.max(STATS.survivalBestWave, wavesSurvived);
+    saveStats();
+}
+
 // ============ ACHIEVEMENTS ==================================================
 
 export const ACHIEVEMENTS = [
@@ -301,7 +319,7 @@ if (import.meta.env && import.meta.env.DEV) {
     window.__stats = STATS;
     window.__statsApi = {
         recordKill, recordDeath, recordOrb, recordShot, recordDamage,
-        recordRound, recordMatch, checkAchievements, loadStats, saveStats,
+        recordRound, recordMatch, recordSurvivalRun, checkAchievements, loadStats, saveStats,
         ACHIEVEMENTS,
         recordDailyAttempt, recordDailyResult, getDailyStatus,
     };

@@ -34,15 +34,19 @@ export class MapSelectScene extends Phaser.Scene {
 
         const subtitle = this.mode === '1p' ? '1 Player vs Bot'
             : this.mode === 'party' ? `Party — ${MATCH_STATE.playerCount} Wizards`
-            : '2 Players';
+            : this.mode === 'survival'
+                ? `Survival — ${MATCH_STATE.seatTypes[2] === 'human' ? 'Co-op Duo' : 'Solo'}`
+                : '2 Players';
         this.add.text(width / 2, 78, subtitle, {
             font: '15px monospace',
             fill: '#8888aa',
         }).setOrigin(0.5);
 
         // The difficulty picker applies to any bot seat, not just 1P mode.
+        // Phase 9b: survival scales its own horde difficulty by wave (see
+        // SURVIVAL_CONFIG), so offering the picker there would be a lie.
         const anyBot = Object.values(MATCH_STATE.seatTypes).some(t => t === 'bot');
-        if (anyBot) {
+        if (anyBot && this.mode !== 'survival') {
             this.createDifficultyPicker(width / 2, 120);
         }
 

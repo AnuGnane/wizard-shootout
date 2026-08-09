@@ -31,6 +31,8 @@ npm test         # headless smoke suite (see Development)
 - **2 Players** — local versus on one keyboard.
 - **Party (3–4 players)** — local free-for-all. Seats fill from keyboard +
   connected gamepads; HUD and scoring scale to the roster.
+- **Survival (1–2 players, co-op PvE)** — endless escalating waves of dark
+  wizards. See [Survival](#survival) below.
 - **Online 1v1** — connect to a friend over WebRTC with a copy-paste
   connection code (no server). See [Online](#online-1v1-prototype) for the
   prototype's current limits.
@@ -207,11 +209,33 @@ CI (`.github/workflows/ci.yml`) runs map validation, the production build,
 and the smoke suite on every push and PR. Pushes to `main` additionally build
 and deploy to GitHub Pages (`.github/workflows/deploy.yml`).
 
+## Survival
+
+**SURVIVAL** on the menu starts a co-op PvE run: one or two human wizards
+(SOLO / DUO) against endless waves of AI wizards. Pick your class(es) and a map
+(custom maps included) exactly as for any other mode — the horde rolls its own
+class per spawn.
+
+- **Teams.** Heroes are seats 1–2, the horde is seats 3–4. Friendly fire is off
+  in both directions: hero shots pass straight through heroes, horde shots
+  through horde. Your own *bounced* shot can still hit you.
+- **Waves.** Wave N sends `2 + N` wizards at you, two on the field at a time.
+  Kill one and a replacement walks in 1.5s later, at the map spawn point
+  farthest from the nearest living hero.
+- **Difficulty ramps** with the wave: Easy on 1–2, Normal on 3–5, Hard from 6.
+- **Between waves** you get a `WAVE N CLEARED` breather of 3 seconds and heal
+  half of whatever health you're missing.
+- **The run ends** when every hero is down. Your result is waves *survived*
+  (cleared), alongside the team's shared kill tally; your best is saved locally.
+- Orbs spawn as usual (they're your lifeline), but the Orb Surge stall-breaker
+  is off — a survival run has no round clock to stall.
+
 ## Match rules
 
 - A kill scores 1 point and starts a fresh round (on a new map if you picked
   Random). In party mode, last wizard standing takes the round.
 - First to the target score (default 5, configurable in Settings) wins.
+- Survival has no rounds or score — see [Survival](#survival).
 
 ## Project layout
 
@@ -231,6 +255,7 @@ src/
     Themes.js           Per-map wall/floor palettes
     Classes.js          Wizard class data (signatures + passives)
     AIController.js     Bot: BFS pathfinding + line-of-sight + signatures
+    SurvivalDirector.js Co-op wave survival: waves, respawns, run end
     MatchState.js       Score/round/roster state across scene restarts
     Storage.js          localStorage persistence for settings
     Stats.js            Local stats + achievements
@@ -242,5 +267,5 @@ src/
     NetSession.js       Active net session singleton
     NetInput.js         Remote-input source for the guest's puppet
 tests/
-  smoke.mjs             Headless boot/scene/bot-round/netcode smoke suite
+  smoke.mjs             Headless boot/scene/bot-round/survival/netcode smoke suite
 ```

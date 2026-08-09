@@ -7,6 +7,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
+import { MenuNav } from '../systems/MenuNav.js';
 
 const CARD_W = 180;
 const CARD_H = 300;
@@ -24,12 +25,41 @@ export class ClassSelectScene extends Phaser.Scene {
 
     init(data) {
         this.mode = data.mode || '2p';
+        // Phase 9b — survival only: null until the SOLO/DUO pre-step below has
+        // picked a hero count, then true (duo) / false (solo). Carried through
+        // the scene restart the pre-step performs.
+        this.duo = typeof data.duo === 'boolean' ? data.duo : null;
     }
 
     create() {
         const { width, height } = this.cameras.main;
 
+        // The Scene instance is reused across restarts (the survival pre-step
+        // below performs one), so both of these are cleared unconditionally
+        // here rather than left over from a previous visit.
+        this.transitioning = false;
+        this.sizeNav = null;
+
+        // Which picking UI applies: two humans choose in 2P and in survival
+        // DUO; everything else is a single seat-1 pick. Every `mode === '2p'`
+        // test in the standard setup below routes through this instead, so 1P
+        // and 2P behave exactly as they did.
+        this.twoHumans = this.mode === '2p' || (this.mode === 'survival' && this.duo === true);
+
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
+
+        // Phase 9b: survival's hero-count pre-step. MenuScene stays a single
+        // SURVIVAL button; the SOLO/DUO choice lives here and simply restarts
+        // this scene with the answer, so the class UI below only ever runs once
+        // it knows how many humans are picking.
+        if (this.mode === 'survival' && this.duo === null) {
+            this.createSurvivalSizePicker(width, height);
+            this.input.keyboard.on('keydown-ESC', () => {
+                audio.uiClick();
+                this.scene.start('MenuScene');
+            });
+            return;
+        }
 
         this.add.text(width / 2, 40, 'CHOOSE YOUR WIZARD', {
             font: 'bold 32px monospace',
@@ -38,6 +68,7 @@ export class ClassSelectScene extends Phaser.Scene {
 
         const subtitle = this.mode === '1p' ? '1 Player vs Bot'
             : this.mode === 'party' ? 'Party — 3 to 4 Wizards'
+            : this.mode === 'survival' ? (this.duo ? 'Survival — Co-op Duo' : 'Survival — Solo')
             : '2 Players';
         this.add.text(width / 2, 72, subtitle, {
             font: '15px monospace',
@@ -126,6 +157,74 @@ export class ClassSelectScene extends Phaser.Scene {
         }).setOrigin(0.5, 0);
     }
 
+    // ============ SURVIVAL PRE-STEP (Phase 9b) ============
+
+    // Small SOLO / DUO chooser shown before the class cards in survival mode.
+    // Picking restarts this scene with `duo` resolved, which is what makes the
+    // class UI below able to reuse the existing 1P/2P picking code untouched.
+    createSurvivalSizePicker(width, height) {
+        this.add.text(width / 2, 150, 'WAVE SURVIVAL', {
+            font: 'bold 40px monospace',
+            fill: '#ffbb55',
+        }).setOrigin(0.5);
+
+        this.add.text(width / 2, 200, 'Endless escalating waves of dark wizards.\nShared score. The run ends when every hero falls.', {
+            font: '15px monospace',
+            fill: '#8888aa',
+            align: 'center',
+        }).setOrigin(0.5);
+
+        this.add.text(width / 2, 270, 'HOW MANY HEROES?', {
+            font: 'bold 18px monospace',
+            fill: '#aaaacc',
+        }).setOrigin(0.5);
+
+        // Focus nav over the two choices, same helper (and therefore the same
+        // arrows/ENTER + pad d-pad/A behaviour) every other menu screen uses.
+        this.sizeNav = new MenuNav(this, {
+            onBack: () => {
+                audio.uiClick();
+                this.scene.start('MenuScene');
+            },
+        });
+
+        const choose = (duo) => {
+            if (this.transitioning) return;
+            this.transitioning = true;
+            audio.uiClick();
+            this.scene.restart({ mode: 'survival', duo });
+        };
+
+        this.makeSizeButton(width / 2 - 150, 340, '[ SOLO ]', '1 wizard', () => choose(false));
+        this.makeSizeButton(width / 2 + 150, 340, '[ DUO ]', '2 wizards, co-op', () => choose(true));
+
+        this.add.text(width / 2, height - 25, 'ESC - back', {
+            font: '14px monospace',
+            fill: '#666688',
+        }).setOrigin(0.5);
+    }
+
+    makeSizeButton(x, y, label, sub, onClick) {
+        const btn = this.add.text(x, y, label, {
+            font: '26px monospace',
+            fill: '#ffffff',
+            backgroundColor: '#5a3a1a',
+            padding: { x: 25, y: 10 },
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+        btn.on('pointerover', () => btn.setStyle({ fill: '#ffbb55' }));
+        btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' }));
+        btn.on('pointerdown', onClick);
+        this.sizeNav.add(btn, onClick);
+
+        this.add.text(x, y + 44, sub, {
+            font: '13px monospace',
+            fill: '#8888aa',
+        }).setOrigin(0.5);
+
+        return btn;
+    }
+
     // ============ 1P / 2P (unchanged behaviour) ============
 
     createStandardSetup(width, height) {
@@ -154,7 +253,7 @@ export class ClassSelectScene extends Phaser.Scene {
         this.p1Frame.setStrokeStyle(3, p1TeamColor, 1);
         this.p1Frame.setDepth(20);
 
-        if (this.mode === '2p') {
+        if (this.twoHumans) {
             this.p2Frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
             this.p2Frame.setStrokeStyle(3, p2TeamColor, 1);
             this.p2Frame.setDepth(20);
@@ -165,13 +264,17 @@ export class ClassSelectScene extends Phaser.Scene {
             fill: p1TeamColorStr,
         }).setOrigin(0.5);
 
-        if (this.mode === '2p') {
+        if (this.twoHumans) {
             this.p2Hint = this.add.text(width / 2 + 220, height - 60, 'P2: ←/→ + ENTER', {
                 font: 'bold 14px monospace',
                 fill: p2TeamColorStr,
             }).setOrigin(0.5);
         } else {
-            this.p2Hint = this.add.text(width / 2 + 220, height - 60, 'BOT: ?', {
+            // Phase 9b: survival solo has no seat-2 wizard at all — the horde
+            // rolls its own classes per spawn, so the slot reads as the horde
+            // rather than "BOT: ?" (1P mode's label is unchanged).
+            this.p2Hint = this.add.text(width / 2 + 220, height - 60,
+                this.mode === 'survival' ? 'HORDE: RANDOM' : 'BOT: ?', {
                 font: 'bold 14px monospace',
                 fill: p2TeamColorStr,
             }).setOrigin(0.5);
@@ -188,7 +291,7 @@ export class ClassSelectScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-D', () => this.moveCursor(1, 1));
         this.input.keyboard.on('keydown-SPACE', () => this.confirm(1));
 
-        if (this.mode === '2p') {
+        if (this.twoHumans) {
             this.input.keyboard.on('keydown-LEFT', () => this.moveCursor(2, -1));
             this.input.keyboard.on('keydown-RIGHT', () => this.moveCursor(2, 1));
             this.input.keyboard.on('keydown-ENTER', () => this.confirm(2));
@@ -200,12 +303,18 @@ export class ClassSelectScene extends Phaser.Scene {
     // just polled instead of event-driven since Phaser has no keydown-style
     // event for pad buttons.
     update() {
+        // Phase 9b: while the survival SOLO/DUO pre-step is up, none of the
+        // class-picking state exists yet — only its own focus nav is live.
+        if (this.sizeNav) {
+            this.sizeNav.pollPad();
+            return;
+        }
         if (this.mode === 'party') {
             this.updateParty();
             return;
         }
         this.pollPadNav(0, 1, this.p1PadPrev);
-        if (this.mode === '2p') {
+        if (this.twoHumans) {
             this.pollPadNav(1, 2, this.p2PadPrev);
         }
     }
@@ -250,7 +359,7 @@ export class ClassSelectScene extends Phaser.Scene {
             this.p1Hint.setText(`READY — ${WIZARD_CLASSES[this.p1ClassKey].name}`);
             this.p1Hint.setColor('#66ff66');
         } else {
-            if (this.mode !== '2p' || this.p2Confirmed) return;
+            if (!this.twoHumans || this.p2Confirmed) return;
             this.p2Confirmed = true;
             this.p2ClassKey = CLASS_KEYS[this.p2Index];
             RUNTIME_SETTINGS.p2Class = this.p2ClassKey;
@@ -276,25 +385,56 @@ export class ClassSelectScene extends Phaser.Scene {
     checkAllReady() {
         if (this.transitioning) return;
 
-        const ready = this.mode === '2p'
+        const ready = this.twoHumans
             ? (this.p1Confirmed && this.p2Confirmed)
             : this.p1Confirmed;
         if (!ready) return;
 
         this.transitioning = true;
 
-        if (this.mode !== '2p') {
-            // Bot's class is chosen randomly the moment P1 locks in.
+        if (!this.twoHumans) {
+            // Bot's class is chosen randomly the moment P1 locks in. In
+            // survival solo seat 2 is OFF, so this class is never rendered —
+            // it is still assigned so nothing downstream ever sees a null
+            // class key for that seat.
             this.p2ClassKey = Phaser.Utils.Array.GetRandom(CLASS_KEYS);
-            this.p2Hint.setText(`BOT: ${WIZARD_CLASSES[this.p2ClassKey].name}`);
+            if (this.mode !== 'survival') {
+                this.p2Hint.setText(`BOT: ${WIZARD_CLASSES[this.p2ClassKey].name}`);
+            }
         }
 
-        MATCH_STATE.classes = { ...MATCH_STATE.classes, 1: this.p1ClassKey, 2: this.p2ClassKey };
-        // Single source of truth for the roster (see MatchState.seatTypes).
-        MATCH_STATE.seatTypes = this.mode === '1p'
-            ? { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' }
-            : { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
-        MATCH_STATE.playerCount = 2;
+        // Phase 9b — survival roster: seats 1(-2) are the hero team, seats 3
+        // and 4 are the two concurrent horde slots. Their classes are re-rolled
+        // per spawn by SurvivalDirector; these are just the opening pair.
+        if (this.mode === 'survival') {
+            MATCH_STATE.classes = {
+                ...MATCH_STATE.classes,
+                1: this.p1ClassKey,
+                2: this.p2ClassKey,
+                3: Phaser.Utils.Array.GetRandom(CLASS_KEYS),
+                4: Phaser.Utils.Array.GetRandom(CLASS_KEYS),
+            };
+            MATCH_STATE.seatTypes = {
+                1: 'human',
+                2: this.duo ? 'human' : 'off',
+                3: 'bot',
+                4: 'bot',
+            };
+            // playerCount keeps its documented meaning — "number of active
+            // (non-off) seats" — so createPlayers' spawn layout, SpawnDirector's
+            // orb-cap scaling and every other consumer stay correct. The HUD
+            // and GameOverScene branches that key off `> 2` are gated on
+            // survival BEFORE they ever read this (see GameScene.createUI /
+            // updateUI and GameOverScene.create).
+            MATCH_STATE.playerCount = this.duo ? 4 : 3;
+        } else {
+            MATCH_STATE.classes = { ...MATCH_STATE.classes, 1: this.p1ClassKey, 2: this.p2ClassKey };
+            // Single source of truth for the roster (see MatchState.seatTypes).
+            MATCH_STATE.seatTypes = this.mode === '1p'
+                ? { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' }
+                : { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
+            MATCH_STATE.playerCount = 2;
+        }
 
         this.time.delayedCall(CONFIRM_DELAY, () => {
             this.scene.start('MapSelectScene', { mode: this.mode });
