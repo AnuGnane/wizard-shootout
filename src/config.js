@@ -33,6 +33,16 @@ export const PLAYER_CONFIG = {
 export const TEAM_COLORS = [0x5599ff, 0xff5566, 0x66cc66, 0xffcc44]; // blue, red, green, gold
 export const TEAM_NAMES = ['BLUE', 'RED', 'GREEN', 'GOLD'];
 
+// Phase 8 — colorblind-safe alternative to TEAM_COLORS (Okabe-Ito palette),
+// same seat order so TEAM_NAMES stays valid under either set. Red/green and
+// green/gold are the pairs that collide for the two most common color-vision
+// deficiencies; this swaps in blue/vermillion/bluish-green/yellow instead.
+// Selected at runtime via systems/TeamColors.js#getTeamColors() based on
+// RUNTIME_SETTINGS.colorblindTeams — that indirection (not this file) is what
+// reads the toggle, since config.js stays free of Phaser/scene imports (see
+// systems/TeamColors.js for why).
+export const TEAM_COLORS_CB = [0x0072b2, 0xd55e00, 0x009e73, 0xf0e442]; // blue, vermillion, bluish-green, yellow
+
 // Normal shot (no rune required)
 export const NORMAL_SHOT_CONFIG = {
     damage: 35,

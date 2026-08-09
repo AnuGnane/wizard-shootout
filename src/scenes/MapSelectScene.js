@@ -6,6 +6,7 @@ import { AI_DIFFICULTY } from '../systems/AIController.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { THEMES } from '../systems/Themes.js';
+import { MenuNav } from '../systems/MenuNav.js';
 
 const CARD_W = 225;
 const CARD_H = 155;
@@ -60,13 +61,19 @@ export class MapSelectScene extends Phaser.Scene {
         const startX = (width - gridW) / 2 + CARD_W / 2;
         const startY = 215;
 
+        // Phase 8 — grid focus nav across the map thumbnails: left/right/up/
+        // down move by column/row exactly like the visual grid below, ENTER/
+        // pad A picks the focused map. ESC/pad B goes back, same as the R/
+        // ESC keyboard shortcuts kept below.
+        this.menuNav = new MenuNav(this, { grid: true, onBack: () => this.goBack() });
+
         cards.forEach((card, i) => {
             const col = i % COLS;
             const row = Math.floor(i / COLS);
             this.createCard(
                 startX + col * (CARD_W + 12),
                 startY + row * (CARD_H + 14),
-                card
+                card, row, col
             );
         });
 
@@ -77,10 +84,15 @@ export class MapSelectScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         this.input.keyboard.on('keydown-R', () => this.startMatch(null));
-        this.input.keyboard.on('keydown-ESC', () => {
-            audio.uiClick();
-            this.scene.start('MenuScene');
-        });
+    }
+
+    update() {
+        this.menuNav.pollPad();
+    }
+
+    goBack() {
+        audio.uiClick();
+        this.scene.start('MenuScene');
     }
 
     createDifficultyPicker(cx, y) {
@@ -120,7 +132,7 @@ export class MapSelectScene extends Phaser.Scene {
         }
     }
 
-    createCard(x, y, card) {
+    createCard(x, y, card, row, col) {
         const bg = this.add.rectangle(x, y, CARD_W, CARD_H, 0x1a1a2e);
         bg.setStrokeStyle(2, 0x3a3a5a);
         bg.setInteractive({ useHandCursor: true });
@@ -153,7 +165,9 @@ export class MapSelectScene extends Phaser.Scene {
             bg.setStrokeStyle(2, 0x3a3a5a);
             bg.setFillStyle(0x1a1a2e);
         });
-        bg.on('pointerdown', () => this.startMatch(card.mapIndex));
+        const activate = () => this.startMatch(card.mapIndex);
+        bg.on('pointerdown', activate);
+        this.menuNav.add(bg, activate, { row, col });
     }
 
     drawThumbnail(cx, cy, def) {

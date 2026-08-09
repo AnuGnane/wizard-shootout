@@ -1,10 +1,12 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
+import { PLAYER_CONFIG, TEAM_NAMES } from '../config.js';
+import { getTeamColors } from '../systems/TeamColors.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { clearSession } from '../systems/NetSession.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
+import { MenuNav } from '../systems/MenuNav.js';
 
 export class GameOverScene extends Phaser.Scene {
     constructor() {
@@ -42,7 +44,10 @@ export class GameOverScene extends Phaser.Scene {
         }
 
         const isParty = MATCH_STATE.playerCount > 2;
-        const winnerColor = '#' + TEAM_COLORS[this.winner - 1].toString(16).padStart(6, '0');
+        // Phase 8 — resolved once per create() rather than statically
+        // imported, so a colorblindTeams toggle takes effect immediately.
+        const teamColors = getTeamColors();
+        const winnerColor = '#' + teamColors[this.winner - 1].toString(16).padStart(6, '0');
         const winnerName = isParty
             ? TEAM_NAMES[this.winner - 1]
             : (this.winner === 1
@@ -96,7 +101,7 @@ export class GameOverScene extends Phaser.Scene {
             activeSeats.forEach((n, i) => {
                 this.add.text(startX + i * segGap, 350, `${TEAM_NAMES[n - 1]} ${this.scores[n]}`, {
                     font: 'bold 26px monospace',
-                    fill: '#' + TEAM_COLORS[n - 1].toString(16).padStart(6, '0'),
+                    fill: '#' + teamColors[n - 1].toString(16).padStart(6, '0'),
                 }).setOrigin(0.5);
             });
         } else {
@@ -137,10 +142,26 @@ export class GameOverScene extends Phaser.Scene {
             }).setOrigin(0.5);
         }
 
+        // Leaving to the menu tears down a live net session first (close the
+        // connection + drop online mode) so the next match starts clean. In
+        // local mode this branch is skipped and behavior is unchanged.
+        const goToMenu = () => {
+            audio.uiClick();
+            if (MATCH_STATE.online) {
+                clearSession();
+                MATCH_STATE.online = false;
+            }
+            this.scene.start('MenuScene');
+        };
+
+        // Phase 8 — focus nav over Rematch (when present) + Main Menu.
+        // ESC/pad B goes to the menu, same as the ESC shortcut this replaces.
+        const isNet = MATCH_STATE.online;
+        this.menuNav = new MenuNav(this, { onBack: goToMenu });
+
         // Rematch button. Stage 2b: a net match has no rematch — re-hosting is a
         // fresh lobby flow, not a scene restart — so the button is hidden and the
         // SPACE shortcut below is suppressed when the match was online.
-        const isNet = MATCH_STATE.online;
         if (!isNet) {
             const restartBtn = this.add.text(width / 2, 470, '[ REMATCH ]', {
                 font: '28px monospace',
@@ -151,21 +172,12 @@ export class GameOverScene extends Phaser.Scene {
             restartBtn.setOrigin(0.5);
             restartBtn.setInteractive({ useHandCursor: true });
 
+            const doRematch = () => this.rematch();
             restartBtn.on('pointerover', () => restartBtn.setStyle({ fill: '#66ff66' }));
             restartBtn.on('pointerout', () => restartBtn.setStyle({ fill: '#ffffff' }));
-            restartBtn.on('pointerdown', () => this.rematch());
+            restartBtn.on('pointerdown', doRematch);
+            this.menuNav.add(restartBtn, doRematch);
         }
-
-        // Leaving to the menu tears down a live net session first (close the
-        // connection + drop online mode) so the next match starts clean. In
-        // local mode this branch is skipped and behavior is unchanged.
-        const goToMenu = () => {
-            if (MATCH_STATE.online) {
-                clearSession();
-                MATCH_STATE.online = false;
-            }
-            this.scene.start('MenuScene');
-        };
 
         // Menu button
         const menuBtn = this.add.text(width / 2, 545, '[ MAIN MENU ]', {
@@ -178,14 +190,12 @@ export class GameOverScene extends Phaser.Scene {
 
         menuBtn.on('pointerover', () => menuBtn.setStyle({ fill: '#ffffff' }));
         menuBtn.on('pointerout', () => menuBtn.setStyle({ fill: '#888888' }));
-        menuBtn.on('pointerdown', () => {
-            audio.uiClick();
-            goToMenu();
-        });
+        menuBtn.on('pointerdown', goToMenu);
+        this.menuNav.add(menuBtn, goToMenu);
 
-        // Keyboard shortcuts. SPACE (rematch) is suppressed in net mode.
+        // Keyboard shortcut. SPACE (rematch) is suppressed in net mode; ESC
+        // is now handled by menuNav's onBack above.
         if (!isNet) this.input.keyboard.once('keydown-SPACE', () => this.rematch());
-        this.input.keyboard.once('keydown-ESC', () => goToMenu());
 
         // Hint
         const hint = this.add.text(width / 2, 630, isNet ? 'ESC - Menu' : 'SPACE - Rematch | ESC - Menu', {
@@ -193,6 +203,10 @@ export class GameOverScene extends Phaser.Scene {
             fill: '#666688',
         });
         hint.setOrigin(0.5);
+    }
+
+    update() {
+        this.menuNav.pollPad();
     }
 
     rematch() {

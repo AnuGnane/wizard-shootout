@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { ELEMENT_COLORS, TEAM_COLORS, TEAM_NAMES } from '../config.js';
+import { ELEMENT_COLORS, TEAM_NAMES } from '../config.js';
+import { getTeamColors } from '../systems/TeamColors.js';
 import { WIZARD_CLASSES, CLASS_KEYS } from '../systems/Classes.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
@@ -142,30 +143,37 @@ export class ClassSelectScene extends Phaser.Scene {
         this.p1PadPrev = { left: false, right: false, confirm: false };
         this.p2PadPrev = { left: false, right: false, confirm: false };
 
+        // Phase 8 — resolved once per scene create() rather than statically
+        // imported, so a colorblindTeams toggle takes effect on the next
+        // visit to this scene without any replumbing here.
+        const [p1TeamColor, p2TeamColor] = getTeamColors();
+        const p1TeamColorStr = '#' + p1TeamColor.toString(16).padStart(6, '0');
+        const p2TeamColorStr = '#' + p2TeamColor.toString(16).padStart(6, '0');
+
         this.p1Frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
-        this.p1Frame.setStrokeStyle(3, 0x5599ff, 1);
+        this.p1Frame.setStrokeStyle(3, p1TeamColor, 1);
         this.p1Frame.setDepth(20);
 
         if (this.mode === '2p') {
             this.p2Frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
-            this.p2Frame.setStrokeStyle(3, 0xff5566, 1);
+            this.p2Frame.setStrokeStyle(3, p2TeamColor, 1);
             this.p2Frame.setDepth(20);
         }
 
         this.p1Hint = this.add.text(width / 2 - 220, height - 60, 'P1: A/D + SPACE', {
             font: 'bold 14px monospace',
-            fill: '#5599ff',
+            fill: p1TeamColorStr,
         }).setOrigin(0.5);
 
         if (this.mode === '2p') {
             this.p2Hint = this.add.text(width / 2 + 220, height - 60, 'P2: ←/→ + ENTER', {
                 font: 'bold 14px monospace',
-                fill: '#ff5566',
+                fill: p2TeamColorStr,
             }).setOrigin(0.5);
         } else {
             this.p2Hint = this.add.text(width / 2 + 220, height - 60, 'BOT: ?', {
                 font: 'bold 14px monospace',
-                fill: '#ff5566',
+                fill: p2TeamColorStr,
             }).setOrigin(0.5);
         }
 
@@ -316,10 +324,11 @@ export class ClassSelectScene extends Phaser.Scene {
         }
 
         const seatX = [width * 0.16, width * 0.38, width * 0.62, width * 0.84];
+        this.partyTeamColors = getTeamColors();
 
         for (const n of [1, 2, 3, 4]) {
             const seat = this.seats[n];
-            const teamColor = TEAM_COLORS[n - 1];
+            const teamColor = this.partyTeamColors[n - 1];
 
             seat.frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
             seat.frame.setStrokeStyle(3, teamColor, 1);
@@ -454,7 +463,7 @@ export class ClassSelectScene extends Phaser.Scene {
 
     refreshSeatUI(n) {
         const seat = this.seats[n];
-        const teamStr = '#' + TEAM_COLORS[n - 1].toString(16).padStart(6, '0');
+        const teamStr = '#' + this.partyTeamColors[n - 1].toString(16).padStart(6, '0');
 
         if (seat.confirmed && seat.classKey) {
             seat.hint.setText(`READY — ${WIZARD_CLASSES[seat.classKey].name}`);

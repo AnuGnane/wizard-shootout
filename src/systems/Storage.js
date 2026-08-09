@@ -59,6 +59,12 @@ export function loadSettings(settings) {
     if (typeof saved.fogOfWar === 'boolean') {
         settings.fogOfWar = saved.fogOfWar;
     }
+    if (typeof saved.screenShake === 'boolean') {
+        settings.screenShake = saved.screenShake;
+    }
+    if (typeof saved.colorblindTeams === 'boolean') {
+        settings.colorblindTeams = saved.colorblindTeams;
+    }
     for (const key of MUTATOR_KEYS) {
         if (typeof saved[key] === 'boolean') {
             settings[key] = saved[key];
@@ -94,6 +100,8 @@ export function saveSettings(settings) {
     payload.musicEnabled = settings.musicEnabled;
     payload.suddenDeath = settings.suddenDeath;
     payload.fogOfWar = settings.fogOfWar;
+    payload.screenShake = settings.screenShake;
+    payload.colorblindTeams = settings.colorblindTeams;
     for (const key of MUTATOR_KEYS) {
         payload[key] = settings[key];
     }

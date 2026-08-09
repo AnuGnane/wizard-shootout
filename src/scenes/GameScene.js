@@ -1,52 +1,29 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, RUNE_CONFIG, RUNE_ELEMENTS, MATCH_CONFIG, FROST_CONFIG, PRESSURE_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
+import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, FROST_CONFIG, PRESSURE_CONFIG, TEAM_NAMES } from '../config.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
+import { getTeamColors } from '../systems/TeamColors.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { TouchControls } from '../systems/TouchControls.js';
 import { Projectile } from '../entities/Projectile.js';
-import { Rune } from '../entities/Rune.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
-import { NetSession, clearSession } from '../systems/NetSession.js';
-import { NetInput } from '../systems/NetInput.js';
+import { NetSession } from '../systems/NetSession.js';
+import { FogController } from '../systems/FogController.js';
+import { SpawnDirector } from '../systems/SpawnDirector.js';
+import { RoundFlow } from '../systems/RoundFlow.js';
+import { NetGameSync } from '../systems/NetGameSync.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
-import { recordKill, recordOrb, recordShot, recordDamage, recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from '../systems/Stats.js';
+import { recordKill, recordShot, recordDamage, checkAchievements } from '../systems/Stats.js';
+import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
     'lightningPierce', 'playerDied', 'runeCollected', 'playerDamaged', 'signatureUsed',
     'playerKilled',
-];
-
-// Phase 7 — Fog of War (experimental, 1P only). A shroud over the arena that
-// only clears within player 1's torch-lit line of sight; the bot and orbs stay
-// hidden until a tile they occupy is actually visible. Tunables live here so
-// they're easy to adjust; the whole system stays inert (constructed only when
-// fogOfWar && mode==='1p'), so every other mode renders byte-identically.
-const FOG_CONFIG = {
-    visionTiles: 4.5,       // sight radius, in tiles
-    darkAlpha: 0.9,         // opacity of the shroud over unseen tiles
-    color: 0x05060f,        // shroud tint (near-black navy)
-    depth: 15,              // above players/walls (0), below steam (26)/banners (40)
-    recomputeMs: 90,        // recompute the visible set at most this often
-    losSamplesPerTile: 4,   // ray sample density for the line-of-sight test
-    brushSize: 128,         // px size of the cached radial torch brush texture
-    litCoreFraction: 0.7,   // fraction of the disc that's fully lit before it fades
-};
-
-// Stage 2b — Online netcode. Orbs allowed to spawn in a net match: only the
-// elements whose effects DON'T mutate the map or collision geometry, so the
-// guest's static map never desyncs. Earth (conjures collidable walls) and ice
-// (frosts the floor / alters movement) are deliberately excluded.
-const NET_RUNE_POOL = [
-    ELEMENT_TYPES.FIRE,
-    ELEMENT_TYPES.LIGHTNING,
-    ELEMENT_TYPES.SHIELD,
-    ELEMENT_TYPES.TRIPLE,
 ];
 
 export class GameScene extends Phaser.Scene {
@@ -59,26 +36,15 @@ export class GameScene extends Phaser.Scene {
 
         // Stage 2a — Online netcode. netRole is 'host' | 'guest' during a live
         // net match, else null. EVERYTHING net-specific below is gated on it;
-        // when null, every code path is byte-identical to a local match. These
-        // fields are harmless no-ops in local mode.
+        // when null, every code path is byte-identical to a local match.
         this.netRole = (MATCH_STATE.online && NetSession.connected) ? NetSession.role : null;
-        this._lastSnap = null;        // guest: last authoritative snapshot to apply
-        this._netSendAt = 0;          // host: next allowed snapshot send time
-        this._netInputSendAt = 0;     // guest: next allowed input send time
-        this._lastSentInput = null;   // guest: last input sent (send-on-change)
-        this._peerLeft = false;       // true once the peer disconnects mid-match
 
-        // Stage 2b — net entity sync. The HOST tags each spawned projectile/rune
-        // with a monotonic net id (these two counters) so the GUEST can reconcile
-        // lightweight puppet sprites by id, held in these Maps (netId -> sprite).
-        // All four are harmless no-ops in local mode and on the "wrong" role.
-        this._netProjId = 0;
-        this._netRuneId = 0;
-        this._projPuppets = new Map();
-        this._runePuppets = new Map();
+        // Everything else net-specific (roster, snapshots, puppets, round
+        // mirroring) lives in this module; it is inert while netRole is null.
+        this.netSync = new NetGameSync(this);
         // Tear down guest puppets on scene shutdown (quit, match over, round
         // restart) so no orphan projectile/rune sprites leak across rounds.
-        this.events.once('shutdown', this.clearNetPuppets, this);
+        this.events.once('shutdown', this.netSync.clearNetPuppets, this.netSync);
 
         // Phase 6e: baseline combat intensity for the new round; showRoundBanner
         // below bumps this to 2 if the round starts already at match point.
@@ -115,24 +81,21 @@ export class GameScene extends Phaser.Scene {
         this.allProjectiles = [];
         this.runes = [];
 
-        // Phase 7: Fog of War overlay state (null unless built for this round).
-        // Reset here because the Scene instance is reused across restarts — a
-        // stale reference from a prior fog round must never leak into an
-        // off-path (non-fog) round.
-        this.fog = null;
+        // Phase 7: Fog of War subsystem. Rebuilt here because the Scene
+        // instance is reused across restarts — a stale controller from a prior
+        // fog round must never leak into an off-path (non-fog) round.
+        this.fogController = new FogController(this);
 
         // Phase 4: slippery frost floor tiles, keyed by `${gx},${gy}`.
         this.frostTiles = new Map();
-        // Phase 4: Orb Surge — flips true once the round drags past surgeAtMs.
-        this.surgeActive = false;
 
-        // Orb Rain mutator: start every round already in surge mode — no
-        // banner, no jingle, it's a chosen mode rather than a triggered
-        // event. The Phase 4 trigger in update() already guards on
-        // `!this.surgeActive`, so it simply never fires from here on.
-        if (RUNTIME_SETTINGS.mutOrbRain) {
-            this.surgeActive = true;
-        }
+        // Orb spawning + Orb Surge pressure. Rebuilt every round (create() runs
+        // on each scene.restart()), so its surge flag and cadence timer start
+        // fresh alongside the rest of the round state.
+        this.spawnDirector = new SpawnDirector(this);
+
+        // Round resolution + the banners/toasts it drives.
+        this.roundFlow = new RoundFlow(this);
 
         // The scene restarts between rounds; make sure frost overlays/timers are
         // torn down on shutdown so nothing leaks or double-fires next round.
@@ -152,7 +115,7 @@ export class GameScene extends Phaser.Scene {
         // Phase 7: same restart-safety for the fog overlay — destroy the
         // RenderTexture + brush so exactly one overlay ever exists at a time
         // and nothing leaks into the next round.
-        this.events.once('shutdown', this.destroyFog, this);
+        this.events.once('shutdown', this.fogController.destroy, this.fogController);
 
         // Per-round stats for the round-end summary banner, keyed by seat.
         this.roundStats = {};
@@ -182,8 +145,8 @@ export class GameScene extends Phaser.Scene {
         // pool — see spawnRunes) and syncs the orbs to the guest, which only
         // renders rune puppets from snapshots and never simulates its own.
         // Local modes (netRole null) are unchanged.
-        if (this.netRole !== 'guest') this.startRuneSpawning();
-        this.showRoundBanner();
+        if (this.netRole !== 'guest') this.spawnDirector.startRuneSpawning();
+        this.roundFlow.showRoundBanner();
 
         // Stage 2a: take ownership of the live connection's message/close
         // callbacks (the lobby's are now dead). Done after create() has built
@@ -192,20 +155,21 @@ export class GameScene extends Phaser.Scene {
         if (this.netRole) {
             const conn = NetSession.connection;
             if (conn) {
-                conn.onMessage = (m) => this.onNetMessage(m);
-                conn.onClose = () => this.onNetClose();
+                conn.onMessage = (m) => this.netSync.onNetMessage(m);
+                conn.onClose = () => this.netSync.onNetClose();
             }
         }
 
         // Phase 7: build the fog overlay only when the mode is actually active
         // (fogOfWar && 1P). Off-path this constructs nothing at all, so every
         // other mode is byte-identical to before.
-        if (this.fogActive()) {
-            this.createFog();
+        if (this.fogController.active()) {
+            this.fogController.create();
         }
 
         // Dev-only: expose the live scene so Playwright/manual testing can read
-        // the fog state (scene.fog, scene.fog.visibleSet) and drive recomputes.
+        // the fog state (scene.fogController.fog, .fog.visibleSet) and drive
+        // recomputes.
         if (import.meta.env && import.meta.env.DEV) {
             window.__gameScene = this;
         }
@@ -244,7 +208,7 @@ export class GameScene extends Phaser.Scene {
         // Stage 2a: a net match has its own roster wiring (host = local seat 1 +
         // remote-driven seat 2; guest = two puppets + a local input it sends up).
         if (this.netRole) {
-            this.createNetPlayers();
+            this.netSync.createNetPlayers();
             return;
         }
 
@@ -300,49 +264,6 @@ export class GameScene extends Phaser.Scene {
         for (const ai of this.aiControllers) {
             ai.setPlayers(ai._seatPlayer, this.getOpponentsOf(ai._seatPlayer));
         }
-    }
-
-    // Stage 2a — net roster. Always a fixed two-seat arcanist duel; both peers
-    // build the SAME two Player objects (identical map -> identical spawns) so
-    // seat N lines up on both sides. No AIController is ever created.
-    //  - HOST simulates: seat 1 = local human, seat 2 = remote guest's input.
-    //  - GUEST renders: both seats are puppets (real Players for the sprite +
-    //    health bar, but physics disabled) moved only by snapshot application;
-    //    the guest's own controls live in a separate input it sends up.
-    createNetPlayers() {
-        const spawns = this.map.getSpawnPointsFor(2);
-
-        this.players = [];
-        this.aiControllers = [];
-
-        if (this.netRole === 'host') {
-            const localInput = new CompositeInput(new KeyboardInput(this, 1), new GamepadInput(this, 0));
-            const p1 = new Player(this, spawns[0].x, spawns[0].y, 1, localInput);
-
-            this.netInput = new NetInput();
-            const p2 = new Player(this, spawns[1].x, spawns[1].y, 2, this.netInput);
-
-            this.players.push(p1, p2);
-        } else {
-            // Puppets: a dummy all-false input so nothing local drives them, and
-            // disabled bodies so only our snapshot application moves them.
-            const p1 = new Player(this, spawns[0].x, spawns[0].y, 1, new NetInput());
-            const p2 = new Player(this, spawns[1].x, spawns[1].y, 2, new NetInput());
-            for (const p of [p1, p2]) {
-                if (p.body) {
-                    p.body.enable = false;
-                    p.body.moves = false;
-                }
-            }
-            this.players.push(p1, p2);
-
-            // The guest's OWN controls for its wizard (seat 2 in the sim). Read
-            // each frame and sent up to the host; not attached to any Player.
-            this.localNetInput = new CompositeInput(new KeyboardInput(this, 1), new GamepadInput(this, 0));
-        }
-
-        this.player1 = this.players[0] || null;
-        this.player2 = this.players[1] || null;
     }
 
     // All players other than `player` (alive or dead — callers filter by
@@ -464,7 +385,7 @@ export class GameScene extends Phaser.Scene {
         this.events.on('lightningPierce', this.handleLightningPierce, this);
         // 'playerDied' is emitted by Player.die() but has no handler: round
         // resolution is polled in update() so simultaneous deaths settle first.
-        this.events.on('runeCollected', this.onRuneCollected, this);
+        this.events.on('runeCollected', this.spawnDirector.onRuneCollected, this.spawnDirector);
         this.events.on('playerDamaged', this.onPlayerDamaged, this);
         this.events.on('signatureUsed', this.onSignatureUsed, this);
         // Phase 6a: stats-only — purely observes kills, never touches round
@@ -477,7 +398,7 @@ export class GameScene extends Phaser.Scene {
         if (data.by !== 1) return;
         if (this.trackProfile) {
             recordKill(data.element);
-            this.showAchievementToasts(checkAchievements());
+            this.roundFlow.showAchievementToasts(checkAchievements());
         }
     }
 
@@ -518,6 +439,16 @@ export class GameScene extends Phaser.Scene {
             x: Math.floor((worldX - ARENA.offsetX) / ARENA.tileSize),
             y: Math.floor((worldY - ARENA.offsetY) / ARENA.tileSize),
         };
+    }
+
+    // Phase 8 — accessibility: single choke point for camera shake so the
+    // Screen Shake setting can no-op it everywhere at once. Every call site
+    // (this scene's abilityBreach/onPlayerDamaged, RoundFlow's round-end
+    // banner, NetGameSync's guest-side round-end mirror) routes through
+    // here instead of calling this.cameras.main.shake directly.
+    shakeCamera(duration, intensity) {
+        if (!RUNTIME_SETTINGS.screenShake) return;
+        this.cameras.main.shake(duration, intensity);
     }
 
     // Expanding stroked circle, styled like the death ring.
@@ -719,7 +650,7 @@ export class GameScene extends Phaser.Scene {
                     onComplete: () => debris.destroy(),
                 });
             }
-            this.cameras.main.shake(150, 0.006);
+            this.shakeCamera(150, 0.006);
 
             return true;
         }
@@ -831,201 +762,6 @@ export class GameScene extends Phaser.Scene {
         this.frostTiles.clear();
     }
 
-    // ============ PHASE 7 — FOG OF WAR ============
-    //
-    // Purely a visual + entity-visibility layer: it never touches physics,
-    // collision or AI. The bot still plays normally while hidden (its AI
-    // targets you regardless of what you can see) — that asymmetry is
-    // intentional for this experimental mode.
-
-    // Active only in single-player with the toggle on. OFF (or in 2P/party)
-    // this returns false and none of the code below ever runs, so those modes
-    // stay byte-identical to before.
-    fogActive() {
-        return RUNTIME_SETTINGS.fogOfWar && MATCH_STATE.mode === '1p';
-    }
-
-    // Build the shroud for the round: a RenderTexture covering exactly the
-    // arena rect (never the HUD strips above/below it) plus a cached soft
-    // radial "torch" brush used to carve out the lit disc each recompute.
-    createFog() {
-        // Cached torch brush: a soft white disc, alpha 1 across the core and
-        // fading to 0 at the rim. Lives on the global TextureManager, so build
-        // it once and reuse it across every fog round.
-        const brushKey = 'fog-brush';
-        if (!this.textures.exists(brushKey)) {
-            const s = FOG_CONFIG.brushSize;
-            const canvas = this.textures.createCanvas(brushKey, s, s);
-            const ctx = canvas.context;
-            const grad = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-            grad.addColorStop(0, 'rgba(255,255,255,1)');
-            grad.addColorStop(FOG_CONFIG.litCoreFraction, 'rgba(255,255,255,1)');
-            grad.addColorStop(1, 'rgba(255,255,255,0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, s, s);
-            canvas.refresh();
-        }
-
-        const texture = this.add.renderTexture(
-            ARENA.offsetX, ARENA.offsetY, ARENA.width, ARENA.height
-        );
-        texture.setOrigin(0, 0);
-        texture.setDepth(FOG_CONFIG.depth);
-
-        // Off-display-list draw source (add:false) — never rendered directly,
-        // only used as the erase brush; scaled so its diameter spans the full
-        // vision radius. Must be destroyed by hand (not on any display list).
-        const brush = this.make.image({ x: 0, y: 0, key: brushKey, add: false });
-        const diameter = FOG_CONFIG.visionTiles * ARENA.tileSize * 2;
-        brush.setScale(diameter / FOG_CONFIG.brushSize);
-
-        this.fog = {
-            texture,
-            brush,
-            visibleSet: new Set(),
-            nextRecomputeAt: 0,
-            lastTile: { x: -999, y: -999 },
-        };
-
-        // Paint the first frame now so the arena opens already shrouded.
-        this.recomputeFog(this.time.now);
-    }
-
-    // Reveal-set: every tile within the vision radius that also has line of
-    // sight from player 1's tile. The player's own tile and its 8 immediate
-    // neighbours are always lit, so you're never standing blind in the dark.
-    computeVisibleTiles() {
-        const set = new Set();
-        const p = this.player1;
-        if (!p) return set;
-        const pt = this.tileOf(p.x, p.y);
-        const R = FOG_CONFIG.visionTiles;
-        const R2 = R * R;
-        const reach = Math.ceil(R);
-        for (let ty = pt.y - reach; ty <= pt.y + reach; ty++) {
-            for (let tx = pt.x - reach; tx <= pt.x + reach; tx++) {
-                if (tx < 0 || ty < 0 || tx >= this.map.cols || ty >= this.map.rows) continue;
-                const dx = tx - pt.x;
-                const dy = ty - pt.y;
-                if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
-                    set.add(`${tx},${ty}`);          // self + immediate neighbours
-                    continue;
-                }
-                if (dx * dx + dy * dy > R2) continue; // outside the torch radius
-                if (this.hasLineOfSight(pt.x, pt.y, tx, ty)) set.add(`${tx},${ty}`);
-            }
-        }
-        return set;
-    }
-
-    // Classic grid ray: walk the segment between two tile centres and reject
-    // the target if any *intermediate* tile is a wall. Endpoints are never
-    // tested — a wall tile itself stays visible (you see its near face), while
-    // a tile behind it is occluded.
-    hasLineOfSight(x0, y0, x1, y1) {
-        const dx = x1 - x0;
-        const dy = y1 - y0;
-        const span = Math.max(Math.abs(dx), Math.abs(dy));
-        if (span <= 1) return true;
-        const steps = Math.ceil(span * FOG_CONFIG.losSamplesPerTile);
-        for (let i = 1; i < steps; i++) {
-            const t = i / steps;
-            const sx = Math.round(x0 + dx * t);
-            const sy = Math.round(y0 + dy * t);
-            if ((sx === x0 && sy === y0) || (sx === x1 && sy === y1)) continue;
-            if (this.map.isWall(sx, sy)) return false;
-        }
-        return true;
-    }
-
-    // Per-recompute driver: refresh the visible set, repaint the shroud, and
-    // push entity visibility. Throttled from update() via nextRecomputeAt.
-    recomputeFog(time) {
-        const fog = this.fog;
-        if (!fog || !this.player1) return;
-        fog.nextRecomputeAt = time + FOG_CONFIG.recomputeMs;
-        fog.lastTile = this.tileOf(this.player1.x, this.player1.y);
-        fog.visibleSet = this.computeVisibleTiles();
-        this.renderFog(fog.visibleSet);
-        this.applyFogVisibility(fog.visibleSet);
-    }
-
-    // Repaint the RenderTexture: fill it dark, carve out the soft torch disc
-    // around the player, then stamp hard shadow back over any in-radius tile
-    // the player can't actually see (walls block sight sharply). Cosmetic only
-    // — entity hiding is driven by the visible set, not by what's painted.
-    renderFog(visibleSet) {
-        const rt = this.fog.texture;
-        const ts = ARENA.tileSize;
-        rt.clear();
-        rt.fill(FOG_CONFIG.color, FOG_CONFIG.darkAlpha);
-
-        // Torch: erase the soft brush (local coords — RT origin is the arena
-        // top-left) to reveal a lit disc that fades at the edges.
-        const lx = this.player1.x - ARENA.offsetX;
-        const ly = this.player1.y - ARENA.offsetY;
-        rt.erase(this.fog.brush, lx, ly);
-
-        // Hard shadow: re-darken in-radius tiles that failed LOS, so walls cast
-        // sharp shadows through the torchlight.
-        const pt = this.tileOf(this.player1.x, this.player1.y);
-        const reach = Math.ceil(FOG_CONFIG.visionTiles);
-        for (let ty = pt.y - reach; ty <= pt.y + reach; ty++) {
-            for (let tx = pt.x - reach; tx <= pt.x + reach; tx++) {
-                if (tx < 0 || ty < 0 || tx >= this.map.cols || ty >= this.map.rows) continue;
-                if (visibleSet.has(`${tx},${ty}`)) continue;
-                rt.fill(FOG_CONFIG.color, FOG_CONFIG.darkAlpha, tx * ts, ty * ts, ts, ts);
-            }
-        }
-    }
-
-    // Hide the bot and any orbs whose tile the player can't currently see.
-    // Player 1, projectiles and banners are never touched. A dead bot stays
-    // hidden — its die() already cleared it, and we must never re-show it.
-    applyFogVisibility(visibleSet) {
-        const bot = this.player2;
-        if (bot) {
-            const bt = this.tileOf(bot.x, bot.y);
-            const show = bot.isAlive && visibleSet.has(`${bt.x},${bt.y}`);
-            bot.setVisible(show);
-            if (bot.healthBarBg) bot.healthBarBg.setVisible(show);
-            if (bot.healthBarFill) bot.healthBarFill.setVisible(show);
-            if (bot.indicator) bot.indicator.setVisible(show);
-            if (bot.shieldBubble) bot.shieldBubble.setVisible(show);
-        }
-        for (const rune of this.runes) {
-            if (!rune || !rune.active) continue;
-            const rt = this.tileOf(rune.spawnX, rune.spawnY);
-            rune.setVisible(visibleSet.has(`${rt.x},${rt.y}`));
-        }
-    }
-
-    // Re-show everything the fog was hiding — used when the mode is toggled off
-    // mid-match (before the overlay is dropped). A dead bot is left hidden.
-    revealFogEntities() {
-        const bot = this.player2;
-        if (bot) {
-            const show = bot.isAlive;
-            bot.setVisible(show);
-            if (bot.healthBarBg) bot.healthBarBg.setVisible(show);
-            if (bot.healthBarFill) bot.healthBarFill.setVisible(show);
-            if (bot.indicator) bot.indicator.setVisible(show);
-            if (bot.shieldBubble) bot.shieldBubble.setVisible(show);
-        }
-        for (const rune of this.runes) {
-            if (rune && rune.active) rune.setVisible(true);
-        }
-    }
-
-    // Tear down the overlay + brush. Safe to call repeatedly (shutdown +
-    // mid-match toggle-off both route here).
-    destroyFog() {
-        if (!this.fog) return;
-        if (this.fog.texture) this.fog.texture.destroy();
-        if (this.fog.brush) this.fog.brush.destroy();
-        this.fog = null;
-    }
-
     // Purely-visual steam puff: a small cluster of soft gray-white circles that
     // drift up, wobble, then fade. Depth 26 = above players (a vision blocker).
     // No physics body and no LOS change for the bot.
@@ -1065,104 +801,6 @@ export class GameScene extends Phaser.Scene {
                 duration: 400,
                 onComplete: () => { if (puff.active) puff.destroy(); },
             });
-        }
-    }
-
-    // ============ RUNE SPAWNING ============
-
-    startRuneSpawning() {
-        this.scheduleNextRune();
-    }
-
-    scheduleNextRune() {
-        if (this.roundOver) return;
-
-        // Orb Surge tightens the cadence once the round drags on.
-        const min = this.surgeActive ? PRESSURE_CONFIG.spawnIntervalMin : RUNTIME_SETTINGS.runeSpawnMin;
-        const max = this.surgeActive ? PRESSURE_CONFIG.spawnIntervalMax : RUNTIME_SETTINGS.runeSpawnMax;
-        const delay = Phaser.Math.Between(min, max);
-        this.time.delayedCall(delay, () => {
-            this.spawnRunes();
-            this.scheduleNextRune();
-        });
-    }
-
-    spawnRunes() {
-        if (this.roundOver) return;
-        // More wizards on the field means more orb demand — scale the cap up by
-        // one per extra seat beyond two (no change in 1P/2P).
-        const baseMax = this.surgeActive ? PRESSURE_CONFIG.maxRunes : RUNE_CONFIG.maxRunes;
-        const maxRunes = baseMax + (MATCH_STATE.playerCount - 2);
-        if (this.runes.length >= maxRunes) return;
-
-        // Get enabled elements
-        let enabledElements = RUNE_ELEMENTS.filter(e => RUNTIME_SETTINGS.runesEnabled[e]);
-        // Stage 2b: in a net match, restrict orbs to elements that do NOT mutate
-        // the map/collision — earth conjures collidable walls and ice frosts the
-        // floor, both of which would desync the guest's static map. Fire/lightning/
-        // shield/triple are safe (their only host-side visuals, e.g. fire's wall
-        // scorch, simply won't appear on the guest — damage still syncs via health).
-        if (this.netRole) {
-            enabledElements = enabledElements.filter(e => NET_RUNE_POOL.includes(e));
-        }
-        if (enabledElements.length === 0) return;
-
-        // Find floor tiles away from both players
-        const minDist = RUNE_CONFIG.minPlayerDistanceTiles * ARENA.tileSize;
-        const floorTiles = [];
-        for (let y = 1; y < ARENA.rows - 1; y++) {
-            for (let x = 1; x < ARENA.cols - 1; x++) {
-                if (this.map.isWall(x, y)) continue;
-                const worldX = ARENA.offsetX + x * ARENA.tileSize + ARENA.tileSize / 2;
-                const worldY = ARENA.offsetY + y * ARENA.tileSize + ARENA.tileSize / 2;
-                const nearPlayer = this.players.some(p =>
-                    Phaser.Math.Distance.Between(worldX, worldY, p.x, p.y) < minDist
-                );
-                if (!nearPlayer) floorTiles.push({ x: worldX, y: worldY });
-            }
-        }
-
-        if (floorTiles.length < 2) return;
-
-        Phaser.Utils.Array.Shuffle(floorTiles);
-
-        const element = Phaser.Utils.Array.GetRandom(enabledElements);
-
-        const count = Math.min(
-            RUNE_CONFIG.runesPerSpawn,
-            maxRunes - this.runes.length,
-            floorTiles.length
-        );
-        for (let i = 0; i < count; i++) {
-            const rune = new Rune(this, floorTiles[i].x, floorTiles[i].y, element);
-            // Stage 2b: tag host runes so the guest can reconcile puppets by id.
-            if (this.netRole === 'host') rune.netId = this._netRuneId++;
-            this.runes.push(rune);
-        }
-    }
-
-    onRuneCollected({ rune, player }) {
-        const idx = this.runes.indexOf(rune);
-        if (idx > -1) this.runes.splice(idx, 1);
-
-        if (player && this.roundStats[player.playerNumber]) {
-            this.roundStats[player.playerNumber].orbs++;
-        }
-
-        // Phase 6a: seat-1 personal orb count + achievement check.
-        if (player && player.playerNumber === 1 && this.trackProfile) {
-            recordOrb();
-            this.showAchievementToasts(checkAchievements());
-        }
-    }
-
-    checkRuneCollection() {
-        for (let i = this.runes.length - 1; i >= 0; i--) {
-            const rune = this.runes[i];
-            if (!rune || rune.isCollected) continue;
-            for (const player of this.players) {
-                if (rune.checkCollection(player)) break;
-            }
         }
     }
 
@@ -1308,9 +946,18 @@ export class GameScene extends Phaser.Scene {
         this.add.rectangle(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, GAME_CONFIG.width, 30, 0x1a1a2e).setDepth(10);
 
         if (MATCH_STATE.playerCount <= 2) {
-            const hint = MATCH_STATE.mode === '1p'
-                ? 'WASD move | SPACE shoot | Q orb shot | E ability | Grab orbs for powers | M mute'
-                : 'P1: WASD + SPACE/Q/E  |  P2: Arrows + ENTER//.  |  Grab orbs for powers  |  M mute';
+            // Shoot/orb-shot/ability read the live rebindable bindings (see
+            // systems/KeyBindings.js) so a rebind shows up here immediately;
+            // "WASD move" / "Arrows" stay fixed since they name a whole
+            // 4-key movement cluster, not a single rebindable action.
+            const b1 = getBindings(1);
+            let hint;
+            if (MATCH_STATE.mode === '1p') {
+                hint = `WASD move | ${keyLabel(b1.shoot)} shoot | ${keyLabel(b1.runeShoot)} orb shot | ${keyLabel(b1.ability)} ability | Grab orbs for powers | M mute`;
+            } else {
+                const b2 = getBindings(2);
+                hint = `P1: WASD + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  |  P2: Arrows + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  |  Grab orbs for powers  |  M mute`;
+            }
             this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
                 font: '11px monospace',
                 fill: '#666688',
@@ -1332,6 +979,15 @@ export class GameScene extends Phaser.Scene {
 
     // Today's two-player HUD, verbatim. Only reached when playerCount <= 2.
     createStandardHUD() {
+        // Phase 8 — resolved once per HUD build (create() runs fresh every
+        // round) rather than statically imported, so a colorblindTeams
+        // toggle takes effect on the next match without any HUD replumbing.
+        const [p1Color, p2Color] = getTeamColors();
+        this.p1TeamColor = p1Color;
+        this.p2TeamColor = p2Color;
+        const p1ColorStr = '#' + p1Color.toString(16).padStart(6, '0');
+        const p2ColorStr = '#' + p2Color.toString(16).padStart(6, '0');
+
         const p1ClassName = WIZARD_CLASSES[MATCH_STATE.classes[1]].name.toUpperCase();
         const p2ClassName = WIZARD_CLASSES[MATCH_STATE.classes[2]].name.toUpperCase();
 
@@ -1342,12 +998,12 @@ export class GameScene extends Phaser.Scene {
         // --- Player 1 (left) ---
         this.add.text(20, 8, p1ClassName, {
             font: 'bold 14px monospace',
-            fill: '#5599ff',
+            fill: p1ColorStr,
         }).setDepth(11);
 
         this.p1HealthBarBg = this.add.rectangle(20, 30, 150, 12, 0x222233).setOrigin(0, 0).setDepth(11);
         this.p1HealthBarBg.setStrokeStyle(1, 0x000000, 0.8);
-        this.p1HealthBarFill = this.add.rectangle(21, 31, 148, 10, 0x5599ff).setOrigin(0, 0).setDepth(12);
+        this.p1HealthBarFill = this.add.rectangle(21, 31, 148, 10, p1Color).setOrigin(0, 0).setDepth(12);
         this.p1HealthText = this.add.text(176, 29, '', {
             font: '12px monospace',
             fill: '#aaaacc',
@@ -1363,12 +1019,12 @@ export class GameScene extends Phaser.Scene {
         // --- Player 2 (right) ---
         this.add.text(GAME_CONFIG.width - 20, 8, p2Name, {
             font: 'bold 14px monospace',
-            fill: '#ff5566',
+            fill: p2ColorStr,
         }).setOrigin(1, 0).setDepth(11);
 
         this.p2HealthBarBg = this.add.rectangle(GAME_CONFIG.width - 20, 30, 150, 12, 0x222233).setOrigin(1, 0).setDepth(11);
         this.p2HealthBarBg.setStrokeStyle(1, 0x000000, 0.8);
-        this.p2HealthBarFill = this.add.rectangle(GAME_CONFIG.width - 21, 31, 148, 10, 0xff5566).setOrigin(1, 0).setDepth(12);
+        this.p2HealthBarFill = this.add.rectangle(GAME_CONFIG.width - 21, 31, 148, 10, p2Color).setOrigin(1, 0).setDepth(12);
         this.p2HealthText = this.add.text(GAME_CONFIG.width - 176, 29, '', {
             font: '12px monospace',
             fill: '#aaaacc',
@@ -1413,11 +1069,12 @@ export class GameScene extends Phaser.Scene {
 
         const n = this.players.length;
         const panelW = GAME_CONFIG.width / n;
+        const teamColors = getTeamColors();
 
         this.players.forEach((player, i) => {
             const seat = player.playerNumber;
             const cx = panelW * i + panelW / 2;
-            const color = TEAM_COLORS[seat - 1];
+            const color = teamColors[seat - 1];
             const colorStr = '#' + color.toString(16).padStart(6, '0');
             const className = WIZARD_CLASSES[player.classKey].name.toUpperCase();
             const isBot = MATCH_STATE.seatTypes[seat] === 'bot';
@@ -1502,8 +1159,8 @@ export class GameScene extends Phaser.Scene {
             }
         };
 
-        drawSide(-1, MATCH_STATE.scores[1], 0x5599ff); // player 1: right-aligned toward center
-        drawSide(1, MATCH_STATE.scores[2], 0xff5566);  // player 2: left-aligned toward center
+        drawSide(-1, MATCH_STATE.scores[1], this.p1TeamColor); // player 1: right-aligned toward center
+        drawSide(1, MATCH_STATE.scores[2], this.p2TeamColor);  // player 2: left-aligned toward center
     }
 
     updateUI() {
@@ -1519,8 +1176,8 @@ export class GameScene extends Phaser.Scene {
         this.p2HealthBarFill.width = 148 * p2Pct;
         this.p1HealthText.setText(`${Math.ceil(this.player1.health)}`);
         this.p2HealthText.setText(`${Math.ceil(this.player2.health)}`);
-        this.p1HealthBarFill.fillColor = p1Pct <= 0.25 ? 0xff3333 : 0x5599ff;
-        this.p2HealthBarFill.fillColor = p2Pct <= 0.25 ? 0xff3333 : 0xff5566;
+        this.p1HealthBarFill.fillColor = p1Pct <= 0.25 ? 0xff3333 : this.p1TeamColor;
+        this.p2HealthBarFill.fillColor = p2Pct <= 0.25 ? 0xff3333 : this.p2TeamColor;
 
         // Held orb display
         this.updateRuneDisplay(this.player1, this.p1RuneIcon, this.p1RuneText, this.p1ShieldIcon);
@@ -1565,10 +1222,11 @@ export class GameScene extends Phaser.Scene {
         shieldIcon.setVisible(player.shieldCharges > 0);
     }
 
-    // ============ BANNERS ============
+    // ============ MUTATORS ============
 
     // Short labels for whatever mutators are currently active, in display
-    // order. Empty array when nothing (including Sudden Death) is on.
+    // order. Empty array when nothing (including Sudden Death) is on. Read by
+    // RoundFlow when it draws the round banner.
     getActiveMutatorLabels() {
         const labels = [];
         if (RUNTIME_SETTINGS.suddenDeath) labels.push('sudden death');
@@ -1579,327 +1237,6 @@ export class GameScene extends Phaser.Scene {
         return labels;
     }
 
-    showRoundBanner() {
-        const target = MATCH_STATE.targetScore;
-        const banner = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2,
-            `ROUND ${MATCH_STATE.round}`,
-            {
-                font: 'bold 52px monospace',
-                fill: '#ffffff',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
-
-        const sub = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2 + 44,
-            `${this.map.name}  •  first to ${target} wins`,
-            {
-                font: '16px monospace',
-                fill: '#aaaacc',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
-
-        const bannerTexts = [banner, sub];
-
-        // Mutator flair: one small muted-gold line listing whatever's active
-        // (including Sudden Death), directly under the map/first-to line.
-        // With everything off this adds nothing, so the banner stays
-        // byte-identical to pre-Phase-5c behavior.
-        let matchPointY = ARENA.offsetY + ARENA.height / 2 + 80;
-        const activeMutators = this.getActiveMutatorLabels();
-        if (activeMutators.length > 0) {
-            const mutatorsLine = this.add.text(
-                GAME_CONFIG.width / 2,
-                ARENA.offsetY + ARENA.height / 2 + 68,
-                `mutators: ${activeMutators.join(' · ')}`,
-                {
-                    font: '13px monospace',
-                    fill: '#ccaa66',
-                }
-            ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
-            bannerTexts.push(mutatorsLine);
-            matchPointY += 24;
-        }
-
-        const isMatchPoint = MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1;
-        if (isMatchPoint) {
-            const matchPoint = this.add.text(
-                GAME_CONFIG.width / 2,
-                matchPointY,
-                'MATCH POINT',
-                {
-                    font: 'bold 24px monospace',
-                    fill: '#ffdd44',
-                }
-            ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
-            bannerTexts.push(matchPoint);
-            // Phase 6e: crank the music to its match-point layer (faster
-            // hi-hat + higher arp) — this round already set intensity 1 in
-            // create(), so this only fires when the round actually opens on
-            // match point.
-            audio.setMusicIntensity(2);
-        }
-
-        this.tweens.add({
-            targets: bannerTexts,
-            alpha: 0,
-            delay: 1100,
-            duration: 400,
-            onComplete: () => {
-                bannerTexts.forEach(t => t.destroy());
-            },
-        });
-    }
-
-    // Orb Surge: flip the spawner into surge mode (faster cadence + higher
-    // cap, both read live in scheduleNextRune/spawnRunes), announce it, jingle.
-    triggerOrbSurge() {
-        this.surgeActive = true;
-        this.showSurgeBanner();
-        audio.surge();
-    }
-
-    showSurgeBanner() {
-        const banner = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2,
-            'ORB SURGE!',
-            {
-                font: 'bold 52px monospace',
-                fill: '#ffdd44',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
-
-        const sub = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2 + 44,
-            'orbs flood the arena',
-            {
-                font: '16px monospace',
-                fill: '#ffeeaa',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
-
-        banner.setScale(0.3);
-        this.tweens.add({
-            targets: banner,
-            scale: 1,
-            duration: 300,
-            ease: 'Back.easeOut',
-        });
-        this.tweens.add({
-            targets: [banner, sub],
-            alpha: 0,
-            delay: 1000,
-            duration: 400,
-            onComplete: () => { banner.destroy(); sub.destroy(); },
-        });
-    }
-
-    showScoreBanner(winnerNumber, isMatchWin) {
-        if (MATCH_STATE.playerCount > 2) {
-            this.showPartyScoreBanner(winnerNumber, isMatchWin);
-        } else {
-            this.showScoreBannerStandard(winnerNumber, isMatchWin);
-        }
-    }
-
-    // Party round-end: winner line in team color, then one compact stat line
-    // per player (DMG · ORBS — ACC dropped to keep the lines short).
-    showPartyScoreBanner(winnerNumber, isMatchWin) {
-        const cx = GAME_CONFIG.width / 2;
-        const cy = ARENA.offsetY + ARENA.height / 2;
-        const color = '#' + TEAM_COLORS[winnerNumber - 1].toString(16).padStart(6, '0');
-        const name = TEAM_NAMES[winnerNumber - 1];
-        const text = isMatchWin ? `${name}\nWINS THE MATCH!` : `${name} SCORES!`;
-
-        const banner = this.add.text(cx, cy - 60, text, {
-            font: 'bold 40px monospace',
-            fill: color,
-            align: 'center',
-        }).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
-
-        const lines = [];
-        this.players.forEach((p, i) => {
-            const seat = p.playerNumber;
-            const st = this.roundStats[seat];
-            const lineColor = '#' + TEAM_COLORS[seat - 1].toString(16).padStart(6, '0');
-            const line = this.add.text(
-                cx,
-                cy + 20 + i * 22,
-                `${TEAM_NAMES[seat - 1]}   DMG ${Math.round(st.damage)} · ORBS ${st.orbs}`,
-                { font: '15px monospace', fill: lineColor }
-            ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
-            lines.push(line);
-        });
-
-        banner.setScale(0.3);
-        this.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.easeOut' });
-        lines.forEach(l => l.setAlpha(0));
-        this.tweens.add({ targets: lines, alpha: 1, delay: 250, duration: 250 });
-    }
-
-    // Nobody left standing: gray DRAW banner (existing banner style), no score.
-    showDrawBanner() {
-        const cx = GAME_CONFIG.width / 2;
-        const cy = ARENA.offsetY + ARENA.height / 2;
-
-        const banner = this.add.text(cx, cy, 'DRAW', {
-            font: 'bold 52px monospace',
-            fill: '#999999',
-        }).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
-
-        const sub = this.add.text(cx, cy + 44, 'no wizard left standing', {
-            font: '16px monospace',
-            fill: '#bbbbbb',
-        }).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
-
-        banner.setScale(0.3);
-        this.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.easeOut' });
-        sub.setAlpha(0);
-        this.tweens.add({ targets: sub, alpha: 1, delay: 250, duration: 250 });
-    }
-
-    showScoreBannerStandard(winnerNumber, isMatchWin) {
-        const color = winnerNumber === 1 ? '#5599ff' : '#ff5566';
-        const name = winnerNumber === 1
-            ? PLAYER_CONFIG.names.player1
-            : (MATCH_STATE.mode === '1p' ? 'BOT WIZARD' : PLAYER_CONFIG.names.player2);
-
-        const text = isMatchWin ? `${name}\nWINS THE MATCH!` : `${name} SCORES!`;
-
-        const banner = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2 - 20,
-            text,
-            {
-                font: 'bold 42px monospace',
-                fill: color,
-                align: 'center',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
-
-        const score = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2 + 40,
-            `${MATCH_STATE.scores[1]}  -  ${MATCH_STATE.scores[2]}`,
-            {
-                font: 'bold 32px monospace',
-                fill: '#ffffff',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 5);
-
-        // Round-end summary: damage dealt / accuracy / orbs used, per player
-        const p1Stats = this.roundStats[1];
-        const p2Stats = this.roundStats[2];
-        const p1Acc = p1Stats.fired > 0 ? Math.round((p1Stats.hits / p1Stats.fired) * 100) : 0;
-        const p2Acc = p2Stats.fired > 0 ? Math.round((p2Stats.hits / p2Stats.fired) * 100) : 0;
-
-        const p1Summary = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2 + 78,
-            `DMG ${Math.round(p1Stats.damage)}  ·  ACC ${p1Acc}%  ·  ORBS ${p1Stats.orbs}`,
-            {
-                font: '13px monospace',
-                fill: '#5599ff',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
-
-        const p2Summary = this.add.text(
-            GAME_CONFIG.width / 2,
-            ARENA.offsetY + ARENA.height / 2 + 96,
-            `DMG ${Math.round(p2Stats.damage)}  ·  ACC ${p2Acc}%  ·  ORBS ${p2Stats.orbs}`,
-            {
-                font: '13px monospace',
-                fill: '#ff5566',
-            }
-        ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
-
-        banner.setScale(0.3);
-        this.tweens.add({
-            targets: banner,
-            scale: 1,
-            duration: 300,
-            ease: 'Back.easeOut',
-        });
-        score.setAlpha(0);
-        p1Summary.setAlpha(0);
-        p2Summary.setAlpha(0);
-        this.tweens.add({
-            targets: [score, p1Summary, p2Summary],
-            alpha: 1,
-            delay: 250,
-            duration: 250,
-        });
-    }
-
-    // ============ ACHIEVEMENTS (Phase 6a) ============
-
-    // Show one toast per newly-unlocked achievement, staggered so multiple
-    // unlocks landing in the same call (e.g. a kill completing both
-    // Elementalist and Killer Instinct at once) don't overlap.
-    showAchievementToasts(unlocked) {
-        if (!unlocked || unlocked.length === 0) return;
-        unlocked.forEach((ach, i) => {
-            this.time.delayedCall(i * 600, () => {
-                if (this.scene.isActive()) this.showAchievementToast(ach);
-            });
-        });
-    }
-
-    // Compact gold-bordered panel that slides in from the top-right, holds
-    // ~2.5s, then slides back out and fades before destroying itself.
-    // Restart-safe: every deferred step is guarded by an .active/isActive
-    // check, matching the pattern used elsewhere for delayed calls/tweens
-    // that can outlive a round restart (see fadeOutFrost, createTempWall).
-    showAchievementToast(ach) {
-        audio.uiClick();
-
-        const panelW = 260;
-        const panelH = 54;
-        const y = 90;
-        const targetX = GAME_CONFIG.width - panelW / 2 - 16;
-        const startX = GAME_CONFIG.width + panelW / 2 + 10;
-
-        const panel = this.add.rectangle(startX, y, panelW, panelH, 0x1a1a2e, 0.95);
-        panel.setStrokeStyle(2, 0xffdd44, 1);
-        panel.setDepth(60);
-
-        const label = this.add.text(startX, y - 13, '★ ACHIEVEMENT UNLOCKED', {
-            font: 'bold 11px monospace',
-            fill: '#ffdd44',
-        }).setOrigin(0.5).setDepth(61);
-
-        const nameText = this.add.text(startX, y + 10, ach.name, {
-            font: 'bold 16px monospace',
-            fill: '#ffffff',
-        }).setOrigin(0.5).setDepth(61);
-
-        const parts = [panel, label, nameText];
-
-        this.tweens.add({
-            targets: parts,
-            x: targetX,
-            duration: 300,
-            ease: 'Back.easeOut',
-            onComplete: () => {
-                if (!panel.active || !this.scene.isActive()) return;
-                this.time.delayedCall(2500, () => {
-                    if (!panel.active) return;
-                    this.tweens.add({
-                        targets: parts,
-                        x: startX,
-                        alpha: 0,
-                        duration: 300,
-                        onComplete: () => parts.forEach(p => { if (p.active) p.destroy(); }),
-                    });
-                });
-            },
-        });
-    }
-
     // ============ UPDATE LOOP ============
 
     update(time, delta) {
@@ -1908,7 +1245,7 @@ export class GameScene extends Phaser.Scene {
         // Stage 2a: the guest runs no local simulation — it only sends its input
         // up and renders the host's authoritative snapshots as puppets.
         if (this.netRole === 'guest') {
-            this.updateNetGuest(time, delta);
+            this.netSync.updateNetGuest(time, delta);
             return;
         }
 
@@ -1920,7 +1257,7 @@ export class GameScene extends Phaser.Scene {
 
         this.cleanupProjectiles();
         this.checkProjectileHits();
-        this.checkRuneCollection();
+        this.spawnDirector.checkRuneCollection();
         this.checkWallEffects();
 
         // Resolve the round once at most one wizard remains. Checking here
@@ -1931,7 +1268,7 @@ export class GameScene extends Phaser.Scene {
         // resolveRound). The guest never reaches here — it early-returns above.
         const alive = this.players.filter(p => p.isAlive);
         if (alive.length <= 1) {
-            this.resolveRound(alive);
+            this.roundFlow.resolveRound(alive);
             return;
         }
 
@@ -1940,8 +1277,8 @@ export class GameScene extends Phaser.Scene {
         // Orb Surge fires once per round when the clock crosses surgeAtMs.
         // Stage 2a: no orbs in a net match, so no surge (would be a misleading
         // banner with nothing to spawn).
-        if (!this.netRole && !this.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
-            this.triggerOrbSurge();
+        if (!this.netRole && !this.spawnDirector.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
+            this.spawnDirector.triggerOrbSurge();
         }
 
         const seconds = Math.floor(this.roundTimer / 1000);
@@ -1953,288 +1290,12 @@ export class GameScene extends Phaser.Scene {
 
         // Stage 2a: push an authoritative snapshot to the guest (~25Hz).
         if (this.netRole === 'host') {
-            this.sendHostSnapshot(time);
+            this.netSync.sendHostSnapshot(time);
         }
 
         // Phase 7: repaint the shroud + refresh what's hidden. Inert unless the
-        // overlay exists (fog mode). If fog was toggled off mid-match, reveal
-        // everything once and drop the overlay so it's permanently visible.
-        if (this.fog) {
-            if (!this.fogActive()) {
-                this.revealFogEntities();
-                this.destroyFog();
-            } else {
-                const pt = this.tileOf(this.player1.x, this.player1.y);
-                const moved = pt.x !== this.fog.lastTile.x || pt.y !== this.fog.lastTile.y;
-                if (moved || time >= this.fog.nextRecomputeAt) {
-                    this.recomputeFog(time);
-                }
-            }
-        }
-    }
-
-    // ============ STAGE 2a — NET SYNC ============
-
-    // Guest frame: send our own input up, then render the host's latest
-    // snapshot as puppets. No local simulation runs (no physics, projectiles,
-    // AI, rune/round logic) — the host owns all of that.
-    updateNetGuest(time, delta) {
-        // update() already early-returns on roundOver; this is a second guard so
-        // the guest never streams input or lerps puppets after a round resolves.
-        if (this.roundOver) return;
-        this.sendGuestInput(time);
-        this.applyGuestSnapshot();
-        // HUD (top health bars + held-orb readout) reflects the puppet health.
-        this.updateUI();
-    }
-
-    // Guest -> host: the guest's control of its wizard. Sent immediately on any
-    // change (so key-up releases land promptly) plus a ~30Hz heartbeat so the
-    // host keeps a fresh value even while a key is held.
-    sendGuestInput(time) {
-        if (this._peerLeft || !this.localNetInput) return;
-        const conn = NetSession.connection;
-        if (!conn || !conn.isOpen()) return;
-
-        const s = this.localNetInput.getState();
-        const prev = this._lastSentInput;
-        const changed = !prev ||
-            s.up !== prev.up || s.down !== prev.down ||
-            s.left !== prev.left || s.right !== prev.right ||
-            s.shoot !== prev.shoot || s.runeShoot !== prev.runeShoot ||
-            s.ability !== prev.ability;
-
-        if (!changed && time < this._netInputSendAt) return;
-
-        conn.send({
-            t: 'input',
-            up: s.up, down: s.down, left: s.left, right: s.right,
-            shoot: s.shoot, runeShoot: s.runeShoot, ability: s.ability,
-        });
-        this._lastSentInput = { ...s };
-        this._netInputSendAt = time + 33; // ~30Hz heartbeat
-    }
-
-    // Apply the most recent host snapshot to the puppets: lerp positions for
-    // smoothing, snap rotation/health, and mirror alive-state (hiding the
-    // sprite + health bars on death, exactly as Player.die() does — minus the
-    // one-shot FX/stats, which are the host's job).
-    applyGuestSnapshot() {
-        const snap = this._lastSnap;
-        if (!snap || !Array.isArray(snap.players)) return;
-
-        for (const ps of snap.players) {
-            if (!ps) continue;
-            const player = this.players[ps.n - 1];
-            if (!player) continue;
-
-            // Stage 2b: guest-side hit SFX. A snapshot hp below the puppet's
-            // current health means the host landed damage this interval; play
-            // the hit sound once, before we overwrite the puppet's health.
-            if (typeof ps.hp === 'number' && ps.hp < player.health) audio.hit();
-
-            player.x = Phaser.Math.Linear(player.x, ps.x, 0.3);
-            player.y = Phaser.Math.Linear(player.y, ps.y, 0.3);
-            player.rotation = ps.rot;
-            player.health = ps.hp;
-
-            // Stage 2b: mirror held-orb / shield so the existing HUD (updateUI ->
-            // updateRuneDisplay) shows the orb + shield icon for both wizards.
-            player.heldRune = ps.rune || null;
-            player.runeShots = ps.shots | 0;
-            player.shieldCharges = ps.shield | 0;
-
-            const alive = !!ps.alive;
-            player.isAlive = alive;
-            player.setVisible(alive);
-            if (player.healthBarBg) player.healthBarBg.setVisible(alive);
-            if (player.healthBarFill) player.healthBarFill.setVisible(alive);
-            if (player.shieldBubble) player.shieldBubble.setVisible(alive);
-            // Keep the floating health bar tracking the sprite while alive
-            // (Player.update, which normally does this, doesn't run on the guest).
-            if (alive) player.updateHealthBar();
-        }
-
-        // Stage 2b: reconcile projectile + rune puppets against this snapshot.
-        this.reconcileProjPuppets(snap.proj);
-        this.reconcileRunePuppets(snap.runes);
-    }
-
-    // Guest: keep the projectile puppet Map (netId -> image) in step with the
-    // host's live projectile list. New ids spawn a sprite (and a guest-side
-    // shoot SFX); existing ids lightly lerp toward their new position; any
-    // puppet whose id is absent from the snapshot is destroyed and dropped.
-    reconcileProjPuppets(list) {
-        const seen = new Set();
-        if (Array.isArray(list)) {
-            for (const pr of list) {
-                if (!pr || pr.id == null) continue;
-                seen.add(pr.id);
-                let sprite = this._projPuppets.get(pr.id);
-                if (!sprite) {
-                    sprite = this.add.image(pr.x, pr.y, 'projectile_' + pr.el).setDepth(8);
-                    this._projPuppets.set(pr.id, sprite);
-                    audio.shoot(); // a new projectile appeared on the host
-                } else {
-                    sprite.x = Phaser.Math.Linear(sprite.x, pr.x, 0.5);
-                    sprite.y = Phaser.Math.Linear(sprite.y, pr.y, 0.5);
-                }
-            }
-        }
-        for (const [id, sprite] of this._projPuppets) {
-            if (seen.has(id)) continue;
-            if (sprite && sprite.active) sprite.destroy();
-            this._projPuppets.delete(id);
-        }
-    }
-
-    // Guest: same reconcile for rune puppets (netId -> image). Runes are static,
-    // so existing ids need no position update; a rune leaving the host list
-    // (picked up / round end) drops from the snapshot and its puppet is removed.
-    reconcileRunePuppets(list) {
-        const seen = new Set();
-        if (Array.isArray(list)) {
-            for (const r of list) {
-                if (!r || r.id == null) continue;
-                seen.add(r.id);
-                if (!this._runePuppets.has(r.id)) {
-                    const sprite = this.add.image(r.x, r.y, 'rune_' + r.el).setDepth(5);
-                    this._runePuppets.set(r.id, sprite);
-                }
-            }
-        }
-        for (const [id, sprite] of this._runePuppets) {
-            if (seen.has(id)) continue;
-            if (sprite && sprite.active) sprite.destroy();
-            this._runePuppets.delete(id);
-        }
-    }
-
-    // Destroy + drop every guest projectile/rune puppet. Safe to call repeatedly
-    // (shutdown, round restart, gameover all route here). No-op for the host.
-    clearNetPuppets() {
-        if (this._projPuppets) {
-            for (const sprite of this._projPuppets.values()) {
-                if (sprite && sprite.active) sprite.destroy();
-            }
-            this._projPuppets.clear();
-        }
-        if (this._runePuppets) {
-            for (const sprite of this._runePuppets.values()) {
-                if (sprite && sprite.active) sprite.destroy();
-            }
-            this._runePuppets.clear();
-        }
-    }
-
-    // Host -> guest: compact authoritative snapshot, throttled to ~25Hz. x/y are
-    // rounded to whole pixels and rotation to 3 decimals to keep packets small.
-    sendHostSnapshot(time) {
-        if (this._peerLeft || time < this._netSendAt) return;
-        this._netSendAt = time + 40; // ~25Hz
-        const conn = NetSession.connection;
-        if (!conn || !conn.isOpen()) return;
-
-        const players = this.players.map(p => ({
-            n: p.playerNumber,
-            x: Math.round(p.x),
-            y: Math.round(p.y),
-            rot: Math.round(p.rotation * 1000) / 1000,
-            hp: Math.round(p.health),
-            alive: p.isAlive,
-            // Stage 2b: held-orb / shield HUD state, so the guest can drive its
-            // existing updateUI()/updateRuneDisplay for BOTH wizards.
-            rune: p.heldRune || null,
-            shots: p.runeShots | 0,
-            shield: p.shieldCharges | 0,
-        }));
-        // Stage 2b: live projectiles + runes, each keyed by its host net id so
-        // the guest reconciles puppet sprites (create-new / update / drop-absent).
-        const proj = this.allProjectiles
-            .filter(p => p && p.active)
-            .map(p => ({ id: p.netId, x: Math.round(p.x), y: Math.round(p.y), el: p.element }));
-        const runes = this.runes
-            .filter(r => r && r.active)
-            .map(r => ({ id: r.netId, x: Math.round(r.spawnX), y: Math.round(r.spawnY), el: r.element }));
-        conn.send({ t: 'snap', players, proj, runes, round: MATCH_STATE.round });
-    }
-
-    // Inbound net traffic. Host consumes the guest's input; guest buffers the
-    // latest snapshot for the next frame's interpolation. Everything guarded so
-    // a malformed/unknown packet is simply ignored.
-    onNetMessage(m) {
-        if (!m || typeof m !== 'object') return;
-        if (this.netRole === 'host') {
-            if (m.t === 'input' && this.netInput) this.netInput.setState(m);
-        } else if (this.netRole === 'guest') {
-            // Stage 2b: host-authoritative round flow, mirrored on the guest.
-            if (m.t === 'snap') this._lastSnap = m;
-            else if (m.t === 'roundend') this.onNetRoundEnd(m);
-            else if (m.t === 'restart') this.onNetRestart(m);
-            else if (m.t === 'gameover') this.onNetGameOver(m);
-        }
-    }
-
-    // Guest: the host resolved the round. Freeze the sync loop, adopt the
-    // authoritative scores, and show the matching banner (draw when winner null).
-    onNetRoundEnd(m) {
-        if (this.roundOver) return;
-        this.roundOver = true; // stops guest input/puppet lerp (update early-returns)
-        if (m.scores) MATCH_STATE.scores = { ...m.scores };
-        this.updateScoreText();
-        this.cameras.main.shake(300, 0.012);
-        if (m.winner == null) {
-            this.showDrawBanner();
-        } else {
-            if (m.isMatchWin) audio.matchWin(); else audio.roundWin();
-            this.showScoreBanner(m.winner, !!m.isMatchWin);
-        }
-    }
-
-    // Guest: the host advanced to the next round. Adopt the round number and
-    // rebuild the scene fresh (new puppets at spawns; the fixed map matches the
-    // host). Puppets are cleared here too, though shutdown would also clear them.
-    onNetRestart(m) {
-        if (typeof m.round === 'number') MATCH_STATE.round = m.round;
-        this.clearNetPuppets();
-        this.scene.restart();
-    }
-
-    // Guest: the host won the match. Freeze and transition to the game-over
-    // screen with the host's authoritative winner/scores/rounds.
-    onNetGameOver(m) {
-        this.roundOver = true;
-        this.clearNetPuppets();
-        this.scene.start('GameOverScene', {
-            winner: m.winner,
-            scores: m.scores || { ...MATCH_STATE.scores },
-            rounds: m.rounds,
-        });
-    }
-
-    // Peer disconnected mid-match. Halt the sync loop, show a message, and bounce
-    // back to the menu — never throw. Idempotent (guarded by _peerLeft).
-    onNetClose() {
-        if (this._peerLeft) return;
-        this._peerLeft = true;
-        this.roundOver = true; // freeze the update loop (both roles)
-
-        if (!this.scene || !this.scene.isActive || !this.scene.isActive()) return;
-
-        const cx = GAME_CONFIG.width / 2;
-        const cy = ARENA.offsetY + ARENA.height / 2;
-        this.add.text(cx, cy, 'OPPONENT LEFT', {
-            font: 'bold 40px monospace', fill: '#ff5566',
-        }).setOrigin(0.5).setDepth(50).setStroke('#000000', 6);
-        this.add.text(cx, cy + 44, 'returning to menu…', {
-            font: '16px monospace', fill: '#aaaacc',
-        }).setOrigin(0.5).setDepth(50).setStroke('#000000', 4);
-
-        this.time.delayedCall(2000, () => {
-            clearSession();
-            MATCH_STATE.online = false;
-            this.scene.start('MenuScene');
-        });
+        // overlay exists (fog mode).
+        this.fogController.update(time);
     }
 
     checkProjectileHits() {
@@ -2348,7 +1409,7 @@ export class GameScene extends Phaser.Scene {
 
         // Stage 2b: tag host projectiles (normal + each triple/rune pellet routes
         // through here) so the guest can reconcile puppets by id.
-        if (this.netRole === 'host') projectile.netId = this._netProjId++;
+        if (this.netRole === 'host') projectile.netId = this.netSync.nextProjId();
 
         this.projectiles.add(projectile);
         this.projectilesByPlayer[playerNum].push(projectile);
@@ -2376,7 +1437,7 @@ export class GameScene extends Phaser.Scene {
 
     onPlayerDamaged({ player, amount }) {
         // Small kick + floating damage number
-        this.cameras.main.shake(80, 0.004);
+        this.shakeCamera(80, 0.004);
 
         const dmgText = this.add.text(
             player.x + Phaser.Math.Between(-8, 8),
@@ -2444,117 +1505,5 @@ export class GameScene extends Phaser.Scene {
 
     handleLightningPierce(data) {
         data.projectile.hasPierced = true;
-    }
-
-    // ============ ROUND / MATCH FLOW ============
-
-    // Called from the update loop when at most one wizard is left alive.
-    // Exactly one survivor scores; zero survivors (mutual kill) is a DRAW and
-    // nobody scores. Match win is still first to targetScore.
-    resolveRound(aliveList) {
-        if (this.roundOver) return;
-        this.roundOver = true;
-
-        const winner = aliveList.length === 1 ? aliveList[0].playerNumber : null;
-
-        // Phase 6a: seat-1 personal round result. A draw (winner === null,
-        // mutual kill) records neither a win nor a loss. Skipped entirely
-        // during a daily challenge (Phase 6b) — see this.trackProfile.
-        if (this.trackProfile) {
-            if (winner === 1) {
-                recordRound(true);
-            } else if (winner !== null) {
-                recordRound(false);
-            }
-        }
-
-        if (winner !== null) {
-            MATCH_STATE.scores[winner]++;
-            this.updateScoreText();
-        }
-
-        const isMatchWin = winner !== null && MATCH_STATE.scores[winner] >= MATCH_STATE.targetScore;
-
-        // Stage 2b: the host mirrors the resolution to the guest immediately, so
-        // both peers freeze + banner in lockstep. winner may be null for a draw.
-        if (this.netRole === 'host') {
-            const conn = NetSession.connection;
-            if (conn && conn.isOpen()) {
-                conn.send({ t: 'roundend', winner, scores: { ...MATCH_STATE.scores }, isMatchWin });
-            }
-        }
-
-        this.cameras.main.shake(300, 0.012);
-        this.time.delayedCall(300, () => {
-            if (winner === null) {
-                this.showDrawBanner();
-            } else {
-                if (isMatchWin) {
-                    audio.matchWin();
-                } else {
-                    audio.roundWin();
-                }
-                this.showScoreBanner(winner, isMatchWin);
-            }
-        });
-
-        this.time.delayedCall(MATCH_CONFIG.roundEndDelay, () => {
-            if (isMatchWin) {
-                const youWon = (winner === 1);
-
-                // Stage 2b: tell the guest to jump to game-over with the same
-                // authoritative winner/scores/rounds right before we do (a net
-                // match is never a daily, so this precedes the normal path).
-                if (this.netRole === 'host') {
-                    const conn = NetSession.connection;
-                    if (conn && conn.isOpen()) {
-                        conn.send({ t: 'gameover', winner, scores: { ...MATCH_STATE.scores }, rounds: MATCH_STATE.round });
-                    }
-                }
-
-                if (MATCH_STATE.isDailyChallenge) {
-                    // Phase 6b: the daily has its own isolated result
-                    // tracking — it must never touch the normal profile's
-                    // kills/wins/streak/achievements (see this.trackProfile
-                    // above, which already skipped every per-round hook).
-                    recordDailyResult(youWon, MATCH_STATE.round);
-
-                    this.scene.start('GameOverScene', {
-                        winner,
-                        scores: { ...MATCH_STATE.scores },
-                        rounds: MATCH_STATE.round,
-                        isDaily: true,
-                        dailyStatus: getDailyStatus(),
-                    });
-                } else {
-                    // Phase 6a: this is the ONE place a match completes. Record
-                    // the seat-1 personal match result (flawless = won without
-                    // ever dying this match) before leaving the scene; the toast
-                    // itself may not have time to show here, so pass the newly-
-                    // unlocked achievements along for GameOverScene to surface.
-                    const flawless = youWon && !this._seat1DiedThisMatch;
-                    recordMatch(youWon, MATCH_STATE.classes[1], flawless);
-                    const newlyUnlocked = checkAchievements();
-
-                    this.scene.start('GameOverScene', {
-                        winner,
-                        scores: { ...MATCH_STATE.scores },
-                        rounds: MATCH_STATE.round,
-                        unlockedAchievements: newlyUnlocked.map(a => a.name),
-                    });
-                }
-            } else {
-                MATCH_STATE.round++;
-                // Stage 2b: advance the guest to the same next round right before
-                // we restart (order: bump round, send it, then restart locally).
-                if (this.netRole === 'host') {
-                    const conn = NetSession.connection;
-                    if (conn && conn.isOpen()) {
-                        conn.send({ t: 'restart', round: MATCH_STATE.round });
-                    }
-                }
-                this.scene.restart();
-            }
-        });
     }
 }
