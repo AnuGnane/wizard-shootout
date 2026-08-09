@@ -101,7 +101,7 @@ maintenance debt. Pay it down before adding more surface area.
 - [x] `[S]` Rewrite README to match reality (all modes, classes, controls incl. the `E`/`.` ability key, online, fog, party, mutators, daily, stats)
 - [x] `[O]` Committed headless smoke suite (`tests/smoke.mjs`) + wire into CI alongside `validateMap`/`build` (boot, all scenes registered, a bot round plays, WebRTC loopback handshake, zero console errors)
 - [x] `[O]` Decompose `GameScene` (2.5k lines) into focused modules: `FogController`, `NetGameSync`, `RoundFlow`, `SpawnDirector` (the net/fog branches are already cleanly gated — mechanical, low-risk)
-- [ ] `[S]` Accessibility pass (cheap while we're in the menus): remappable keys, colorblind-safe team palettes, screen-shake toggle, controller-navigable UI
+- [x] `[S]` Accessibility pass (cheap while we're in the menus): remappable keys, colorblind-safe team palettes, screen-shake toggle, controller-navigable UI (Stats/Wardrobe/Online nav + slider steppers = small follow-ups)
 
 ## Phase 9 — Content (highest player value; cheap because everything's procedural)
 

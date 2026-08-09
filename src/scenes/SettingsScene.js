@@ -3,6 +3,7 @@ import { MATCH_CONFIG } from '../config.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
+import { MenuNav } from '../systems/MenuNav.js';
 
 // Runtime settings that can be modified
 export const RUNTIME_SETTINGS = {
@@ -78,6 +79,12 @@ export class SettingsScene extends Phaser.Scene {
         };
         this.controls = [];
 
+        // Phase 8 — keyboard/pad focus nav over every toggle + the Save/
+        // Controls/Back buttons (sliders stay mouse/touch-only for now, see
+        // ROADMAP follow-ups). Created before addToggle()/buttons below run,
+        // since they register themselves as items as they're built.
+        this.menuNav = new MenuNav(this, { onBack: () => this.goToMenu() });
+
         // === LEFT COLUMN ===
         this.colX = 50;
         this.yPos = 90;
@@ -135,35 +142,66 @@ export class SettingsScene extends Phaser.Scene {
         this.addToggle('Screen Shake', 'screenShake');
         this.addToggle('Colorblind Team Colors', 'colorblindTeams');
 
-        // Buttons
-        const saveBtn = this.add.text(width / 2 - 120, height - 50, '[ SAVE ]', {
+        // Buttons. Three across the bottom row now that CONTROLS sits between
+        // SAVE and BACK - shifted outward (was ±120) so the wider middle
+        // label still clears both neighbors.
+        const saveBtn = this.add.text(width / 2 - 180, height - 50, '[ SAVE ]', {
             font: '24px monospace',
             fill: '#ffffff',
             backgroundColor: '#336633',
             padding: { x: 20, y: 10 },
         }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-        saveBtn.on('pointerover', () => saveBtn.setStyle({ fill: '#66ff66' }));
-        saveBtn.on('pointerout', () => saveBtn.setStyle({ fill: '#ffffff' }));
-        saveBtn.on('pointerdown', () => {
+        const doSave = () => {
             this.applySettings();
             audio.uiClick();
             this.scene.start('MenuScene');
-        });
+        };
+        saveBtn.on('pointerover', () => saveBtn.setStyle({ fill: '#66ff66' }));
+        saveBtn.on('pointerout', () => saveBtn.setStyle({ fill: '#ffffff' }));
+        saveBtn.on('pointerdown', doSave);
+        this.menuNav.add(saveBtn, doSave);
 
-        const backBtn = this.add.text(width / 2 + 120, height - 50, '[ BACK ]', {
+        // Phase 8 — CONTROLS opens the key-rebinding scene (ControlsScene).
+        // Unsaved slider/toggle edits here are held in this.settings and NOT
+        // applied until SAVE, same as always - this button just navigates.
+        const controlsBtn = this.add.text(width / 2, height - 50, '[ CONTROLS ]', {
+            font: '24px monospace',
+            fill: '#ffffff',
+            backgroundColor: '#2a4d66',
+            padding: { x: 20, y: 10 },
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+        const doControls = () => {
+            audio.uiClick();
+            this.scene.start('ControlsScene');
+        };
+        controlsBtn.on('pointerover', () => controlsBtn.setStyle({ fill: '#66ccff' }));
+        controlsBtn.on('pointerout', () => controlsBtn.setStyle({ fill: '#ffffff' }));
+        controlsBtn.on('pointerdown', doControls);
+        this.menuNav.add(controlsBtn, doControls);
+
+        const backBtn = this.add.text(width / 2 + 180, height - 50, '[ BACK ]', {
             font: '24px monospace',
             fill: '#ffffff',
             backgroundColor: '#333355',
             padding: { x: 20, y: 10 },
         }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
+        const doBack = () => this.goToMenu();
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
-        backBtn.on('pointerdown', () => {
-            audio.uiClick();
-            this.scene.start('MenuScene');
-        });
+        backBtn.on('pointerdown', doBack);
+        this.menuNav.add(backBtn, doBack);
+    }
+
+    update() {
+        this.menuNav.pollPad();
+    }
+
+    goToMenu() {
+        audio.uiClick();
+        this.scene.start('MenuScene');
     }
 
     addSectionHeader(text) {
@@ -195,12 +233,14 @@ export class SettingsScene extends Phaser.Scene {
             fill: getValue() ? '#66ff66' : '#ff6666',
         }).setInteractive({ useHandCursor: true });
 
-        toggle.on('pointerdown', () => {
+        const doToggle = () => {
             audio.uiClick();
             setValue(!getValue());
             toggle.setText(getValue() ? '[ON]' : '[OFF]');
             toggle.setColor(getValue() ? '#66ff66' : '#ff6666');
-        });
+        };
+        toggle.on('pointerdown', doToggle);
+        this.menuNav.add(toggle, doToggle);
 
         this.controls.push({ key, toggle, isRuneToggle });
         this.yPos += 25;

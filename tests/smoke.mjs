@@ -22,7 +22,7 @@ import { createServer } from 'vite';
 import { chromium } from 'playwright';
 
 const SCENES = [
-    'BootScene', 'MenuScene', 'SettingsScene', 'ClassSelectScene',
+    'BootScene', 'MenuScene', 'SettingsScene', 'ControlsScene', 'ClassSelectScene',
     'MapSelectScene', 'GameScene', 'PauseScene', 'GameOverScene',
     'StatsScene', 'WardrobeScene', 'OnlineScene',
 ];

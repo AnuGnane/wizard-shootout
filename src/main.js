@@ -3,6 +3,7 @@ import { GAME_CONFIG } from './config.js';
 import { BootScene } from './scenes/BootScene.js';
 import { MenuScene } from './scenes/MenuScene.js';
 import { SettingsScene, RUNTIME_SETTINGS } from './scenes/SettingsScene.js';
+import { ControlsScene } from './scenes/ControlsScene.js';
 import { ClassSelectScene } from './scenes/ClassSelectScene.js';
 import { MapSelectScene } from './scenes/MapSelectScene.js';
 import { GameScene } from './scenes/GameScene.js';
@@ -14,6 +15,7 @@ import { OnlineScene } from './scenes/OnlineScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { loadSettings } from './systems/Storage.js';
 import { MATCH_STATE } from './systems/MatchState.js';
+import * as KeyBindings from './systems/KeyBindings.js';
 // Side-effect import: loads the persisted stats profile immediately (and, in
 // dev builds, exposes window.__stats/__statsApi) — mirrors loadSettings above.
 import './systems/Stats.js';
@@ -44,7 +46,7 @@ const config = {
             gravity: { x: 0, y: 0 },
         },
     },
-    scene: [BootScene, MenuScene, SettingsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene, StatsScene, WardrobeScene, OnlineScene],
+    scene: [BootScene, MenuScene, SettingsScene, ControlsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene, StatsScene, WardrobeScene, OnlineScene],
     render: {
         pixelArt: true,
         antialias: false,
@@ -63,4 +65,8 @@ window.__settings = RUNTIME_SETTINGS;
 // Never present in a production build.
 if (import.meta.env && import.meta.env.DEV) {
     window.__audio = audio;
+    // Phase 8 — lets Playwright/manual testing drive rebinding + persistence
+    // through the real API (getBindings/setBinding/resetBindings/findBinding)
+    // without needing UI clicks for setup.
+    window.__keybindings = KeyBindings;
 }

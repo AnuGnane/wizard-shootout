@@ -3,6 +3,8 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { getDailyStatus } from '../systems/Stats.js';
+import { getBindings, keyLabel } from '../systems/KeyBindings.js';
+import { MenuNav } from '../systems/MenuNav.js';
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -20,6 +22,12 @@ export class MenuScene extends Phaser.Scene {
         const { width, height } = this.cameras.main;
 
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
+
+        // Phase 8 — keyboard/pad focus nav over every button on this screen,
+        // in the same top-to-bottom, left-to-right order they're created
+        // below (makeButton/makeSmallButton register themselves). No ESC
+        // back action - this is the top of the menu stack.
+        this.menuNav = new MenuNav(this);
 
         // Phase 6e: back at the menu (fresh boot or returning from a match) —
         // drop the music straight to its calm intensity. Music itself is
@@ -146,9 +154,15 @@ export class MenuScene extends Phaser.Scene {
             }).setOrigin(0.5);
         });
 
-        // Controls info
+        // Controls info. Shoot/Orb Shot read the live rebindable bindings
+        // (see systems/KeyBindings.js) so a rebind shows up here immediately;
+        // "WASD - Move" / "Arrows - Move" stay as fixed labels since they
+        // name a whole 4-key cluster, not a single rebindable action.
+        const p1Bindings = getBindings(1);
+        const p2Bindings = getBindings(2);
+
         const controlsP1 = this.add.text(width / 2 - 180, 625,
-            'Player 1 (Blue)\nWASD - Move\nSPACE - Shoot\nQ - Orb Shot', {
+            `Player 1 (Blue)\nWASD - Move\n${keyLabel(p1Bindings.shoot)} - Shoot\n${keyLabel(p1Bindings.runeShoot)} - Orb Shot`, {
             font: '13px monospace',
             fill: '#5599ff',
             align: 'center',
@@ -156,7 +170,7 @@ export class MenuScene extends Phaser.Scene {
         controlsP1.setOrigin(0.5);
 
         const controlsP2 = this.add.text(width / 2 + 180, 625,
-            'Player 2 (Red)\nArrows - Move\nENTER - Shoot\n/ - Orb Shot', {
+            `Player 2 (Red)\nArrows - Move\n${keyLabel(p2Bindings.shoot)} - Shoot\n${keyLabel(p2Bindings.runeShoot)} - Orb Shot`, {
             font: '13px monospace',
             fill: '#ff5566',
             align: 'center',
@@ -204,6 +218,7 @@ export class MenuScene extends Phaser.Scene {
         btn.on('pointerover', () => btn.setStyle({ fill: hoverColor }));
         btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' }));
         btn.on('pointerdown', onClick);
+        this.menuNav.add(btn, onClick);
         return btn;
     }
 
@@ -222,7 +237,12 @@ export class MenuScene extends Phaser.Scene {
         btn.on('pointerover', () => btn.setStyle({ fill: '#aaccff' }));
         btn.on('pointerout', () => btn.setStyle({ fill: '#8899cc' }));
         btn.on('pointerdown', onClick);
+        this.menuNav.add(btn, onClick);
         return btn;
+    }
+
+    update() {
+        this.menuNav.pollPad();
     }
 
     startGame(mode) {

@@ -18,6 +18,7 @@ import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { recordKill, recordShot, recordDamage, checkAchievements } from '../systems/Stats.js';
+import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
@@ -945,9 +946,18 @@ export class GameScene extends Phaser.Scene {
         this.add.rectangle(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, GAME_CONFIG.width, 30, 0x1a1a2e).setDepth(10);
 
         if (MATCH_STATE.playerCount <= 2) {
-            const hint = MATCH_STATE.mode === '1p'
-                ? 'WASD move | SPACE shoot | Q orb shot | E ability | Grab orbs for powers | M mute'
-                : 'P1: WASD + SPACE/Q/E  |  P2: Arrows + ENTER//.  |  Grab orbs for powers  |  M mute';
+            // Shoot/orb-shot/ability read the live rebindable bindings (see
+            // systems/KeyBindings.js) so a rebind shows up here immediately;
+            // "WASD move" / "Arrows" stay fixed since they name a whole
+            // 4-key movement cluster, not a single rebindable action.
+            const b1 = getBindings(1);
+            let hint;
+            if (MATCH_STATE.mode === '1p') {
+                hint = `WASD move | ${keyLabel(b1.shoot)} shoot | ${keyLabel(b1.runeShoot)} orb shot | ${keyLabel(b1.ability)} ability | Grab orbs for powers | M mute`;
+            } else {
+                const b2 = getBindings(2);
+                hint = `P1: WASD + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  |  P2: Arrows + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  |  Grab orbs for powers  |  M mute`;
+            }
             this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
                 font: '11px monospace',
                 fill: '#666688',

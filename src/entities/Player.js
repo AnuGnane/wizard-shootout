@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, MUTATOR_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, MUTATOR_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
@@ -8,13 +8,17 @@ import { recordDeath } from '../systems/Stats.js';
 import { resolveColors } from '../systems/Cosmetics.js';
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 import { getTeamColors } from '../systems/TeamColors.js';
+import { getBindings } from '../systems/KeyBindings.js';
 
 // Reads the real keyboard for a given player's control scheme.
 // Exposes the same getState() interface as AIController so Player
-// doesn't care who is driving.
+// doesn't care who is driving. The scheme comes from KeyBindings (CONTROLS'
+// defaults, with any saved per-player rebinding layered on top) rather than
+// CONTROLS directly, so a rebind takes effect the next time a Player (and
+// therefore a fresh KeyboardInput) is constructed.
 export class KeyboardInput {
     constructor(scene, playerNumber) {
-        const controlScheme = playerNumber === 1 ? CONTROLS.player1 : CONTROLS.player2;
+        const controlScheme = getBindings(playerNumber);
         this.keys = {};
         for (const [action, keyName] of Object.entries(controlScheme)) {
             this.keys[action] = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes[keyName]);
