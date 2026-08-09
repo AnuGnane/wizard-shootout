@@ -9,9 +9,16 @@ import { saveSettings } from '../systems/Storage.js';
 import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
 import { MenuNav } from '../systems/MenuNav.js';
 
-const CARD_W = 180;
+// Phase 9c: card width is derived from the class count (rather than a flat
+// number) so the row keeps fitting inside the 1024px canvas as classes are
+// added. Was a flat 180px/10px-gap (900px row) for 5 classes; with Warden +
+// Trickster (7) this resolves to 133px/8px-gap — a 979px row, ~22px margin
+// on each side — instead of hardcoding new numbers that would need
+// revisiting again the next time a class is added.
+const CARD_GAP = 8;
+const ROW_WIDTH = 980;
+const CARD_W = Math.floor((ROW_WIDTH - (CLASS_KEYS.length - 1) * CARD_GAP) / CLASS_KEYS.length);
 const CARD_H = 300;
-const CARD_GAP = 10;
 const CONFIRM_DELAY = 300;
 
 // Party seats 3/4 cycle through these states with keys 3/4, clicking the
@@ -137,8 +144,12 @@ export class ClassSelectScene extends Phaser.Scene {
             fill: '#' + elementColor.toString(16).padStart(6, '0'),
         }).setOrigin(0.5);
 
+        // Phase 9c: 10px (was 11px) — Reflect Ward's "REFLECT WARD · 10s"
+        // is the longest label+cooldown string yet, and cards got narrower
+        // to fit 7 of them (see CARD_W above); shrinking this one line keeps
+        // every card's label on a single line with room to spare.
         this.add.text(x, top + 163, `${cls.signature.label.toUpperCase()} · ${cls.signature.cooldown / 1000}s`, {
-            font: 'bold 11px monospace',
+            font: 'bold 10px monospace',
             fill: '#ffdd44',
         }).setOrigin(0.5);
 

@@ -90,6 +90,48 @@ export const WIZARD_CLASSES = {
         },
         passive: 'Faster orb shots',
     },
+    // Phase 9c: Warden reuses the SHIELD orb element (own-element empowerment
+    // = bigger shield charges, mirroring Pyromancer's fire-orb=4-shots deal).
+    warden: {
+        name: 'Warden',
+        element: 'shield',
+        color: 0x5f7d94, // steely blue-grey — distinct from every robe/team color
+        signature: {
+            label: 'Reflect Ward',
+            cooldown: 10000,
+            description: 'Bubble reflects incoming shots',
+            durationMs: 1200,  // how long the bubble stays up
+            radius: 40,        // an enemy projectile's CENTER must enter this to reflect
+            flashColor: 0xbfe3ff,
+        },
+        passive: 'Shield orb = 2 charges',
+    },
+    // Phase 9c: Trickster reuses the TRIPLE orb element (own-element
+    // empowerment = more uses per pickup, same pattern as Warden/Pyromancer).
+    // Scatter Dash deliberately reuses Player's generic dash plumbing
+    // (dashUntil/dashSpeed/afterimage) but OMITS dashHitRange/dashStunMs/
+    // dashDamage — Player.updateDash's contact-stun block reads those and
+    // simply never triggers when they're undefined, so this dash inherits
+    // movement + afterimage only, never Zap Dash's stun-on-touch.
+    trickster: {
+        name: 'Trickster',
+        element: 'triple',
+        color: 0xd6399e, // magenta — distinct from the pastel triple-orb pink and every team color
+        signature: {
+            label: 'Scatter Dash',
+            cooldown: 9000,
+            description: 'Dash back, fire a spread',
+            dashMs: 102,          // 60% of Stormcaller's 170ms at the same dashSpeed = 60% of its distance
+            dashSpeed: 900,
+            afterimageEveryMs: 30,
+            afterimageFadeMs: 150,
+            spreadAngle: 0.28,    // radians between pellets — matches the Triple orb's own spread
+            // Config override for the 3 backward pellets (mirrors Pyromancer's
+            // spark override): same shape as the Triple orb's pellet, weaker.
+            backPellet: { damage: 12, speed: 350, maxBounces: Infinity, lifetime: 5000, color: 0xff88dd, size: 7 },
+        },
+        passive: 'Triple orb = 3 uses',
+    },
 };
 
 export const CLASS_KEYS = Object.keys(WIZARD_CLASSES);

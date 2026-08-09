@@ -424,6 +424,36 @@ export class AIController {
                 }
                 break;
             }
+
+            case 'warden':
+                // Ward up the instant an enemy shot looks like it'll reach us —
+                // reuses tryDodge's closest-approach math (see
+                // hasIncomingProjectile) at a wider radius/longer lookahead,
+                // since the ward is a passive bubble rather than a sidestep.
+                if (this.hasIncomingProjectile(TILE * 3, 0.6)) trigger = true;
+                break;
+
+            case 'trickster':
+                // Escape: a foe is right on top of us — face away and scatter-
+                // dash clear (the backward pellet spread covers the retreat).
+                if (dist > 4 && dist <= TILE * 2) {
+                    trigger = true;
+                    aimAt = { x: me.x - toX, y: me.y - toY };
+                } else if (dist >= 150 && dist <= 260 && this.hasLineOfSight(me.x, me.y, opp.x, opp.y)) {
+                    // Reposition: close the gap along a clean lane, mirroring
+                    // Zap Dash's own alignment check above.
+                    for (const d of DIRS_8) {
+                        const along = toX * d.x + toY * d.y;
+                        if (along <= 0) continue;
+                        const perp = Math.abs(toX * d.y - toY * d.x);
+                        if (perp < 14) {
+                            trigger = true;
+                            aimAt = { x: me.x + d.x * 40, y: me.y + d.y * 40 };
+                            break;
+                        }
+                    }
+                }
+                break;
         }
 
         if (!trigger) return;
@@ -481,6 +511,34 @@ export class AIController {
             if (px > 0.4) s.right = true;
             if (py < -0.4) s.up = true;
             if (py > 0.4) s.down = true;
+            return true;
+        }
+        return false;
+    }
+
+    // Same closest-approach math as tryDodge, but a plain "is anything about
+    // to reach me" probe instead of a sidestep: no per-projectile threat
+    // memory, no difficulty roll, parameterized so Warden's ward trigger can
+    // ask for a wider radius and a longer lookahead than a dodge needs.
+    hasIncomingProjectile(radius, lookahead) {
+        for (const p of this.scene.allProjectiles) {
+            if (!p || !p.active || !p.body) continue;
+            if (p.ownerPlayerNumber === this.me.playerNumber && !p.hasHitWall) continue;
+
+            const rx = this.me.x - p.x;
+            const ry = this.me.y - p.y;
+            const vx = p.body.velocity.x;
+            const vy = p.body.velocity.y;
+            const speedSq = vx * vx + vy * vy;
+            if (speedSq < 1) continue;
+
+            const t = (rx * vx + ry * vy) / speedSq;
+            if (t < 0 || t > lookahead) continue;
+
+            const cx = p.x + vx * t - this.me.x;
+            const cy = p.y + vy * t - this.me.y;
+            if (cx * cx + cy * cy > radius * radius) continue;
+
             return true;
         }
         return false;

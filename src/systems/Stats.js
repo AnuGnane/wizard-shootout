@@ -12,7 +12,9 @@
 const STORAGE_KEY = 'wizard-shootout-stats-v1';
 
 const ELEMENT_KEYS = ['arcane', 'fire', 'ice', 'earth', 'lightning'];
-const STATS_CLASS_KEYS = ['arcanist', 'pyromancer', 'cryomancer', 'stonecaller', 'stormcaller'];
+// Phase 9c: Warden/Trickster added so a match won with them counts toward
+// Well Rounded / the Bone staff unlock exactly like the original 5 classes.
+const STATS_CLASS_KEYS = ['arcanist', 'pyromancer', 'cryomancer', 'stonecaller', 'stormcaller', 'warden', 'trickster'];
 
 export const STATS = {
     gamesPlayed: 0,
@@ -34,7 +36,10 @@ export const STATS = {
     damageDealt: 0,
 
     flawlessWins: 0,    // matches won without seat 1 dying
-    matchWinsByClass: { arcanist: 0, pyromancer: 0, cryomancer: 0, stonecaller: 0, stormcaller: 0 },
+    matchWinsByClass: {
+        arcanist: 0, pyromancer: 0, cryomancer: 0, stonecaller: 0, stormcaller: 0,
+        warden: 0, trickster: 0,
+    },
 
     // Phase 9b — PvE co-op wave survival. Plain counters alongside the rest of
     // the profile (unlike the daily's isolated sub-record) because a survival

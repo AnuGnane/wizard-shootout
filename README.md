@@ -52,6 +52,8 @@ element's orb is empowered. In 1P the bot picks a class at random.
 | Cryomancer  | ice       | **Frost Ring** — frost nearby tiles and slow nearby enemies | immune to slow                     |
 | Stonecaller | earth     | **Breach** — shatter the wall tile you're facing            | conjured walls last longer         |
 | Stormcaller | lightning | **Zap Dash** — fast dash forward that stuns anyone touched  | shorter orb-shot cooldown          |
+| Warden      | shield    | **Reflect Ward** — bubble reflects enemy projectiles        | shield orb = 2 charges             |
+| Trickster   | triple    | **Scatter Dash** — short dash, fires a triple spread backward | triple orb = 3 uses              |
 
 ## Controls
 

@@ -465,6 +465,8 @@ export class GameScene extends Phaser.Scene {
             case 'cryomancer':  success = this.abilityFrostRing(player);  break;
             case 'stonecaller': success = this.abilityBreach(player);     break;
             case 'stormcaller': success = this.abilityZapDash(player);    break;
+            case 'warden':      success = this.abilityReflectWard(player); break;
+            case 'trickster':   success = this.abilityScatterDash(player); break;
         }
 
         if (success) {
@@ -716,6 +718,141 @@ export class GameScene extends Phaser.Scene {
         player.dashHitDone = false;
         player.nextAfterimageAt = 0;
         return true;
+    }
+
+    // Warden — Reflect Ward. Pops a visible bubble around the caster for
+    // sig.durationMs; the actual reflect-on-contact work happens every frame
+    // in checkWardReflections while player.wardUntil is in the future.
+    abilityReflectWard(player) {
+        const sig = player.classDef.signature;
+        player.wardUntil = this.time.now + sig.durationMs;
+
+        if (player.wardBubble) player.wardBubble.destroy();
+        const bubble = this.add.circle(player.x, player.y, sig.radius, sig.flashColor, 0.12);
+        bubble.setStrokeStyle(2, sig.flashColor, 0.9);
+        bubble.setDepth(19);
+        player.wardBubble = bubble;
+
+        this.tweens.add({
+            targets: bubble,
+            scale: { from: 0.5, to: 1 },
+            duration: 180,
+            ease: 'Back.easeOut',
+        });
+
+        this.time.delayedCall(sig.durationMs, () => {
+            // Only pop OUR bubble — a re-cast before this one expired would
+            // already have replaced player.wardBubble with a fresh circle.
+            if (player.wardBubble !== bubble) return;
+            player.wardBubble = null;
+            this.tweens.add({
+                targets: bubble,
+                alpha: 0,
+                scale: 1.3,
+                duration: 220,
+                onComplete: () => bubble.destroy(),
+            });
+        });
+
+        return true;
+    }
+
+    // Trickster — Scatter Dash. Reuses Player's generic dash plumbing (see
+    // Classes.js's comment on why the contact-stun block never fires here),
+    // then fires 3 weakened triple pellets BACKWARD (opposite the locked
+    // dash facing) at the moment of launch — same spawn shape as Pyromancer's
+    // Flame Burst sparks, bypassing the per-player projectile cap.
+    abilityScatterDash(player) {
+        const sig = player.classDef.signature;
+        player.dashUntil = this.time.now + sig.dashMs;
+        player.dashHitDone = false;
+        player.nextAfterimageAt = 0;
+
+        // handleMovement() freezes aimDirection for the whole dash (it
+        // returns before reading input while dashing), so this snapshot is
+        // exactly the direction the dash itself will travel.
+        const dir = player.aimDirection;
+        const backAngle = Math.atan2(-dir.y, -dir.x);
+
+        for (const offset of [-sig.spreadAngle, 0, sig.spreadAngle]) {
+            const bx = Math.cos(backAngle + offset);
+            const by = Math.sin(backAngle + offset);
+
+            const pellet = new Projectile(
+                this,
+                player.x + bx * 16,
+                player.y + by * 16,
+                bx, by,
+                ELEMENT_TYPES.TRIPLE,
+                player.playerNumber,
+                true,
+                { ...sig.backPellet }
+            );
+
+            // NOT added to projectilesByPlayer — like Flame Burst's sparks,
+            // an ability-spawned burst doesn't eat the player's shot cap.
+            this.projectiles.add(pellet);
+            this.allProjectiles.push(pellet);
+            pellet.init();
+        }
+
+        return true;
+    }
+
+    // ============ WARD REFLECTION (Phase 9c) ============
+
+    // Polled once per frame from update(), before checkProjectileHits(): any
+    // enemy projectile whose CENTER enters an active ward's radius gets
+    // bounced back the way it came, ownership transferred to the Warden.
+    // `ownerPlayerNumber === player.playerNumber` is the one guard this needs
+    // — it excludes the Warden's own shots up front, AND (since reflecting
+    // sets that same field) excludes an already-reflected shot from being
+    // re-reflected by the same ward every frame it lingers in the bubble, so
+    // no extra "already bounced" flag is needed to stop it ping-ponging.
+    checkWardReflections() {
+        const now = this.time.now;
+        for (const player of this.players) {
+            if (!player.isAlive || now >= player.wardUntil) continue;
+
+            const sig = player.classDef.signature;
+            const radius = sig.radius;
+
+            for (const projectile of this.allProjectiles) {
+                if (!projectile || !projectile.active || !projectile.body) continue;
+                if (projectile.ownerPlayerNumber === player.playerNumber) continue;
+
+                const dx = projectile.x - player.x;
+                const dy = projectile.y - player.y;
+                if (dx * dx + dy * dy > radius * radius) continue;
+
+                this.reflectProjectile(projectile, player, sig);
+            }
+        }
+    }
+
+    reflectProjectile(projectile, warden, sig) {
+        const vx = projectile.body.velocity.x;
+        const vy = projectile.body.velocity.y;
+        projectile.body.setVelocity(-vx, -vy);
+        projectile.dirX = -projectile.dirX;
+        projectile.dirY = -projectile.dirY;
+
+        // Ownership transfer: checkProjectileHits/AIController.tryDodge/
+        // sameSurvivalTeam (survival's team-flip) all read ownerPlayerNumber
+        // live, so reassigning it here is the entire fix for damage/kill
+        // credit AND survival team allegiance flowing to the Warden from now on.
+        const oldOwner = projectile.ownerPlayerNumber;
+        projectile.ownerPlayerNumber = warden.playerNumber;
+        if (this.projectilesByPlayer[oldOwner]) {
+            const idx = this.projectilesByPlayer[oldOwner].indexOf(projectile);
+            if (idx > -1) this.projectilesByPlayer[oldOwner].splice(idx, 1);
+        }
+        if (this.projectilesByPlayer[warden.playerNumber]) {
+            this.projectilesByPlayer[warden.playerNumber].push(projectile);
+        }
+
+        audio.wardPing();
+        this.spawnRing(projectile.x, projectile.y, sig.flashColor, 1.6, 220);
     }
 
     // ============ FROST FLOOR (Phase 4) ============
@@ -1409,6 +1546,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.cleanupProjectiles();
+        this.checkWardReflections();
         this.checkProjectileHits();
         this.spawnDirector.checkRuneCollection();
         this.checkWallEffects();
