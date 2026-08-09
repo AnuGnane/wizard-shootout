@@ -111,6 +111,31 @@ try {
         round.score1 === 1 && round.round === 2 && round.active,
         `score1=${round.score1} round=${round.round} active=${round.active}`);
 
+    // 3b. Orb pickup by seat 1. A plain bot round never picks up an orb, so
+    // without this the SpawnDirector -> stats -> achievement-toast seam goes
+    // untested (a real refactor bug hid exactly there once).
+    const orb = await page.evaluate(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const s = window.__game.scene.getScene('GameScene');
+        s.spawnDirector.spawnRunes();
+        await wait(100);
+        const before = s.runes.length;
+        if (!before) return { before };
+        const rune = s.runes[0];
+        // checkCollection measures from the rune's spawn coords
+        s.player1.x = rune.spawnX; s.player1.y = rune.spawnY;
+        s.spawnDirector.checkRuneCollection();
+        await wait(200);
+        return {
+            before,
+            after: s.runes.length,
+            held: s.player1.heldRune || (s.player1.shieldCharges > 0 ? 'shield' : null),
+        };
+    });
+    check('orb pickup grants the rune (SpawnDirector seam)',
+        orb.before >= 1 && orb.after === orb.before - 1 && !!orb.held,
+        `before=${orb.before} after=${orb.after} held=${orb.held}`);
+
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
         if (!window.__net || !window.__net.NetConnection) return { err: 'window.__net missing' };
