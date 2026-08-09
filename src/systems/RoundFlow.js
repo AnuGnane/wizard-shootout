@@ -10,7 +10,8 @@
 // Note: `this.scene` is the Phaser Scene; `this.scene.scene` is its ScenePlugin
 // (start/restart/isActive).
 
-import { GAME_CONFIG, PLAYER_CONFIG, MATCH_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
+import { GAME_CONFIG, PLAYER_CONFIG, MATCH_CONFIG, TEAM_NAMES } from '../config.js';
+import { getTeamColors } from './TeamColors.js';
 import { ARENA } from './Maps.js';
 import { MATCH_STATE } from './MatchState.js';
 import { NetSession } from './NetSession.js';
@@ -113,7 +114,8 @@ export class RoundFlow {
         const scene = this.scene;
         const cx = GAME_CONFIG.width / 2;
         const cy = ARENA.offsetY + ARENA.height / 2;
-        const color = '#' + TEAM_COLORS[winnerNumber - 1].toString(16).padStart(6, '0');
+        const teamColors = getTeamColors();
+        const color = '#' + teamColors[winnerNumber - 1].toString(16).padStart(6, '0');
         const name = TEAM_NAMES[winnerNumber - 1];
         const text = isMatchWin ? `${name}\nWINS THE MATCH!` : `${name} SCORES!`;
 
@@ -127,7 +129,7 @@ export class RoundFlow {
         scene.players.forEach((p, i) => {
             const seat = p.playerNumber;
             const st = scene.roundStats[seat];
-            const lineColor = '#' + TEAM_COLORS[seat - 1].toString(16).padStart(6, '0');
+            const lineColor = '#' + teamColors[seat - 1].toString(16).padStart(6, '0');
             const line = scene.add.text(
                 cx,
                 cy + 20 + i * 22,
@@ -167,7 +169,10 @@ export class RoundFlow {
 
     showScoreBannerStandard(winnerNumber, isMatchWin) {
         const scene = this.scene;
-        const color = winnerNumber === 1 ? '#5599ff' : '#ff5566';
+        const [p1Color, p2Color] = getTeamColors();
+        const p1ColorStr = '#' + p1Color.toString(16).padStart(6, '0');
+        const p2ColorStr = '#' + p2Color.toString(16).padStart(6, '0');
+        const color = winnerNumber === 1 ? p1ColorStr : p2ColorStr;
         const name = winnerNumber === 1
             ? PLAYER_CONFIG.names.player1
             : (MATCH_STATE.mode === '1p' ? 'BOT WIZARD' : PLAYER_CONFIG.names.player2);
@@ -207,7 +212,7 @@ export class RoundFlow {
             `DMG ${Math.round(p1Stats.damage)}  ·  ACC ${p1Acc}%  ·  ORBS ${p1Stats.orbs}`,
             {
                 font: '13px monospace',
-                fill: '#5599ff',
+                fill: p1ColorStr,
             }
         ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
 
@@ -217,7 +222,7 @@ export class RoundFlow {
             `DMG ${Math.round(p2Stats.damage)}  ·  ACC ${p2Acc}%  ·  ORBS ${p2Stats.orbs}`,
             {
                 font: '13px monospace',
-                fill: '#ff5566',
+                fill: p2ColorStr,
             }
         ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
 
@@ -344,7 +349,7 @@ export class RoundFlow {
             }
         }
 
-        scene.cameras.main.shake(300, 0.012);
+        scene.shakeCamera(300, 0.012);
         scene.time.delayedCall(300, () => {
             if (winner === null) {
                 this.showDrawBanner();

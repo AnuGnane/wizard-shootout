@@ -2,9 +2,10 @@
 // pixel grid (then scaled up) so circles and edges stay crisp with
 // pixelArt rendering — no binary assets needed.
 
-import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG, PLAYER_CONFIG, TEAM_COLORS } from '../config.js';
+import { ELEMENT_COLORS, PROJECTILE_CONFIG, NORMAL_SHOT_CONFIG, PLAYER_CONFIG } from '../config.js';
 import { WIZARD_CLASSES, CLASS_KEYS } from './Classes.js';
 import { THEMES, DEFAULT_THEME } from './Themes.js';
+import { getTeamColors } from './TeamColors.js';
 
 const SCALE = 2;
 
@@ -312,11 +313,15 @@ export function generateAllTextures(scene) {
 
     // Class-colored wizards: robe/hat show the class, hat tip + brim
     // highlight show the team, one texture per class per seat (1..4).
+    // getTeamColors() picks up a persisted colorblindTeams setting (loaded
+    // before the game boots — see main.js) so a returning player sees the
+    // right palette from the first frame, no repaint needed.
+    const teamColors = getTeamColors();
     for (const classKey of CLASS_KEYS) {
         const cls = WIZARD_CLASSES[classKey];
         const elementColor = ELEMENT_COLORS[cls.element];
         for (let n = 1; n <= 4; n++) {
-            paintWizardTexture(scene, `wizard_${classKey}_${n}`, cls.color, TEAM_COLORS[n - 1], elementColor);
+            paintWizardTexture(scene, `wizard_${classKey}_${n}`, cls.color, teamColors[n - 1], elementColor);
         }
     }
 
@@ -367,7 +372,7 @@ export function ensureCosmeticWizardTexture(scene, classKey, seat, robeColor, st
     const cls = WIZARD_CLASSES[classKey];
     const classColor = cls ? cls.color : 0xffffff;
     const elementColor = cls ? ELEMENT_COLORS[cls.element] : ELEMENT_COLORS.arcane;
-    const teamColor = TEAM_COLORS[seat - 1];
+    const teamColor = getTeamColors()[seat - 1];
 
     const robeIsDefault = robeColor == null || robeColor === classColor;
     const staffIsDefault = staffColor == null || staffColor === STAFF_WOOD;
@@ -384,4 +389,38 @@ export function ensureCosmeticWizardTexture(scene, classKey, seat, robeColor, st
         paintWizardTexture(scene, key, classColor, teamColor, elementColor, opts);
     }
     return key;
+}
+
+// Phase 8 — accessibility: re-bake the wizard textures against whichever
+// palette getTeamColors() currently resolves to. Wizard textures are painted
+// once at boot (generateAllTextures, above) from whatever palette was active
+// then; call this after RUNTIME_SETTINGS.colorblindTeams changes mid-session
+// so ClassSelect/Wardrobe previews and the next match's sprites pick up the
+// new colors without a page reload.
+//
+// paintWizardTexture's pixel *shape* never depends on the colors passed in
+// (only on x/y/distance-from-center), so drawing again under the same key is
+// safe — Graphics#generateTexture draws onto the existing canvas rather than
+// clearing it, but every pixel position gets repainted with the current
+// palette regardless of what was there before.
+export function repaintTeamTextures(scene) {
+    const teamColors = getTeamColors();
+    for (const classKey of CLASS_KEYS) {
+        const cls = WIZARD_CLASSES[classKey];
+        const elementColor = ELEMENT_COLORS[cls.element];
+        for (let n = 1; n <= 4; n++) {
+            paintWizardTexture(scene, `wizard_${classKey}_${n}`, cls.color, teamColors[n - 1], elementColor);
+        }
+    }
+
+    // Cosmetic textures (ensureCosmeticWizardTexture, above) cache by a key
+    // that doesn't encode the palette, so a texture painted under the old
+    // palette would otherwise keep being served forever. Drop them all; each
+    // regenerates on demand, against the now-current palette, next time a
+    // Player asks for it.
+    for (const key of scene.textures.getTextureKeys()) {
+        if (key.startsWith('wizard_') && key.includes('__r')) {
+            scene.textures.remove(key);
+        }
+    }
 }

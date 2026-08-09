@@ -320,7 +320,7 @@ export class NetGameSync {
         scene.roundOver = true; // stops guest input/puppet lerp (update early-returns)
         if (m.scores) MATCH_STATE.scores = { ...m.scores };
         scene.updateScoreText();
-        scene.cameras.main.shake(300, 0.012);
+        scene.shakeCamera(300, 0.012);
         if (m.winner == null) {
             scene.roundFlow.showDrawBanner();
         } else {

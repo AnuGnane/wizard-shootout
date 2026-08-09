@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
+import { PLAYER_CONFIG, TEAM_NAMES } from '../config.js';
+import { getTeamColors } from '../systems/TeamColors.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { clearSession } from '../systems/NetSession.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
@@ -42,7 +43,10 @@ export class GameOverScene extends Phaser.Scene {
         }
 
         const isParty = MATCH_STATE.playerCount > 2;
-        const winnerColor = '#' + TEAM_COLORS[this.winner - 1].toString(16).padStart(6, '0');
+        // Phase 8 — resolved once per create() rather than statically
+        // imported, so a colorblindTeams toggle takes effect immediately.
+        const teamColors = getTeamColors();
+        const winnerColor = '#' + teamColors[this.winner - 1].toString(16).padStart(6, '0');
         const winnerName = isParty
             ? TEAM_NAMES[this.winner - 1]
             : (this.winner === 1
@@ -96,7 +100,7 @@ export class GameOverScene extends Phaser.Scene {
             activeSeats.forEach((n, i) => {
                 this.add.text(startX + i * segGap, 350, `${TEAM_NAMES[n - 1]} ${this.scores[n]}`, {
                     font: 'bold 26px monospace',
-                    fill: '#' + TEAM_COLORS[n - 1].toString(16).padStart(6, '0'),
+                    fill: '#' + teamColors[n - 1].toString(16).padStart(6, '0'),
                 }).setOrigin(0.5);
             });
         } else {

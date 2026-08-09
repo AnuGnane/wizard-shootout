@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, FROST_CONFIG, PRESSURE_CONFIG, TEAM_COLORS, TEAM_NAMES } from '../config.js';
+import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, FROST_CONFIG, PRESSURE_CONFIG, TEAM_NAMES } from '../config.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
+import { getTeamColors } from '../systems/TeamColors.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { TouchControls } from '../systems/TouchControls.js';
@@ -439,6 +440,16 @@ export class GameScene extends Phaser.Scene {
         };
     }
 
+    // Phase 8 — accessibility: single choke point for camera shake so the
+    // Screen Shake setting can no-op it everywhere at once. Every call site
+    // (this scene's abilityBreach/onPlayerDamaged, RoundFlow's round-end
+    // banner, NetGameSync's guest-side round-end mirror) routes through
+    // here instead of calling this.cameras.main.shake directly.
+    shakeCamera(duration, intensity) {
+        if (!RUNTIME_SETTINGS.screenShake) return;
+        this.cameras.main.shake(duration, intensity);
+    }
+
     // Expanding stroked circle, styled like the death ring.
     spawnRing(x, y, color, scaleTo, duration) {
         const ring = this.add.circle(x, y, 10, color, 0);
@@ -638,7 +649,7 @@ export class GameScene extends Phaser.Scene {
                     onComplete: () => debris.destroy(),
                 });
             }
-            this.cameras.main.shake(150, 0.006);
+            this.shakeCamera(150, 0.006);
 
             return true;
         }
@@ -958,6 +969,15 @@ export class GameScene extends Phaser.Scene {
 
     // Today's two-player HUD, verbatim. Only reached when playerCount <= 2.
     createStandardHUD() {
+        // Phase 8 — resolved once per HUD build (create() runs fresh every
+        // round) rather than statically imported, so a colorblindTeams
+        // toggle takes effect on the next match without any HUD replumbing.
+        const [p1Color, p2Color] = getTeamColors();
+        this.p1TeamColor = p1Color;
+        this.p2TeamColor = p2Color;
+        const p1ColorStr = '#' + p1Color.toString(16).padStart(6, '0');
+        const p2ColorStr = '#' + p2Color.toString(16).padStart(6, '0');
+
         const p1ClassName = WIZARD_CLASSES[MATCH_STATE.classes[1]].name.toUpperCase();
         const p2ClassName = WIZARD_CLASSES[MATCH_STATE.classes[2]].name.toUpperCase();
 
@@ -968,12 +988,12 @@ export class GameScene extends Phaser.Scene {
         // --- Player 1 (left) ---
         this.add.text(20, 8, p1ClassName, {
             font: 'bold 14px monospace',
-            fill: '#5599ff',
+            fill: p1ColorStr,
         }).setDepth(11);
 
         this.p1HealthBarBg = this.add.rectangle(20, 30, 150, 12, 0x222233).setOrigin(0, 0).setDepth(11);
         this.p1HealthBarBg.setStrokeStyle(1, 0x000000, 0.8);
-        this.p1HealthBarFill = this.add.rectangle(21, 31, 148, 10, 0x5599ff).setOrigin(0, 0).setDepth(12);
+        this.p1HealthBarFill = this.add.rectangle(21, 31, 148, 10, p1Color).setOrigin(0, 0).setDepth(12);
         this.p1HealthText = this.add.text(176, 29, '', {
             font: '12px monospace',
             fill: '#aaaacc',
@@ -989,12 +1009,12 @@ export class GameScene extends Phaser.Scene {
         // --- Player 2 (right) ---
         this.add.text(GAME_CONFIG.width - 20, 8, p2Name, {
             font: 'bold 14px monospace',
-            fill: '#ff5566',
+            fill: p2ColorStr,
         }).setOrigin(1, 0).setDepth(11);
 
         this.p2HealthBarBg = this.add.rectangle(GAME_CONFIG.width - 20, 30, 150, 12, 0x222233).setOrigin(1, 0).setDepth(11);
         this.p2HealthBarBg.setStrokeStyle(1, 0x000000, 0.8);
-        this.p2HealthBarFill = this.add.rectangle(GAME_CONFIG.width - 21, 31, 148, 10, 0xff5566).setOrigin(1, 0).setDepth(12);
+        this.p2HealthBarFill = this.add.rectangle(GAME_CONFIG.width - 21, 31, 148, 10, p2Color).setOrigin(1, 0).setDepth(12);
         this.p2HealthText = this.add.text(GAME_CONFIG.width - 176, 29, '', {
             font: '12px monospace',
             fill: '#aaaacc',
@@ -1039,11 +1059,12 @@ export class GameScene extends Phaser.Scene {
 
         const n = this.players.length;
         const panelW = GAME_CONFIG.width / n;
+        const teamColors = getTeamColors();
 
         this.players.forEach((player, i) => {
             const seat = player.playerNumber;
             const cx = panelW * i + panelW / 2;
-            const color = TEAM_COLORS[seat - 1];
+            const color = teamColors[seat - 1];
             const colorStr = '#' + color.toString(16).padStart(6, '0');
             const className = WIZARD_CLASSES[player.classKey].name.toUpperCase();
             const isBot = MATCH_STATE.seatTypes[seat] === 'bot';
@@ -1128,8 +1149,8 @@ export class GameScene extends Phaser.Scene {
             }
         };
 
-        drawSide(-1, MATCH_STATE.scores[1], 0x5599ff); // player 1: right-aligned toward center
-        drawSide(1, MATCH_STATE.scores[2], 0xff5566);  // player 2: left-aligned toward center
+        drawSide(-1, MATCH_STATE.scores[1], this.p1TeamColor); // player 1: right-aligned toward center
+        drawSide(1, MATCH_STATE.scores[2], this.p2TeamColor);  // player 2: left-aligned toward center
     }
 
     updateUI() {
@@ -1145,8 +1166,8 @@ export class GameScene extends Phaser.Scene {
         this.p2HealthBarFill.width = 148 * p2Pct;
         this.p1HealthText.setText(`${Math.ceil(this.player1.health)}`);
         this.p2HealthText.setText(`${Math.ceil(this.player2.health)}`);
-        this.p1HealthBarFill.fillColor = p1Pct <= 0.25 ? 0xff3333 : 0x5599ff;
-        this.p2HealthBarFill.fillColor = p2Pct <= 0.25 ? 0xff3333 : 0xff5566;
+        this.p1HealthBarFill.fillColor = p1Pct <= 0.25 ? 0xff3333 : this.p1TeamColor;
+        this.p2HealthBarFill.fillColor = p2Pct <= 0.25 ? 0xff3333 : this.p2TeamColor;
 
         // Held orb display
         this.updateRuneDisplay(this.player1, this.p1RuneIcon, this.p1RuneText, this.p1ShieldIcon);
@@ -1406,7 +1427,7 @@ export class GameScene extends Phaser.Scene {
 
     onPlayerDamaged({ player, amount }) {
         // Small kick + floating damage number
-        this.cameras.main.shake(80, 0.004);
+        this.shakeCamera(80, 0.004);
 
         const dmgText = this.add.text(
             player.x + Phaser.Math.Between(-8, 8),

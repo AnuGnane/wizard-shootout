@@ -30,6 +30,10 @@ export const RUNTIME_SETTINGS = {
     suddenDeath: false,     // 1-HP mutator: any hit is lethal
     aiDifficulty: 'normal', // easy | normal | hard (picked on map select)
 
+    // Phase 8 — Accessibility
+    screenShake: true,      // camera shake on hits/round-end; see GameScene#shakeCamera
+    colorblindTeams: false, // swap TEAM_COLORS for the Okabe-Ito TEAM_COLORS_CB set
+
     // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
     mutGiantShots: false,   // 1.8x projectile scale + physics body
     mutOrbRain: false,      // round starts already in Orb Surge mode
@@ -125,6 +129,11 @@ export class SettingsScene extends Phaser.Scene {
         this.addToggle('Low Cooldowns', 'mutLowCooldowns');
         this.addToggle('Mirror Maps', 'mutMirrorMaps');
         this.addToggle('Fog of War (1P)', 'fogOfWar');
+
+        this.yPos += 20;
+        this.addSectionHeader('ACCESSIBILITY');
+        this.addToggle('Screen Shake', 'screenShake');
+        this.addToggle('Colorblind Team Colors', 'colorblindTeams');
 
         // Buttons
         const saveBtn = this.add.text(width / 2 - 120, height - 50, '[ SAVE ]', {
@@ -235,6 +244,8 @@ export class SettingsScene extends Phaser.Scene {
     }
 
     applySettings() {
+        const colorblindChanged = this.settings.colorblindTeams !== RUNTIME_SETTINGS.colorblindTeams;
+
         Object.assign(RUNTIME_SETTINGS, this.settings, {
             runesEnabled: { ...this.settings.runesEnabled },
         });
@@ -242,5 +253,18 @@ export class SettingsScene extends Phaser.Scene {
         audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
         MATCH_STATE.targetScore = RUNTIME_SETTINGS.targetScore;
         saveSettings(RUNTIME_SETTINGS);
+
+        // Phase 8 — wizard textures bake the team palette in at boot
+        // (PixelSprites.generateAllTextures). When Colorblind Team Colors
+        // actually changed, repaint them in place so ClassSelect/Wardrobe
+        // previews and the next match's sprites pick up the new colors
+        // without a page reload. A dynamic import (rather than a static one)
+        // keeps this file out of a PixelSprites -> TeamColors -> SettingsScene
+        // import cycle — see systems/TeamColors.js for the full reasoning.
+        if (colorblindChanged) {
+            import('../systems/PixelSprites.js').then(({ repaintTeamTextures }) => {
+                repaintTeamTextures(this);
+            });
+        }
     }
 }

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, TEAM_COLORS, MUTATOR_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, CONTROLS, ELEMENT_TYPES, ELEMENT_COLORS, NORMAL_SHOT_CONFIG, RUNE_CONFIG, FROST_CONFIG, MUTATOR_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
@@ -7,6 +7,7 @@ import { MATCH_STATE } from '../systems/MatchState.js';
 import { recordDeath } from '../systems/Stats.js';
 import { resolveColors } from '../systems/Cosmetics.js';
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
+import { getTeamColors } from '../systems/TeamColors.js';
 
 // Reads the real keyboard for a given player's control scheme.
 // Exposes the same getState() interface as AIController so Player
@@ -186,7 +187,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.healthBarBg.setStrokeStyle(1, 0x000000, 0.6);
 
         // Health fill
-        this.baseBarColor = TEAM_COLORS[this.playerNumber - 1];
+        this.baseBarColor = getTeamColors()[this.playerNumber - 1];
         this.healthBarFill = this.scene.add.rectangle(0, 0, barWidth - 2, barHeight - 2, this.baseBarColor);
         this.healthBarFill.setDepth(21);
 
@@ -236,7 +237,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (!this.isAlive) return;
 
         const now = this.scene.time.now;
-        const teamColor = TEAM_COLORS[this.playerNumber - 1];
+        const teamColor = getTeamColors()[this.playerNumber - 1];
 
         // Normal shot cooldown arc - sweeps from -90deg, shrinking to
         // nothing as the shot comes off cooldown.
@@ -794,7 +795,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         audio.death();
 
         // Death explosion: colored shards + expanding ring + white flash
-        const color = TEAM_COLORS[this.playerNumber - 1];
+        const color = getTeamColors()[this.playerNumber - 1];
 
         const flash = this.scene.add.circle(this.x, this.y, 14, 0xffffff, 0.9);
         flash.setDepth(30);
