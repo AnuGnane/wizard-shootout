@@ -23,7 +23,7 @@ import { chromium } from 'playwright';
 
 const SCENES = [
     'BootScene', 'MenuScene', 'SettingsScene', 'ControlsScene', 'ClassSelectScene',
-    'MapSelectScene', 'GameScene', 'PauseScene', 'GameOverScene',
+    'MapSelectScene', 'MapEditorScene', 'GameScene', 'PauseScene', 'GameOverScene',
     'StatsScene', 'WardrobeScene', 'OnlineScene',
 ];
 

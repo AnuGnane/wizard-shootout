@@ -6,6 +6,7 @@ import { SettingsScene, RUNTIME_SETTINGS } from './scenes/SettingsScene.js';
 import { ControlsScene } from './scenes/ControlsScene.js';
 import { ClassSelectScene } from './scenes/ClassSelectScene.js';
 import { MapSelectScene } from './scenes/MapSelectScene.js';
+import { MapEditorScene } from './scenes/MapEditorScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { PauseScene } from './scenes/PauseScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
@@ -14,6 +15,7 @@ import { WardrobeScene } from './scenes/WardrobeScene.js';
 import { OnlineScene } from './scenes/OnlineScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { loadSettings } from './systems/Storage.js';
+import { loadCustomMaps } from './systems/CustomMaps.js';
 import { MATCH_STATE } from './systems/MatchState.js';
 import * as KeyBindings from './systems/KeyBindings.js';
 // Side-effect import: loads the persisted stats profile immediately (and, in
@@ -23,6 +25,9 @@ import './systems/Stats.js';
 // Restore persisted settings (sound, bot difficulty, tunables) before the
 // game boots so every scene sees the saved values from the first frame.
 loadSettings(RUNTIME_SETTINGS);
+// Phase 9a: register any maps built in the editor before the first scene runs,
+// so MapSelect's card list and pickMap's combined index see them immediately.
+loadCustomMaps();
 audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
 audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
 
@@ -46,7 +51,7 @@ const config = {
             gravity: { x: 0, y: 0 },
         },
     },
-    scene: [BootScene, MenuScene, SettingsScene, ControlsScene, ClassSelectScene, MapSelectScene, GameScene, PauseScene, GameOverScene, StatsScene, WardrobeScene, OnlineScene],
+    scene: [BootScene, MenuScene, SettingsScene, ControlsScene, ClassSelectScene, MapSelectScene, MapEditorScene, GameScene, PauseScene, GameOverScene, StatsScene, WardrobeScene, OnlineScene],
     render: {
         pixelArt: true,
         antialias: false,

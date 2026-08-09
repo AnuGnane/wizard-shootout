@@ -105,7 +105,7 @@ maintenance debt. Pay it down before adding more surface area.
 
 ## Phase 9 — Content (highest player value; cheap because everything's procedural)
 
-- [ ] `[O]` Map editor UI (maps are already ASCII + `validateMap`-checked — build a grid editor that saves to localStorage and feeds MapSelect)
+- [x] `[O]` Map editor UI (maps are already ASCII + `validateMap`-checked — build a grid editor that saves to localStorage and feeds MapSelect)
 - [ ] `[O]` PvE co-op wave-survival mode (reuse AI + spawning + classes: 1–2 players vs escalating bot waves, shared score)
 - [ ] `[S]` One or two new classes/elements to prove the class framework extends cleanly
 

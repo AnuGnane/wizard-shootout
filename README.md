@@ -141,6 +141,21 @@ Maps are ASCII layouts in `src/systems/Maps.js`. Every layout is validated
 (closed borders, all spawns present, all floor tiles reachable), so a broken
 map fails loudly in CI instead of ruining a match.
 
+### Map editor
+
+**MAP EDITOR** on the menu opens a grid editor for your own arenas. Pick one of
+the shipped arena sizes, then click and drag to paint walls, erase back to
+floor, and drop the two spawns; **THEME** cycles the five palettes. The same
+validation runs on every edit — the status line reads `VALID` or names the first
+problem (typically an unreachable floor tile), and SAVE stays disabled until
+it's clean. **TEST** drops you straight into a bot match on the saved map.
+
+Saved maps live in your browser's localStorage and appear on the map-select
+screen right after the built-ins, tagged `custom`, with their own thumbnails —
+and they join the Random rotation. They stay local to you: online matches and
+the daily challenge always draw from the built-in maps, so both players always
+have the same arena.
+
 ## Progression & personality
 
 - **Stats + achievements** — local profile tracks wins, streaks, and
@@ -204,13 +219,15 @@ and deploy to GitHub Pages (`.github/workflows/deploy.yml`).
 src/
   main.js               Phaser game bootstrap
   config.js             All tunable gameplay constants
-  scenes/               Boot, Menu, Settings, ClassSelect, MapSelect, Game,
-                        Pause, GameOver, Stats, Wardrobe, Online
+  scenes/               Boot, Menu, Settings, ClassSelect, MapSelect,
+                        MapEditor, Game, Pause, GameOver, Stats, Wardrobe,
+                        Online
   entities/             Player, Projectile, Rune (orb pickup)
   systems/
     PixelSprites.js     Code-generated pixel-art textures
     AudioSystem.js      Procedural Web Audio SFX + chiptune music
     Maps.js             Hand-designed maps + layout validation + spawns
+    CustomMaps.js       localStorage store for editor-made maps
     Themes.js           Per-map wall/floor palettes
     Classes.js          Wizard class data (signatures + passives)
     AIController.js     Bot: BFS pathfinding + line-of-sight + signatures

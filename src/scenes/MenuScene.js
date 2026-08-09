@@ -94,8 +94,14 @@ export class MenuScene extends Phaser.Scene {
         // without reflowing this one. Everything below here (legend/controls/
         // gamepad/hint) shifts down from its original position to make room —
         // verified overlap-free by screenshot (see Phase 6a verification).
-        const secondarySpacing = 160;
-        const secondarySlots = 3;
+        //
+        // Phase 9a takes a FOURTH slot for MAP EDITOR. The row still centers
+        // itself off these two numbers, so widening it is just a matter of the
+        // spacing clearing the longest label ([ MAP EDITOR ] ~ 162px wide) —
+        // 175 leaves ~20px between every neighbouring pair, and the row's
+        // outer edge (~186px from screen left) stays clear of everything.
+        const secondarySpacing = 175;
+        const secondarySlots = 4;
         const secondaryStartX = width / 2 - ((secondarySlots - 1) * secondarySpacing) / 2;
         this.makeSmallButton(secondaryStartX, 509, '[ STATS ]', () => {
             audio.uiClick();
@@ -133,6 +139,13 @@ export class MenuScene extends Phaser.Scene {
         this.makeSmallButton(wardrobeX, 509, '[ WARDROBE ]', () => {
             audio.uiClick();
             this.scene.start('WardrobeScene');
+        });
+
+        // Phase 9a: [ MAP EDITOR ] — build your own arena; saved maps show up
+        // on the map-select screen right after the built-ins.
+        this.makeSmallButton(secondaryStartX + 3 * secondarySpacing, 509, '[ MAP EDITOR ]', () => {
+            audio.uiClick();
+            this.scene.start('MapEditorScene');
         });
 
         // Orb legend
