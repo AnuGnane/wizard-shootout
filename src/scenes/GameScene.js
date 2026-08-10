@@ -62,6 +62,10 @@ export class GameScene extends Phaser.Scene {
         // Tear down guest puppets on scene shutdown (quit, match over, round
         // restart) so no orphan projectile/rune sprites leak across rounds.
         this.events.once('shutdown', this.netSync.clearNetPuppets, this.netSync);
+        // Phase 10.3: same for the arena decorations the guest mirrors from the
+        // host's fx events (frost tiles, conjured walls, wall decals, breach
+        // floors) — same lifecycle points, guest-only inside.
+        this.events.once('shutdown', this.netSync.clearNetDecor, this.netSync);
 
         // Phase 6e: baseline combat intensity for the new round; showRoundBanner
         // below bumps this to 2 if the round starts already at match point.
@@ -435,6 +439,14 @@ export class GameScene extends Phaser.Scene {
         this.events.on('lightningPierce', this.handleLightningPierce, this);
         // 'playerDied' is emitted by Player.die() but has no handler: round
         // resolution is polled in update() so simultaneous deaths settle first.
+        // Phase 10.3 — the one exception, and only on a net host: the snapshot's
+        // alive flag already hides the puppet, but the burst that sells the kill
+        // is a one-shot the guest can't infer. Registered ONLY on the host so
+        // local modes don't so much as gain a listener (and setupEvents' off()
+        // sweep above drops it on the next round like every other handler).
+        if (this.netRole === 'host') {
+            this.events.on('playerDied', (n) => this.netSync.sendFx('death', { n }), this);
+        }
         this.events.on('runeCollected', this.spawnDirector.onRuneCollected, this.spawnDirector);
         this.events.on('playerDamaged', this.onPlayerDamaged, this);
         this.events.on('signatureUsed', this.onSignatureUsed, this);
@@ -503,6 +515,22 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.shake(duration, intensity);
     }
 
+    // Stage 2b / Phase 10.2 — the ONE seam that makes a projectile visible to
+    // the guest: the host stamps a monotonic net id, and sendHostSnapshot ships
+    // every active projectile by that id so the guest reconciles a puppet for
+    // it. EVERY projectile an online-legal class can put in the world routes
+    // through here — normal shots, orb shots and each triple pellet (via
+    // spawnProjectile), Flame Burst's 8 sparks, and Scatter Dash's 3 backward
+    // pellets. A Warden's reflect deliberately does NOT re-stamp: flipping
+    // ownership leaves netId alone, so the guest keeps tracking the same puppet
+    // and simply sees it turn around.
+    //
+    // No-op off the host (guest and every local mode), so nothing changes for
+    // a local match.
+    tagNetProjectile(projectile) {
+        if (this.netRole === 'host') projectile.netId = this.netSync.nextProjId();
+    }
+
     // Expanding stroked circle, styled like the death ring.
     spawnRing(x, y, color, scaleTo, duration) {
         const ring = this.add.circle(x, y, 10, color, 0);
@@ -556,33 +584,51 @@ export class GameScene extends Phaser.Scene {
             const fromX = player.x;
             const fromY = player.y;
 
-            this.spawnRing(fromX, fromY, player.classDef.color, 3, 300);
-            this.spawnRing(dest.x, dest.y, player.classDef.color, 3, 300);
-
-            // Brief particle trail along the jump
-            for (let i = 0; i < 8; i++) {
-                const t2 = i / 7;
-                const trail = this.add.circle(
-                    fromX + (dest.x - fromX) * t2,
-                    fromY + (dest.y - fromY) * t2,
-                    3, player.classDef.color, 0.7
-                );
-                trail.setDepth(9);
-                this.tweens.add({
-                    targets: trail,
-                    alpha: 0,
-                    scale: 0.2,
-                    duration: 220,
-                    onComplete: () => trail.destroy(),
-                });
-            }
+            this.blinkFx(player.classDef.color, fromX, fromY, dest.x, dest.y);
 
             player.setPosition(dest.x, dest.y);
             player.setVelocity(0, 0);
+
+            // Phase 10.3: the teleport itself already reaches the guest (the
+            // next snapshot simply puts the puppet somewhere else), but without
+            // this the jump has no tell at all on that screen — so the two
+            // rings and the trail between them are mirrored. Both ends travel
+            // as world coords; the guest can't reconstruct the origin from a
+            // puppet that has already moved.
+            this.netSync.sendFx('blink', {
+                n: player.playerNumber,
+                x: Math.round(fromX), y: Math.round(fromY),
+                tx: Math.round(dest.x), ty: Math.round(dest.y),
+            });
             return true;
         }
 
         return false;
+    }
+
+    // Blink's two rings plus the particle trail strung between them. Split out
+    // of abilityBlink so the guest can draw the same jump from a 'blink' event.
+    blinkFx(color, fromX, fromY, toX, toY) {
+        this.spawnRing(fromX, fromY, color, 3, 300);
+        this.spawnRing(toX, toY, color, 3, 300);
+
+        // Brief particle trail along the jump
+        for (let i = 0; i < 8; i++) {
+            const t2 = i / 7;
+            const trail = this.add.circle(
+                fromX + (toX - fromX) * t2,
+                fromY + (toY - fromY) * t2,
+                3, color, 0.7
+            );
+            trail.setDepth(9);
+            this.tweens.add({
+                targets: trail,
+                alpha: 0,
+                scale: 0.2,
+                duration: 220,
+                onComplete: () => trail.destroy(),
+            });
+        }
     }
 
     // Pyromancer — Flame Burst. Eight short-lived burning sparks in the
@@ -614,6 +660,7 @@ export class GameScene extends Phaser.Scene {
 
             // NOT added to projectilesByPlayer — sparks don't count toward
             // the cap. checkProjectileHits only reads allProjectiles.
+            this.tagNetProjectile(spark);
             this.projectiles.add(spark);
             this.allProjectiles.push(spark);
             spark.init();
@@ -631,6 +678,11 @@ export class GameScene extends Phaser.Scene {
 
         // Phase 4: frosted tiles become real slippery ice — route the ring's
         // frost through the shared addFrost system instead of a bare overlay.
+        // Phase 10.3: one cast frosts ~20 tiles, so the host collects them and
+        // ships a single batched fx event instead of one message per tile. The
+        // array only exists on the host — off the net path this loop is
+        // untouched.
+        const netTiles = this.netRole === 'host' ? [] : null;
         const here = this.tileOf(player.x, player.y);
         const span = Math.ceil(sig.frostRadius / ARENA.tileSize) + 1;
         for (let ty = here.y - span; ty <= here.y + span; ty++) {
@@ -639,8 +691,10 @@ export class GameScene extends Phaser.Scene {
                 const c = this.map.tileToWorld(tx, ty);
                 if (Phaser.Math.Distance.Between(c.x, c.y, player.x, player.y) > sig.frostRadius) continue;
                 this.addFrost(tx, ty);
+                if (netTiles) netTiles.push([tx, ty]);
             }
         }
+        if (netTiles && netTiles.length) this.netSync.sendFx('frost', { tiles: netTiles });
 
         // Slow every living foe within range (applySlow already no-ops against
         // a slow-immune Cryomancer).
@@ -665,49 +719,64 @@ export class GameScene extends Phaser.Scene {
             if (isBorder) continue;
 
             // Found a breachable wall.
-            this.map.setTile(t.x, t.y, 0);
+            this.applyBreachAt(t.x, t.y);
 
-            const wall = this.walls.getChildren().find(w => w.gridX === t.x && w.gridY === t.y);
-            if (wall) {
-                // If it was a conjured temp wall, drop it from tracking so the
-                // expiry timer's destroy() becomes a guarded no-op.
-                const twIdx = this.effects.tempWalls.indexOf(wall);
-                if (twIdx > -1) this.effects.tempWalls.splice(twIdx, 1);
-                wall.destroy();
-            }
-
-            // createMaze never drew a floor under a wall tile — add one now.
-            const c = this.map.tileToWorld(t.x, t.y);
-            const variant = (t.x * 7 + t.y * 13) % 3;
-            this.add.image(c.x, c.y, 'floor_' + this.map.theme + '_' + variant).setDepth(-5);
-
-            // Debris + shake
-            for (let i = 0; i < 7; i++) {
-                const debris = this.add.rectangle(
-                    c.x, c.y,
-                    3 + Math.random() * 4, 3 + Math.random() * 4,
-                    0x7a7a7a, 0.95
-                );
-                debris.setDepth(9);
-                const a = Math.random() * Math.PI * 2;
-                const dist = 20 + Math.random() * 26;
-                this.tweens.add({
-                    targets: debris,
-                    x: c.x + Math.cos(a) * dist,
-                    y: c.y + Math.sin(a) * dist,
-                    angle: Math.random() * 360,
-                    alpha: 0,
-                    duration: 350 + Math.random() * 200,
-                    ease: 'Cubic.easeOut',
-                    onComplete: () => debris.destroy(),
-                });
-            }
-            this.shakeCamera(150, 0.006);
+            // Phase 10.3: the guest holds its own render of the maze — tell it
+            // which tile just opened so both arenas read the same.
+            this.netSync.sendFx('breach', { gx: t.x, gy: t.y });
 
             return true;
         }
 
         return false;
+    }
+
+    // Open one wall tile: drop it from the map, destroy the wall sprite (and
+    // its body), lay the floor that was never drawn under it, then debris +
+    // shake. Split out of abilityBreach so the GUEST can replay the exact same
+    // mutation from a 'breach' fx event (see NetGameSync.onNetFx). Returns the
+    // floor image it created so a caller can track it; caller checks isWall.
+    applyBreachAt(gx, gy) {
+        this.map.setTile(gx, gy, 0);
+
+        const wall = this.walls.getChildren().find(w => w.gridX === gx && w.gridY === gy);
+        if (wall) {
+            // If it was a conjured temp wall, drop it from tracking so the
+            // expiry timer's destroy() becomes a guarded no-op.
+            const twIdx = this.effects.tempWalls.indexOf(wall);
+            if (twIdx > -1) this.effects.tempWalls.splice(twIdx, 1);
+            wall.destroy();
+        }
+
+        // createMaze never drew a floor under a wall tile — add one now.
+        const c = this.map.tileToWorld(gx, gy);
+        const variant = (gx * 7 + gy * 13) % 3;
+        const floor = this.add.image(c.x, c.y, 'floor_' + this.map.theme + '_' + variant).setDepth(-5);
+
+        // Debris + shake
+        for (let i = 0; i < 7; i++) {
+            const debris = this.add.rectangle(
+                c.x, c.y,
+                3 + Math.random() * 4, 3 + Math.random() * 4,
+                0x7a7a7a, 0.95
+            );
+            debris.setDepth(9);
+            const a = Math.random() * Math.PI * 2;
+            const dist = 20 + Math.random() * 26;
+            this.tweens.add({
+                targets: debris,
+                x: c.x + Math.cos(a) * dist,
+                y: c.y + Math.sin(a) * dist,
+                angle: Math.random() * 360,
+                alpha: 0,
+                duration: 350 + Math.random() * 200,
+                ease: 'Cubic.easeOut',
+                onComplete: () => debris.destroy(),
+            });
+        }
+        this.shakeCamera(150, 0.006);
+
+        return floor;
     }
 
     // Stormcaller — Zap Dash. Kicks off the dash on the Player; the contact
@@ -791,6 +860,7 @@ export class GameScene extends Phaser.Scene {
 
             // NOT added to projectilesByPlayer — like Flame Burst's sparks,
             // an ability-spawned burst doesn't eat the player's shot cap.
+            this.tagNetProjectile(pellet);
             this.projectiles.add(pellet);
             this.allProjectiles.push(pellet);
             pellet.init();
@@ -893,6 +963,10 @@ export class GameScene extends Phaser.Scene {
     frostTileAtWorld(worldX, worldY) {
         const t = this.tileOf(worldX, worldY);
         this.addFrost(t.x, t.y);
+        // Phase 10.3: one tile per sample point along the trail. The guest runs
+        // the same addFrost, whose bounds/wall guards make an off-map or
+        // already-frosted tile a no-op there exactly as it is here.
+        this.netSync.sendFx('frost', { gx: t.x, gy: t.y });
     }
 
     // Instant removal (used by fire melting). Kills the timer + overlay now.
@@ -936,6 +1010,11 @@ export class GameScene extends Phaser.Scene {
         const c = this.map.tileToWorld(t.x, t.y);
         this.spawnSteam(c.x, c.y);
         audio.steam();
+
+        // Phase 10.3: two halves of the same beat on the guest — the tile stops
+        // being icy, and the cloud that replaces it puffs up.
+        this.netSync.sendFx('unfrost', { gx: t.x, gy: t.y });
+        this.netSync.sendFx('steam', { x: c.x, y: c.y });
     }
 
     // Purge all frost (round teardown/restart). Guarded so an already
@@ -1043,6 +1122,11 @@ export class GameScene extends Phaser.Scene {
             fireWall.destroy();
             glow.destroy();
         });
+
+        // Phase 10.3: the scorch is what tells you a wall is dangerous to hug,
+        // so the guest gets its own (same visual, same 3s life). Re-entrant on
+        // the guest — sendFx is a no-op there, so the mirrored call can't echo.
+        this.netSync.sendFx('burn', { x: data.x, y: data.y, gx: data.gridX, gy: data.gridY });
     }
 
     createIceWall(data) {
@@ -1074,6 +1158,9 @@ export class GameScene extends Phaser.Scene {
             iceWall.destroy();
             frost.destroy();
         });
+
+        // Phase 10.3: same deal as the burn decal above.
+        this.netSync.sendFx('icewall', { x: data.x, y: data.y, gx: data.gridX, gy: data.gridY });
     }
 
     checkWallEffects() {
@@ -1719,6 +1806,13 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.showMuzzleFlash(data);
+
+        // Phase 10.3: sent from here rather than inside showMuzzleFlash so it
+        // lands exactly when a flash does — the projectile-cap early-return
+        // above skips both. The guest re-derives the muzzle position from the
+        // shooting puppet; only the seat and the element (which colors it)
+        // can't be read off a snapshot.
+        this.netSync.sendFx('muzzle', { n: playerNum, el: data.element });
     }
 
     spawnProjectile(data, dirX, dirY) {
@@ -1736,7 +1830,7 @@ export class GameScene extends Phaser.Scene {
 
         // Stage 2b: tag host projectiles (normal + each triple/rune pellet routes
         // through here) so the guest can reconcile puppets by id.
-        if (this.netRole === 'host') projectile.netId = this.netSync.nextProjId();
+        this.tagNetProjectile(projectile);
 
         this.projectiles.add(projectile);
         this.projectilesByPlayer[playerNum].push(projectile);
@@ -1791,6 +1885,29 @@ export class GameScene extends Phaser.Scene {
         const gridY = Math.floor((data.y - ARENA.offsetY) / ARENA.tileSize);
         if (this.map.isWall(gridX, gridY)) return;
 
+        // Stonecaller passive: this class's conjured walls last longer.
+        const owner = this.players.find(p => p.playerNumber === data.ownerPlayerNumber);
+        let duration = PROJECTILE_CONFIG.earth.wallDuration;
+        if (owner && owner.classKey === 'stonecaller') {
+            duration *= WIZARD_CLASSES.stonecaller.signature.wallDurationMultiplier;
+        }
+
+        this.spawnTempWall(gridX, gridY, duration);
+
+        // Phase 10.3: mirror the wall on the guest, carrying the lifetime the
+        // passive already resolved — the guest runs its own expiry off that, so
+        // there's no second "it's gone now" message to lose or race.
+        this.netSync.sendFx('wall', { gx: gridX, gy: gridY, dur: duration });
+    }
+
+    // Raise a conjured wall on one tile for `duration` ms: sprite + static body,
+    // map tile, tracking, rise-in tween and the expiry that undoes all of it.
+    // Split out of createTempWall so the GUEST can raise the same wall from a
+    // 'wall' fx event with the host's already-resolved duration. No-ops on an
+    // occupied tile, so a duplicate event can't stack two walls.
+    spawnTempWall(gridX, gridY, duration) {
+        if (this.map.isWall(gridX, gridY)) return;
+
         const worldX = ARENA.offsetX + gridX * ARENA.tileSize + ARENA.tileSize / 2;
         const worldY = ARENA.offsetY + gridY * ARENA.tileSize + ARENA.tileSize / 2;
 
@@ -1812,13 +1929,6 @@ export class GameScene extends Phaser.Scene {
             ease: 'Back.easeOut',
             onComplete: () => { if (tempWall.active) tempWall.refreshBody(); },
         });
-
-        // Stonecaller passive: this class's conjured walls last longer.
-        const owner = this.players.find(p => p.playerNumber === data.ownerPlayerNumber);
-        let duration = PROJECTILE_CONFIG.earth.wallDuration;
-        if (owner && owner.classKey === 'stonecaller') {
-            duration *= WIZARD_CLASSES.stonecaller.signature.wallDurationMultiplier;
-        }
 
         this.time.delayedCall(duration, () => {
             const index = this.effects.tempWalls.indexOf(tempWall);

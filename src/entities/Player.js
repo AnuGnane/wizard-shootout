@@ -834,6 +834,36 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             this.indicator = null;
         }
 
+        this.deathBurst();
+
+        // Phase 6a: kill credit (skipped for suicides — a self-inflicted
+        // death, e.g. an earth wall or a dash's own contact stun, never
+        // fires lastHitBy.by === this.playerNumber since owners don't damage
+        // themselves) + seat-1 personal death tracking for the profile.
+        if (this.lastHitBy && this.lastHitBy.by !== this.playerNumber) {
+            this.scene.events.emit('playerKilled', {
+                victim: this.playerNumber,
+                by: this.lastHitBy.by,
+                element: this.lastHitBy.element,
+            });
+        }
+        if (this.playerNumber === 1) {
+            // Phase 6b: a daily challenge must never touch the normal
+            // profile (see GameScene's trackProfile guard) — _seat1DiedThisMatch
+            // still updates since it's scene-local and harmless either way.
+            if (!MATCH_STATE.isDailyChallenge) recordDeath();
+            this.scene._seat1DiedThisMatch = true;
+        }
+
+        this.scene.events.emit('playerDied', this.playerNumber);
+    }
+
+    // The death sound + explosion, at wherever this wizard currently stands.
+    // Split out of die() (Phase 10.3) because a net GUEST never runs die() at
+    // all — its puppets are hidden by the snapshot's alive flag — so the host
+    // sends a 'death' fx event and NetGameSync calls this on the puppet, giving
+    // both screens the same bang. Purely visual/audible: no state is touched.
+    deathBurst() {
         audio.death();
 
         // Death explosion: colored shards + expanding ring + white flash
@@ -881,26 +911,5 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
                 onComplete: () => particle.destroy(),
             });
         }
-
-        // Phase 6a: kill credit (skipped for suicides — a self-inflicted
-        // death, e.g. an earth wall or a dash's own contact stun, never
-        // fires lastHitBy.by === this.playerNumber since owners don't damage
-        // themselves) + seat-1 personal death tracking for the profile.
-        if (this.lastHitBy && this.lastHitBy.by !== this.playerNumber) {
-            this.scene.events.emit('playerKilled', {
-                victim: this.playerNumber,
-                by: this.lastHitBy.by,
-                element: this.lastHitBy.element,
-            });
-        }
-        if (this.playerNumber === 1) {
-            // Phase 6b: a daily challenge must never touch the normal
-            // profile (see GameScene's trackProfile guard) — _seat1DiedThisMatch
-            // still updates since it's scene-local and harmless either way.
-            if (!MATCH_STATE.isDailyChallenge) recordDeath();
-            this.scene._seat1DiedThisMatch = true;
-        }
-
-        this.scene.events.emit('playerDied', this.playerNumber);
     }
 }

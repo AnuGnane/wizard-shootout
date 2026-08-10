@@ -7,39 +7,106 @@
 // emitting a code, every candidate is already inside it — no trickle-ICE /
 // signaling server is needed, so this deploys on static hosting (GitHub Pages).
 //
-// STUN-only (Google's public STUN). No TURN relay, so peers behind strict
-// symmetric NATs may fail to connect — acceptable for a prototype; a TURN
-// server would be the fix for full reliability.
+// ICE uses Google's public STUN plus the Open Relay Project's free TURN (see
+// ICE_SERVERS below) so strict-NAT peers have a shot without us running any
+// server of our own.
 
 import { NetSession } from './NetSession.js';
 
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+// Best-effort third-party infrastructure, deliberately chosen because this game
+// deploys to static hosting and we operate no server:
+//   - Google's public STUN discovers each peer's public address (enough for the
+//     overwhelming majority of home NATs, and the only thing same-network play
+//     ever needs).
+//   - Open Relay Project's free TURN relays media when both peers sit behind
+//     strict/symmetric NATs that STUN can't punch through. It is a free public
+//     service with no uptime promise; if it is unreachable ICE simply never
+//     produces relay candidates and we degrade to exactly the old STUN-only
+//     behaviour. That degradation is built into ICE, so there is intentionally
+//     no reachability probing here.
+const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+        urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turns:openrelay.metered.ca:443?transport=tcp',
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+    },
+];
 
 // Some browsers never fire icegatheringstatechange -> 'complete'. Resolve the
 // gather wait after this long regardless, shipping whatever candidates we have.
 const ICE_GATHER_TIMEOUT_MS = 2500;
 
+// Marker on compressed codes. Codes WITHOUT it are read as the Phase-9 format
+// (plain base64 JSON), so a peer running an older build can still hand us a
+// code that works. We always EMIT the compressed form.
+const CODE_PREFIX = 'WS1.';
+
 // ---- unicode-safe base64 (codes carry JSON that may hold any characters) ----
-function b64encode(str) {
-    const bytes = new TextEncoder().encode(str);
+function bytesToB64(bytes) {
     let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    // Chunked so a multi-KB SDP can't blow the argument limit of fromCharCode.
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
     return btoa(bin);
 }
 
-function b64decode(b64) {
+function b64ToBytes(b64) {
     const bin = atob(b64);
-    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
+    return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
-function encodeCode(desc) {
+function b64encode(str) {
+    return bytesToB64(new TextEncoder().encode(str));
+}
+
+function b64decode(b64) {
+    return new TextDecoder().decode(b64ToBytes(b64));
+}
+
+// ---- deflate (raw, no zlib/gzip wrapper — every byte counts in a QR) -------
+// SDP is extremely repetitive text, so raw deflate takes a 2-4KB code down to
+// roughly a quarter of its length. CompressionStream is present in every
+// browser that ships the WebRTC we need, but if it ever isn't we fall back to
+// emitting the legacy uncompressed code, which every build can still read.
+function hasCompression() {
+    return typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+}
+
+async function streamBytes(stream, input) {
+    const writer = stream.writable.getWriter();
+    writer.write(input);
+    writer.close();
+    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+
+async function deflateRaw(str) {
+    return streamBytes(new CompressionStream('deflate-raw'), new TextEncoder().encode(str));
+}
+
+async function inflateRaw(bytes) {
+    const out = await streamBytes(new DecompressionStream('deflate-raw'), bytes);
+    return new TextDecoder().decode(out);
+}
+
+async function encodeCode(desc) {
     // desc is an RTCSessionDescription — clone the plain fields for JSON.
-    return b64encode(JSON.stringify({ type: desc.type, sdp: desc.sdp }));
+    const json = JSON.stringify({ type: desc.type, sdp: desc.sdp });
+    if (!hasCompression()) return b64encode(json);
+    return CODE_PREFIX + bytesToB64(await deflateRaw(json));
 }
 
-function decodeCode(code) {
-    return JSON.parse(b64decode(String(code).trim()));
+async function decodeCode(code) {
+    const text = String(code).trim();
+    if (text.startsWith(CODE_PREFIX)) {
+        return JSON.parse(await inflateRaw(b64ToBytes(text.slice(CODE_PREFIX.length))));
+    }
+    return JSON.parse(b64decode(text)); // legacy (pre-Phase-10) uncompressed code
 }
 
 export class NetConnection {
@@ -143,7 +210,7 @@ export class NetConnection {
     // HOST step 2: consume the guest's reply code; connection then establishes
     // and the data channel opens (onOpen fires).
     async acceptAnswer(code) {
-        const answer = decodeCode(code);
+        const answer = await decodeCode(code);
         await this.pc.setRemoteDescription(answer);
     }
 
@@ -153,7 +220,7 @@ export class NetConnection {
     async acceptOffer(code) {
         const pc = this._createPc();
         pc.addEventListener('datachannel', (ev) => this._wireChannel(ev.channel));
-        const offer = decodeCode(code);
+        const offer = await decodeCode(code);
         await pc.setRemoteDescription(offer);
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);

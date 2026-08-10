@@ -33,9 +33,9 @@ npm test         # headless smoke suite (see Development)
   connected gamepads; HUD and scoring scale to the roster.
 - **Survival (1–2 players, co-op PvE)** — endless escalating waves of dark
   wizards. See [Survival](#survival) below.
-- **Online 1v1** — connect to a friend over WebRTC with a copy-paste
-  connection code (no server). See [Online](#online-1v1-prototype) for the
-  prototype's current limits.
+- **Online 1v1** — connect to a friend over WebRTC with a 5-character room
+  code, a QR scan, or a copy-paste connection code (no game server). Any class,
+  any built-in map, full orb pool. See [Online](#online-1v1-prototype).
 - **Daily Challenge** — a seeded map + mutator + bot combo that's the same
   for everyone that day; your local best is tracked.
 
@@ -171,24 +171,71 @@ have the same arena.
 
 ## Online 1v1 (prototype)
 
-Online play uses a **host-authoritative** WebRTC data channel with
-**serverless copy-paste signaling**: the host generates a connection code,
-the guest pastes it back, and the two browsers connect directly (peer to
-peer, no game server). The host runs the authoritative simulation and
-broadcasts ~25 Hz snapshots; the guest renders both wizards as interpolated
-puppets and streams its input back.
+Online play is a **host-authoritative** WebRTC data channel between two
+browsers — there is no game server, and the game is static-hosted. The host
+runs the authoritative simulation and broadcasts ~25 Hz snapshots; the guest
+renders both wizards as interpolated puppets and streams its input back.
 
-**Current prototype limits** (deliberate, to keep it desync-free):
+### Three ways to connect
 
-- Both players are Arcanists on one fixed map.
-- Orbs are restricted to the four that don't mutate the arena (no earth walls
-  or ice floors online, which would desync the guest's map).
-- STUN-only (no TURN relay), so peers need the same network or a friendly NAT.
-- A few host-side one-shot effects (muzzle flash, death burst, steam) render
-  only on the host.
+Getting the two browsers introduced ("signaling") is the only awkward part of
+a serverless game, so the lobby offers three routes. They all produce the same
+connection — pick whichever is convenient.
 
-The actual duel — move, shoot, hit, score, round flow — is fully synced.
-Lifting these limits is Phase 10 on the [roadmap](ROADMAP.md).
+1. **Room code (easiest).** HOST shows a 5-character code (e.g. `K7QM4`); the
+   other player types it under JOIN. Behind the scenes the two browsers swap
+   their connection codes through a **public MQTT broker** used purely as a
+   mailbox — it never sees a single frame of gameplay, and it is dropped the
+   moment the peer-to-peer channel is up. The alphabet has no `0/O/1/I`, so a
+   code is safe to read out loud.
+2. **QR.** The connection code is also drawn as a QR next to it, so a phone can
+   scan it off the screen instead of retyping a few hundred characters. The QR
+   encoder is written in-repo (`src/systems/QRCode.js`) — no dependency, no
+   binary assets, in keeping with the rest of the project.
+3. **Manual code (always works).** Copy the host's code, paste it into the
+   guest's box, copy the reply back. This path needs nothing but the two
+   browsers, so it is the guaranteed fallback: if the room-code broker is
+   unreachable the lobby says so within a few seconds and this flow — which is
+   on screen the whole time — carries on working.
+
+Connection codes are deflate-compressed before base64, which cuts them by
+roughly a third to a half (and keeps them inside a scannable QR). Codes from
+older builds are still accepted.
+
+### Relay (TURN)
+
+ICE uses Google's public STUN plus the **Open Relay Project's** free TURN
+servers. That is deliberate best-effort third-party infrastructure: we run no
+server, and a relay is the only way two players behind strict/symmetric NATs
+can connect at all. If it's down or blocked, ICE simply produces no relay
+candidates and behaviour degrades to the old STUN-only path. **Playing on the
+same network never touches TURN.**
+
+### What's synced
+
+All of it. Both players pick any of the seven classes in the post-connect
+lobby (the host also picks the battleground, or rolls RANDOM), every orb can
+spawn, and the arena mutates in step on both screens: a Stonecaller's Breach
+opens the same wall tile for both, conjured earth walls rise and expire
+together, frost floors and the steam that melts them appear on both, and the
+one-shot flourishes — muzzle flashes, death bursts, Blink's rings, burning and
+frozen wall decals — are mirrored to the guest as well. The host also decides
+the match length: its "first to N" setting is what both score readouts show.
+
+Only the host simulates; the guest renders what it's told. So there is exactly
+one authority for every collision, and the two arenas can't drift apart.
+
+**Remaining limits** (deliberate):
+
+- **Custom maps are local-only.** Editor-made maps live in your own
+  `localStorage` and simply don't exist on the other machine, so the online
+  battleground strip offers the built-in maps.
+- **Signaling is best-effort third-party infra** — a public MQTT broker for
+  room codes, public STUN, and free TURN (see above). All three degrade to the
+  copy-paste path, which needs nothing but the two browsers.
+- **Cosmetics don't cross the wire.** Each screen paints its own equipped
+  robe/staff on its seat-1 wizard, so you always see your own outfit and never
+  your opponent's.
 
 ## Settings
 
@@ -265,9 +312,12 @@ src/
     DailyChallenge.js   Seeded daily map + mutator + bot
     GamepadInput.js     Gamepad input source
     TouchControls.js    Mobile virtual joystick + buttons
-    NetConnection.js    WebRTC transport (copy-paste signaling)
+    NetConnection.js    WebRTC transport (compressed connection codes)
+    NetSignal.js        Room-code rendezvous (minimal MQTT-over-WebSocket)
+    QRCode.js           Byte-mode QR encoder (versions 1-40, EC L/M)
     NetSession.js       Active net session singleton
     NetInput.js         Remote-input source for the guest's puppet
 tests/
   smoke.mjs             Headless boot/scene/bot-round/survival/netcode smoke suite
+  mqtt-stub.mjs         Local stub broker for testing room codes offline
 ```
