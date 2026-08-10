@@ -217,6 +217,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // Update status effects
         this.updateStatusEffects(time, delta);
 
+        // A burn/poison tick above can finish this wizard off mid-update, and
+        // die() tears down its health bar, bubbles and indicator. Nothing
+        // below may run on a corpse: it would shoot from beyond the grave and
+        // dereference the destroyed indicator, and that TypeError escapes
+        // Phaser's RAF step — no further frame is ever scheduled and the whole
+        // match freezes. A wizard that was already dead never gets here (the
+        // guard at the top of update()), so the living path is unchanged.
+        if (!this.isAlive) return;
+
         // Update movement
         this.handleMovement();
 
@@ -251,6 +260,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     updateIndicator() {
         const g = this.indicator;
+        // die() destroys and nulls the indicator, so it is legitimately absent
+        // on a corpse. Defence in depth: any caller that reaches here after a
+        // death (now or in future code) is a no-op instead of a hard throw
+        // that would take the game loop down with it.
+        if (!g) return;
         g.clear();
 
         if (!this.isAlive) return;

@@ -55,6 +55,19 @@ export class GameScene extends Phaser.Scene {
         this.survivalPanels = null;
         this.survivalWaveText = null;
         this.survivalKillsText = null;
+        // Same reasoning for the centre score readout, which is the one HUD
+        // slot built CONDITIONALLY: createStandardHUD makes pips (targetScore
+        // <= 7) or a numeric Text (targetScore > 7) but never both, and the
+        // survival/party HUDs make neither/pips only. Whichever handle this
+        // match does not rebuild would otherwise still point at the previous
+        // match's destroyed object — and updateScoreDisplay()'s truthiness
+        // check happily calls setText() on it, throwing out of create() before
+        // the ESC handler is wired (no running scene, black screen). Starting
+        // from a known-null state means every match only ever touches the
+        // widgets it just built.
+        this.scoreText = null;
+        this.scorePips = null;
+        this.partyPanels = null;
 
         // Everything else net-specific (roster, snapshots, puppets, round
         // mirroring) lives in this module; it is inert while netRole is null.

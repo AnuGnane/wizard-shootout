@@ -5,9 +5,11 @@
 //   1. the game boots and lands on the menu with no errors,
 //   2. every expected scene is registered,
 //   3. a 1P bot round actually plays and a kill advances the score/round,
-//   4. the WebRTC transport completes a loopback handshake and delivers a
+//   4. two fixed crash regressions stay fixed: a burn-tick death, and
+//      entering Survival right after a "first to 8+" match,
+//   5. the WebRTC transport completes a loopback handshake and delivers a
 //      message host -> guest,
-//   5. nothing logged a console error or threw during any of the above.
+//   6. nothing logged a console error or threw during any of the above.
 //
 // Self-contained: it starts its own dev server via the Vite Node API (so no
 // server needs to be running first, and no browser auto-opens) and tears it
@@ -194,6 +196,147 @@ try {
     check('survival: clearing wave 1 advances to wave 2 and heals heroes',
         surv.wave === 2 && surv.kills === 3 && surv.wave2Total === 4 && surv.hpAfter > surv.hpBefore,
         `wave=${surv.wave} kills=${surv.kills} wave2Total=${surv.wave2Total} hp=${surv.hpBefore}->${surv.hpAfter}`);
+
+    // 3d. Regression guard: a burn tick that kills a wizard must not throw out
+    // of Player.update(). It used to — die() nulls the indicator mid-update and
+    // the tail of update() dereferenced it — and the TypeError escaped Phaser's
+    // RAF step, so no further frame was ever scheduled: the match froze for
+    // good (no score, no next round, ESC dead, reload the only way out).
+    // Two human seats and no input, so nothing but the burn can end the round.
+    await page.evaluate(() => {
+        const M = window.__match;
+        M.online = false; M.isDailyChallenge = false;
+        M.mode = '2p';
+        M.seatTypes = { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
+        M.playerCount = 2;
+        M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+        M.mapIndex = 0; M.round = 1;
+        M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+        window.__game.scene.getScene('GameScene').scene.start('GameScene');
+    });
+    // The waits below are tolerant on purpose: if the bug ever comes back the
+    // loop stops, and this check should report a clean FAIL rather than
+    // throwing out of the suite and hiding the checks after it.
+    try {
+        await page.waitForFunction(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s && window.__game.scene.isActive('GameScene') &&
+                s.players && s.players.length === 2 && !s.roundOver;
+        }, null, { timeout: 20000 });
+    } catch { /* reported by the check below */ }
+
+    const errsBeforeBurn = errors.length;
+    // Frames are sampled with setTimeout (not rAF), so a dead game loop is
+    // measured rather than waited on: the numbers come back either way.
+    const burn = await page.evaluate(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const s = window.__game.scene.getScene('GameScene');
+        const victim = s && s.player2;
+        if (!victim) return { err: 'no seat-2 wizard' };
+        victim.lastHitBy = { by: 1, element: 'fire' };
+        victim.health = 2;
+        victim.applyBurn(2.5, 4000);      // exactly the DoT a fire orb applies
+        const f0 = window.__game.loop.frame;
+        await wait(1500);                  // the burn kills inside Player.update
+        const f1 = window.__game.loop.frame;
+        await wait(2500);                  // past the ~2.2s round-end delay
+        return {
+            alive: victim.isAlive,
+            framesToDeath: f1 - f0,
+            framesAfterDeath: window.__game.loop.frame - f1,
+            score1: window.__match.scores[1],
+            round: window.__match.round,
+            active: window.__game.scene.isActive('GameScene'),
+        };
+    });
+    check('burn-tick death does not throw; loop keeps stepping and the round resolves',
+        burn.alive === false && burn.framesAfterDeath > 5 && burn.active &&
+        burn.score1 === 1 && errors.length === errsBeforeBurn,
+        burn.err || `alive=${burn.alive} frames=${burn.framesToDeath}/${burn.framesAfterDeath} ` +
+        `score1=${burn.score1} round=${burn.round} active=${burn.active} ` +
+        `newErrors=${errors.length - errsBeforeBurn}`);
+
+    // 3e. Regression guard: GameScene is a single reused instance, and the
+    // centre score readout is the one HUD slot built conditionally — pips at
+    // targetScore <= 7, a numeric Text above that, neither in survival. A
+    // survival run started right after a "first to 8+" match used to call
+    // setText() on the previous match's DESTROYED Text, throwing out of
+    // create() before the ESC handler was wired: no running scene, black
+    // screen, reload required. The match is seeded mid-scoreline on purpose:
+    // Phaser's setText early-returns when the string is unchanged, so a
+    // 0-0 -> 0-0 write would touch the destroyed Text without ever painting
+    // it and the guard would prove nothing.
+    await page.evaluate(() => {
+        const M = window.__match;
+        M.online = false; M.isDailyChallenge = false;
+        M.mode = '1p';
+        M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+        M.playerCount = 2;
+        M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+        M.mapIndex = 0; M.round = 4;
+        M.scores = { 1: 2, 2: 1, 3: 0, 4: 0 }; M.targetScore = 9;
+        const s = window.__game.scene.getScene('GameScene');
+        // A restart is queued, not immediate, and the outgoing match also has
+        // two wizards — so remember the roster we're replacing and wait for a
+        // genuinely new one below rather than sampling the old HUD.
+        window.__prevPlayer1 = s.player1;
+        s.scene.start('GameScene');
+    });
+    let numericMatchStarted = true;
+    try {
+        await page.waitForFunction(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s && window.__game.scene.isActive('GameScene') && s.players &&
+                s.players.length === 2 && s.player1 && s.player1 !== window.__prevPlayer1;
+        }, null, { timeout: 20000 });
+    } catch { numericMatchStarted = false; }
+    // Confirm the hazard is actually being exercised: this match must have
+    // built the numeric readout, holding a scoreline the survival HUD build
+    // will not reproduce, or the guard below proves nothing.
+    const numericHud = await page.evaluate(() => {
+        const s = window.__game.scene.getScene('GameScene');
+        return { usePips: s.usePips, scoreText: s.scoreText ? s.scoreText.text : null };
+    });
+
+    const errsBeforeSurvival = errors.length;
+    await page.evaluate(() => {
+        const M = window.__match;
+        M.online = false; M.isDailyChallenge = false;
+        M.mode = 'survival';
+        M.seatTypes = { 1: 'human', 2: 'off', 3: 'bot', 4: 'bot' };
+        M.playerCount = 3;
+        M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+        M.mapIndex = 0; M.round = 1;
+        M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        window.__game.scene.getScene('GameScene').scene.start('GameScene');
+    });
+    let survivalStarted = true;
+    try {
+        await page.waitForFunction(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s && window.__game.scene.isActive('GameScene') && s.survivalDirector &&
+                s.players && s.players.length === 3;
+        }, null, { timeout: 20000 });
+    } catch { survivalStarted = false; }
+    const afterSurvival = await page.evaluate(() => {
+        const s = window.__game.scene.getScene('GameScene');
+        return {
+            running: window.__game.scene.getScenes(true).map((x) => x.scene.key),
+            players: s && s.players ? s.players.length : null,
+            // The root-cause invariant: survival builds no score readout, so
+            // the field must not still hold the previous match's dead Text.
+            staleScoreText: !!(s && s.scoreText),
+        };
+    });
+    check('survival starts cleanly after a "first to 8+" match (no stale HUD handles)',
+        numericMatchStarted &&
+        numericHud.usePips === false && !!numericHud.scoreText && numericHud.scoreText !== '0  -  0' &&
+        survivalStarted &&
+        afterSurvival.running.includes('GameScene') && !afterSurvival.staleScoreText &&
+        errors.length === errsBeforeSurvival,
+        `numericHud=${JSON.stringify(numericHud)} started=${survivalStarted} ` +
+        `running=[${afterSurvival.running.join(',')}] players=${afterSurvival.players} ` +
+        `staleScoreText=${afterSurvival.staleScoreText} newErrors=${errors.length - errsBeforeSurvival}`);
 
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
