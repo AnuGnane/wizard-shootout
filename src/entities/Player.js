@@ -628,7 +628,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.scene.events.emit('signatureUsed', { player: this });
     }
 
+    // Does the arena have room for the projectile(s) this shot would spawn?
+    // GameScene owns the per-player projectile cap (and knows a triple orb
+    // costs three slots); this is the single question both shot paths ask
+    // BEFORE spending anything. Defensive `typeof` so a Player hosted by a
+    // scene without the hook still shoots.
+    canSpawnShot(element) {
+        const scene = this.scene;
+        if (!scene || typeof scene.canAcceptShot !== 'function') return true;
+        return scene.canAcceptShot(this, element);
+    }
+
     shootNormal() {
+        // Audit M1: ask first, commit second. Committing the cooldown here and
+        // letting GameScene drop the shot at the cap is what made a capped shot
+        // cost full price for nothing; a shot that cannot spawn now costs
+        // nothing at all (no cooldown, no charge, no cast flash).
+        if (!this.canSpawnShot(ELEMENT_TYPES.ARCANE)) return;
+
         this.canNormalShot = false;
         this.normalReadyAt = this.scene.time.now + this.normalCooldown;
 
@@ -653,6 +670,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (!this.heldRune || this.runeShots <= 0) {
             return; // No rune held
         }
+
+        // Audit M1 proper: at the projectile cap this used to eat the charge
+        // AND the 800ms cooldown while spawning nothing. Same rule as
+        // shootNormal — no room, no cost, press again in a moment.
+        if (!this.canSpawnShot(this.heldRune)) return;
 
         this.canRuneShot = false;
         this.runeReadyAt = this.scene.time.now + this.runeCooldown;

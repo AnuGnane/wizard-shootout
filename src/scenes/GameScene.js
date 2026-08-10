@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, FROST_CONFIG, PRESSURE_CONFIG, TEAM_NAMES } from '../config.js';
+import { GAME_CONFIG, PROJECTILE_CONFIG, ELEMENT_TYPES, ELEMENT_COLORS, PLAYER_CONFIG, FROST_CONFIG, PRESSURE_CONFIG, TEAM_NAMES, WALL_EFFECT_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { getTeamColors } from '../systems/TeamColors.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
@@ -109,6 +109,11 @@ export class GameScene extends Phaser.Scene {
             iceWalls: [],    // Slow effect on walls
             tempWalls: [],
         };
+
+        // The projectile currently inside Projectile.onWallHit, latched by the
+        // wall collider in setupCollisions so createFireWall can attribute the
+        // decal it emits (see there). Null outside that synchronous call.
+        this.wallHitSource = null;
 
         this.projectilesByPlayer = { 1: [], 2: [], 3: [], 4: [] };
         this.maxProjectilesPerPlayer = 5;
@@ -418,7 +423,18 @@ export class GameScene extends Phaser.Scene {
             this.walls,
             (projectile, wall) => {
                 if (projectile && projectile.active && projectile.onWallHit) {
-                    projectile.onWallHit(wall);
+                    // Phase 10.5 — kill credit at wall decals. onWallHit emits
+                    // 'createFireWall'/'createIceWall' synchronously and those
+                    // events carry no shooter, so latch the projectile that is
+                    // hitting for exactly the duration of that call: the decal
+                    // handlers read whose orb lit the tile off this field.
+                    // Cleared in a finally so a throw can't leave it stale.
+                    this.wallHitSource = projectile;
+                    try {
+                        projectile.onWallHit(wall);
+                    } finally {
+                        this.wallHitSource = null;
+                    }
                 }
             }
         );
@@ -558,12 +574,56 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
-    // Arcanist — Blink. Scan along the aim direction and teleport to the
-    // first landing that clears a wall, fits the body, and isn't on the foe.
-    abilityBlink(player) {
+    // How many SEPARATE walls the straight line from (x0,y0) to (x1,y1) passes
+    // through. Contiguous wall tiles count as ONE wall however thick they are,
+    // so a 2-tile-thick wall is one crossing while a wall, a gap of floor and
+    // another wall is two. Sampled every `stepPx` (4px against a 32px grid), so
+    // a wall tile can't be stepped over; a ray that only clips a tile's corner
+    // may go uncounted, which is the safe direction to err (it can only make a
+    // Blink refuse, never make it cross something it shouldn't).
+    wallBandsCrossed(x0, y0, x1, y1, stepPx) {
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len === 0) return 0;
+
+        const samples = Math.max(1, Math.ceil(len / stepPx));
+        let bands = 0;
+        let inWall = false;
+        for (let i = 0; i <= samples; i++) {
+            const t = i / samples;
+            const tile = this.tileOf(x0 + dx * t, y0 + dy * t);
+            const isWall = this.map.isWall(tile.x, tile.y);
+            if (isWall && !inWall) bands++;
+            inWall = isWall;
+        }
+        return bands;
+    }
+
+    // The ONE definition of where an Arcanist's Blink lands — or that it can't.
+    // Returns {x, y} for the nearest legal landing along (dirX, dirY), else
+    // null (the caller fizzles). AIController calls this too, so a bot only
+    // ever presses the button when the hop would really happen.
+    //
+    // Phase 10.5 — this used to accept the first landing that merely FIT,
+    // which made 85% of hops plain short teleports across open floor (audit:
+    // 2,434 hops), and the tile-centre snap could pull a 40px probe back to an
+    // 18px hop. A landing is now legal only when ALL of these hold:
+    //   * the body fits: landing tile plus four half-body probes are all floor
+    //     (this is also what keeps a landing off/outside the border, since the
+    //     border ring and everything beyond the grid read as wall)
+    //   * it clears every living foe by sig.clearOpponent — measured on the
+    //     FINAL destination, which is where the wizard actually appears
+    //   * the FINAL, tile-snapped destination is at least sig.minDist away, so
+    //     the snap can no longer collapse the hop
+    //   * the caster→destination ray crosses at least one and at most
+    //     sig.maxWallBands (=1) walls. That is the whole promise of the
+    //     ability: a hop over open floor is not a Blink, and neither is one
+    //     that clears two separate walls at once. A single wall two tiles
+    //     thick is one band and stays legal — thickness is not count.
+    blinkDestination(player, dirX, dirY) {
         const sig = player.classDef.signature;
         const opponents = this.livingOpponentsOf(player);
-        const dir = player.aimDirection;
 
         // Half-body probe: a landing is valid only if the four cardinal
         // probe points either share the landing tile or fall on open tiles.
@@ -580,43 +640,61 @@ export class GameScene extends Phaser.Scene {
         };
 
         for (let d = sig.step; d <= sig.maxDist; d += sig.step) {
-            if (d < sig.minDist) continue;
-            const px = player.x + dir.x * d;
-            const py = player.y + dir.y * d;
+            const px = player.x + dirX * d;
+            const py = player.y + dirY * d;
             if (!fits(px, py)) continue;
-            // Landing must clear every living foe, not just one.
-            const tooCloseToFoe = opponents.some(o =>
-                Phaser.Math.Distance.Between(px, py, o.x, o.y) < sig.clearOpponent
-            );
-            if (tooCloseToFoe) continue;
 
-            // Valid — snap to the containing tile's center.
+            // Snap to the containing tile's center FIRST — every remaining
+            // test then judges the position the wizard will really occupy.
             const t = this.tileOf(px, py);
             const dest = this.map.tileToWorld(t.x, t.y);
 
-            const fromX = player.x;
-            const fromY = player.y;
+            if (Phaser.Math.Distance.Between(player.x, player.y, dest.x, dest.y) < sig.minDist) continue;
 
-            this.blinkFx(player.classDef.color, fromX, fromY, dest.x, dest.y);
+            // Landing must clear every living foe, not just one.
+            const tooCloseToFoe = opponents.some(o =>
+                Phaser.Math.Distance.Between(dest.x, dest.y, o.x, o.y) < sig.clearOpponent
+            );
+            if (tooCloseToFoe) continue;
 
-            player.setPosition(dest.x, dest.y);
-            player.setVelocity(0, 0);
+            const bands = this.wallBandsCrossed(player.x, player.y, dest.x, dest.y, sig.rayStep);
+            if (bands < 1 || bands > sig.maxWallBands) continue;
 
-            // Phase 10.3: the teleport itself already reaches the guest (the
-            // next snapshot simply puts the puppet somewhere else), but without
-            // this the jump has no tell at all on that screen — so the two
-            // rings and the trail between them are mirrored. Both ends travel
-            // as world coords; the guest can't reconstruct the origin from a
-            // puppet that has already moved.
-            this.netSync.sendFx('blink', {
-                n: player.playerNumber,
-                x: Math.round(fromX), y: Math.round(fromY),
-                tx: Math.round(dest.x), ty: Math.round(dest.y),
-            });
-            return true;
+            return dest;
         }
 
-        return false;
+        return null;
+    }
+
+    // Arcanist — Blink. Teleport through the wall ahead. With no wall ahead
+    // (or no room on its far side) there is nothing to blink through, so the
+    // cast fizzles and keeps its cooldown — exactly like the border-facing
+    // fizzle this has always had.
+    abilityBlink(player) {
+        const dir = player.aimDirection;
+        const dest = this.blinkDestination(player, dir.x, dir.y);
+        if (!dest) return false;
+
+        const fromX = player.x;
+        const fromY = player.y;
+
+        this.blinkFx(player.classDef.color, fromX, fromY, dest.x, dest.y);
+
+        player.setPosition(dest.x, dest.y);
+        player.setVelocity(0, 0);
+
+        // Phase 10.3: the teleport itself already reaches the guest (the
+        // next snapshot simply puts the puppet somewhere else), but without
+        // this the jump has no tell at all on that screen — so the two
+        // rings and the trail between them are mirrored. Both ends travel
+        // as world coords; the guest can't reconstruct the origin from a
+        // puppet that has already moved.
+        this.netSync.sendFx('blink', {
+            n: player.playerNumber,
+            x: Math.round(fromX), y: Math.round(fromY),
+            tx: Math.round(dest.x), ty: Math.round(dest.y),
+        });
+        return true;
     }
 
     // Blink's two rings plus the particle trail strung between them. Split out
@@ -1091,6 +1169,14 @@ export class GameScene extends Phaser.Scene {
         fireWall.setDepth(5);
         fireWall.gridX = data.gridX;
         fireWall.gridY = data.gridY;
+        // Phase 10.5 — whose orb lit this tile, so checkWallEffects can credit
+        // a burn death to them. An explicit seat on the event wins (nothing
+        // sends one today; this is the seam if Projectile ever does); otherwise
+        // read it off the projectile the wall collider latched. Stays null for
+        // the guest's mirrored decals — the guest runs no wall effects at all.
+        fireWall.ownerPlayerNumber = (data.ownerPlayerNumber !== undefined && data.ownerPlayerNumber !== null)
+            ? data.ownerPlayerNumber
+            : (this.wallHitSource ? this.wallHitSource.ownerPlayerNumber : null);
         this.effects.fireWalls.push(fireWall);
 
         // Add glow effect
@@ -1177,6 +1263,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     checkWallEffects() {
+        // Phase 10.5 — these used to be hardcoded 2000/1500ms, so the Burn
+        // Duration / Slow Duration sliders moved a direct orb hit but not the
+        // decal you're standing next to. They now track the same settings a
+        // direct hit reads, scaled by the deliberate "weaker than a hit"
+        // factors in config (which reproduce the old numbers at the default
+        // slider positions — see WALL_EFFECT_CONFIG).
+        const wallBurnMs = RUNTIME_SETTINGS.fireBurnDuration * WALL_EFFECT_CONFIG.burnDurationFactor;
+        const wallSlowMs = RUNTIME_SETTINGS.iceSlowDuration * WALL_EFFECT_CONFIG.slowDurationFactor;
+
         for (const player of this.players) {
             if (!player.isAlive) continue;
 
@@ -1190,7 +1285,21 @@ export class GameScene extends Phaser.Scene {
                 if (dx <= 1 && dy <= 1 && (dx + dy) <= 1) {
                     // Adjacent to fire wall - apply burn
                     if (!player.statusEffects.burning) {
-                        player.applyBurn(RUNTIME_SETTINGS.fireBurnDamagePerSec, 2000);
+                        player.applyBurn(RUNTIME_SETTINGS.fireBurnDamagePerSec, wallBurnMs);
+                        // Phase 10.5 — kill credit. A wall burn used to leave
+                        // lastHitBy untouched, so its victim died either with
+                        // null (die() emits no 'playerKilled' at all: no kill
+                        // count, no achievement, no online death fx) or with a
+                        // STALE earlier attacker who got mis-credited. Claim it
+                        // for whoever's orb lit the tile. Their own wall
+                        // credits themselves, which die() correctly refuses to
+                        // book as a kill. Checked AFTER applyBurn so a
+                        // burn-immune Pyromancer (applyBurn no-ops) can't have
+                        // its credit rewritten by a wall that did nothing.
+                        const by = fireWall.ownerPlayerNumber;
+                        if (player.statusEffects.burning && by !== null && by !== undefined) {
+                            player.lastHitBy = { by, element: ELEMENT_TYPES.FIRE };
+                        }
                     }
                 }
             }
@@ -1207,7 +1316,7 @@ export class GameScene extends Phaser.Scene {
             }
 
             if (nearIce && !player.statusEffects.slowed) {
-                player.applySlow(RUNTIME_SETTINGS.iceSlowPercent, 1500);
+                player.applySlow(RUNTIME_SETTINGS.iceSlowPercent, wallSlowMs);
             }
         }
     }
@@ -1785,18 +1894,54 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
+    // ============ THE PER-PLAYER PROJECTILE CAP ============
+    //
+    // Phase 10.5 (audit M1 + siblings). The cap used to be enforced HERE, at
+    // spawn time — but by then Player.shootNormal/shootRune had already burned
+    // the cooldown and spent an orb charge, so a shot fired at the cap cost
+    // full price and put nothing in the world. The cap is now *asked* before
+    // anything is committed (Player.canSpawnShot → canAcceptShot below) and
+    // merely re-asserted at spawn time, which also makes the triple orb
+    // all-or-nothing instead of a partial spread.
+
+    // How many projectiles a single trigger pull of `element` puts in the
+    // world. Only the triple orb spawns more than one. Ability bursts (Flame
+    // Burst's sparks, Scatter Dash's pellets) deliberately bypass the cap
+    // entirely — they never enter projectilesByPlayer and never route through
+    // here, so they can neither be blocked by a full cap nor fill it.
+    shotProjectileCount(element) {
+        return element === ELEMENT_TYPES.TRIPLE ? 3 : 1;
+    }
+
+    // Free slots under the cap right now. cleanupProjectiles() first so shots
+    // that already expired/detonated this frame don't hold a slot hostage.
+    freeProjectileSlots(playerNum) {
+        this.cleanupProjectiles();
+        const live = this.projectilesByPlayer[playerNum] ? this.projectilesByPlayer[playerNum].length : 0;
+        return Math.max(0, this.maxProjectilesPerPlayer - live);
+    }
+
+    // Is there room for everything this shot would spawn? The single question
+    // asked before any cost is paid, and again before any pellet is spawned.
+    canAcceptShot(player, element) {
+        if (!player || !this.projectilesByPlayer) return false;
+        return this.freeProjectileSlots(player.playerNumber) >= this.shotProjectileCount(element);
+    }
+
     handlePlayerShoot(data) {
         const playerNum = data.player.playerNumber;
 
-        // Once per trigger pull, even for triple-shot's multiple pellets
+        // Re-assert the cap the shooter already consulted. Nothing has been
+        // counted or spawned yet at this point, so a refusal here leaves no
+        // trace at all — no stats, no sound, no muzzle flash, no half spread.
+        if (!this.canAcceptShot(data.player, data.element)) return;
+
+        // Once per trigger pull, even for triple-shot's multiple pellets — and
+        // only now that the shot is certain to spawn, so a shot the player
+        // never saw can't inflate their accuracy.
         if (this.roundStats[playerNum]) this.roundStats[playerNum].fired++;
         // Phase 6a: seat-1 personal shot count.
         if (playerNum === 1 && this.trackProfile) recordShot();
-
-        this.cleanupProjectiles();
-        if (this.projectilesByPlayer[playerNum].length >= this.maxProjectilesPerPlayer) {
-            return;
-        }
 
         if (data.isRuneShot) {
             audio.runeShoot(data.element);
@@ -1804,12 +1949,13 @@ export class GameScene extends Phaser.Scene {
             audio.shoot();
         }
 
-        // Triple orb: 3-way arcane-style spread
+        // Triple orb: 3-way arcane-style spread. canAcceptShot guaranteed room
+        // for all three, so this loop needs no per-pellet cap check — a triple
+        // fires whole or not at all.
         if (data.element === ELEMENT_TYPES.TRIPLE) {
             const baseAngle = Math.atan2(data.dirY, data.dirX);
             const spread = PROJECTILE_CONFIG.triple.spreadAngle;
             for (const offset of [-spread, 0, spread]) {
-                if (this.projectilesByPlayer[playerNum].length >= this.maxProjectilesPerPlayer) break;
                 const dirX = Math.cos(baseAngle + offset);
                 const dirY = Math.sin(baseAngle + offset);
                 this.spawnProjectile(data, dirX, dirY);

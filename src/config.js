@@ -156,6 +156,19 @@ export const RUNE_CONFIG = {
     minPlayerDistanceTiles: 3, // Don't spawn on top of a player
 };
 
+// Phase 10.5 — standing next to a wall an orb has scorched or frozen applies a
+// WEAKER version of a direct hit from that orb: the same user-tunable duration
+// (RUNTIME_SETTINGS.fireBurnDuration / iceSlowDuration, which the Settings
+// sliders move) scaled by these factors. Before this the wall effects were
+// hardcoded 2000ms / 1500ms and ignored the sliders entirely; the factors are
+// picked to reproduce exactly those numbers at the default slider positions
+// (4000 x 0.5 = 2000ms burn; 3500 x 0.43 = 1505ms slow, i.e. the old 1500ms to
+// within 5ms), so default-settings play is unchanged.
+export const WALL_EFFECT_CONFIG = {
+    burnDurationFactor: 0.5,
+    slowDurationFactor: 0.43,
+};
+
 // Phase 4 — slippery ice floor tiles
 export const FROST_CONFIG = {
     grip: 0.06,              // velocity lerp factor per frame while on frost

@@ -343,6 +343,23 @@ export class AIController {
         if (dy > 3) s.down = true;
     }
 
+    // The unit aim vector aimTapToward(x, y) will actually produce for an
+    // offset of (dx, dy): the same +/-3px dead zone, then the diagonal
+    // normalisation Player.handleMovement applies. Ability triggers test their
+    // geometry along THIS direction — the one the bot is about to face — not
+    // the raw line to the foe, which is rarely one of the 8 it can aim. Null
+    // when the offset is inside the dead zone (no facing change at all).
+    aimTapDirection(dx, dy) {
+        let ax = 0, ay = 0;
+        if (dx < -3) ax = -1;
+        if (dx > 3) ax = 1;
+        if (dy < -3) ay = -1;
+        if (dy > 3) ay = 1;
+        if (ax === 0 && ay === 0) return null;
+        const len = Math.sqrt(ax * ax + ay * ay);
+        return { x: ax / len, y: ay / len };
+    }
+
     // Would a Breach fired along (dirX,dirY) hit a non-border wall in range?
     // Mirrors GameScene.abilityBreach's step-scan against the live map.
     breachWallAhead(dirX, dirY) {
@@ -375,13 +392,24 @@ export class AIController {
         let aimAt = null;      // world point to face before casting (or null)
 
         switch (me.classKey) {
-            case 'arcanist':
+            case 'arcanist': {
                 // Reposition through a wall when the foe is near but blocked.
+                // Phase 10.5: Blink now REQUIRES a wall between the caster and
+                // the landing tile, so gate on the real landing test rather
+                // than on "no line of sight" alone — otherwise the bot spams a
+                // cast that fizzles (no line of sight is often a wall that's
+                // too far, too thick, or with no room behind it). Same helper
+                // the ability itself uses, along the direction aimTapToward is
+                // about to face it — no duplicated geometry.
                 if (dist <= 160 && !this.hasLineOfSight(me.x, me.y, opp.x, opp.y)) {
-                    trigger = true;
-                    aimAt = opp;
+                    const aim = this.aimTapDirection(toX, toY);
+                    if (aim && this.scene.blinkDestination(me, aim.x, aim.y)) {
+                        trigger = true;
+                        aimAt = opp;
+                    }
                 }
                 break;
+            }
 
             case 'pyromancer':
                 if (dist <= 95) trigger = true;
@@ -394,13 +422,8 @@ export class AIController {
             case 'stonecaller': {
                 // Blocked, foe reachable-ish, and a wall sits along the aim.
                 if (!this.hasLineOfSight(me.x, me.y, opp.x, opp.y) && dist <= 220) {
-                    let ax = 0, ay = 0;
-                    if (toX < -3) ax = -1;
-                    if (toX > 3) ax = 1;
-                    if (toY < -3) ay = -1;
-                    if (toY > 3) ay = 1;
-                    const len = Math.sqrt(ax * ax + ay * ay) || 1;
-                    if (this.breachWallAhead(ax / len, ay / len)) {
+                    const aim = this.aimTapDirection(toX, toY);
+                    if (aim && this.breachWallAhead(aim.x, aim.y)) {
                         trigger = true;
                         aimAt = opp;
                     }

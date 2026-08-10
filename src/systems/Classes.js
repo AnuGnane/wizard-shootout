@@ -11,13 +11,23 @@ export const WIZARD_CLASSES = {
         signature: {
             label: 'Blink',
             cooldown: 8000,
-            description: 'Teleport through one wall',
+            description: 'Teleport through the wall ahead',
             // Blink: scan along aim in `step` increments out to `maxDist`.
             step: 8,
             maxDist: 112,
-            minDist: 40,          // candidate must be at least this far away
+            minDist: 40,          // FINAL (tile-snapped) landing must be this far away
             bodyOffset: 8,        // half-body probe distance for fit checks
             clearOpponent: 28,    // landing must be this far from the foe
+            // Phase 10.5 — the hop must actually go THROUGH a wall, which is
+            // what the label has always promised (see GameScene.blinkDestination
+            // for the full rule). The caster→landing ray is sampled every
+            // `rayStep` px and must cross at least one, and at most
+            // `maxWallBands`, contiguous bands of wall tiles: one band is one
+            // wall however thick it is, so a 2-tile-thick wall is fair game
+            // while clearing two separate walls in a single hop is not. With no
+            // wall ahead the cast fizzles and keeps its cooldown.
+            rayStep: 4,
+            maxWallBands: 1,
         },
         passive: 'Faster normal shots',
     },
