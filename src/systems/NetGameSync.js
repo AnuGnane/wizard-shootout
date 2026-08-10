@@ -20,32 +20,37 @@ import { NetInput } from './NetInput.js';
 import { WIZARD_CLASSES } from './Classes.js';
 import { audio } from './AudioSystem.js';
 
-// Stage 2b — Online netcode. Orbs allowed to spawn in a net match: only the
-// elements whose effects DON'T mutate the map or collision geometry, so the
-// guest's static map never desyncs. Earth (conjures collidable walls) and ice
-// (frosts the floor / alters movement) are deliberately excluded. Read by
-// SpawnDirector when it picks the element for a spawn wave.
+// Orbs allowed to spawn in a net match. Phase 10.3: ALL SIX. Earth (conjures a
+// collidable wall) and ice (frosts the floor) used to be excluded because the
+// guest holds its own copy of the map and had no way to hear about a mutation
+// — the fx event stream below now mirrors every one of them, so the exclusion
+// is gone. The list stays (SpawnDirector filters on it) as the ONE place to
+// narrow the online pool again should an element ever land without a sync path.
 export const NET_RUNE_POOL = [
     ELEMENT_TYPES.FIRE,
+    ELEMENT_TYPES.ICE,
+    ELEMENT_TYPES.EARTH,
     ELEMENT_TYPES.LIGHTNING,
     ELEMENT_TYPES.SHIELD,
     ELEMENT_TYPES.TRIPLE,
 ];
 
-// Phase 10.2 — classes playable online, for exactly the same reason as the
-// rune pool above: a signature that MUTATES THE ARENA has no sync path yet.
-// Stonecaller's Breach deletes a wall tile and Cryomancer's Frost Ring frosts
-// the floor; the guest holds a static copy of the map, so either one would
-// silently desync the two arenas. Everything else (blink, novas, dashes,
-// wards) only moves entities the snapshot already carries.
+// Classes playable online. Phase 10.3: ALL SEVEN. Stonecaller (Breach deletes
+// a wall tile) and Cryomancer (Frost Ring frosts the floor) were held back for
+// the same reason as the two orbs above; both mutations now travel as fx
+// events, so the pool is complete.
 //
-// This list is the ONE place the restriction lives: the lobby builds its
-// selectable cards from it, inbound picks are validated against it (see
-// coerceNetClass), and the next stage lifts the restriction by adding the two
-// missing keys here plus the arena-mutation sync they need.
+// It stays an explicit list rather than CLASS_KEYS on purpose: it is the ONE
+// place the online roster is decided, so a NEW class has to be added here
+// deliberately — with a thought spared for whether its signature mutates the
+// arena and needs an fx kind. The lobby builds its cards from it and inbound
+// picks are validated against it (see coerceNetClass), so an unknown or forged
+// key can never make a peer simulate something the other side can't render.
 export const NET_CLASS_POOL = [
     'arcanist',
     'pyromancer',
+    'cryomancer',
+    'stonecaller',
     'stormcaller',
     'warden',
     'trickster',
@@ -91,6 +96,15 @@ export class NetGameSync {
         // remote dash trails ghosts at a fixed cadence instead of one per
         // snapshot application. Keyed by playerNumber.
         this._dashFxAt = new Map();
+
+        // Phase 10.3 — guest: mirrored arena decorations that outlive the event
+        // that made them and aren't already tracked by the scene (today: the
+        // floor tile a Breach leaves behind). Everything in here is destroyed by
+        // clearNetDecor on restart/shutdown.
+        this._decor = [];
+        // Guest: seats whose death burst has already played this round, so a
+        // duplicate 'death' event can't double-explode a puppet.
+        this._deathFxSeats = new Set();
 
         // Host: the remote guest's latest input, driving seat 2's Player.
         // Guest: its OWN controls, read each frame and sent up (see below).
@@ -334,6 +348,160 @@ export class NetGameSync {
         }
     }
 
+    // ============ ARENA-MUTATION MIRROR (Phase 10.3) ============
+    //
+    // The guest simulates NOTHING: its wizards and projectiles are puppets the
+    // host's snapshots move, and the host resolves every collision. So an arena
+    // mutation only has to be mirrored VISUALLY — the guest needs the wall to
+    // disappear on screen, not a collision body to match, because nothing on
+    // the guest ever collides with anything (puppet bodies are disabled, and
+    // the guest spawns no projectiles). Its maze walls do keep the live static
+    // bodies createMaze gives them; they're simply inert.
+    //
+    // Hence one host -> guest one-shot message, `{ t:'fx', k:<kind>, ...}`,
+    // sent from each mutation site. The kinds, with their payloads:
+    //
+    //   breach  { gx, gy }              a wall tile was shattered
+    //   wall    { gx, gy, dur }         an earth orb conjured a temp wall
+    //   frost   { gx, gy }              one floor tile frosted (ice trail)
+    //   frost   { tiles: [[gx,gy],..] } a batch (Frost Ring frosts ~20 at once)
+    //   unfrost { gx, gy }              a frost tile melted
+    //   steam   { x, y }                the steam cloud that melt puffs up
+    //   burn    { x, y, gx, gy }        fire orb's burning wall decal
+    //   icewall { x, y, gx, gy }        ice orb's frozen wall decal
+    //   muzzle  { n, el }               seat n fired an `el` shot
+    //   death   { n }                   seat n's death burst
+    //   blink   { n, x, y, tx, ty }     seat n blinked from x,y to tx,ty
+    //
+    // Tile coordinates travel as GRID indices (both peers share the same map
+    // and ARENA geometry, so a grid index is the one unambiguous reference);
+    // world coordinates travel only where the effect isn't tile-aligned.
+    //
+    // The channel is ordered + reliable, so the handlers stay simple — but each
+    // one is still written to survive a duplicate or a stale tile: they re-use
+    // the scene's own guarded entry points (addFrost/removeFrost/spawnTempWall
+    // all no-op on a tile that's already in the target state) and never assume
+    // an object is still there.
+
+    // Host -> guest one-shot. No-op on the guest and in every local mode, so
+    // the call sites in GameScene cost one property read off the net path.
+    sendFx(kind, payload) {
+        if (this.scene.netRole !== 'host' || this._peerLeft) return;
+        const conn = NetSession.connection;
+        if (!conn || !conn.isOpen()) return;
+        conn.send({ t: 'fx', k: kind, ...payload });
+    }
+
+    // Guest: apply one mirrored effect. Unknown kinds are ignored (a newer host
+    // talking to an older guest degrades to "that effect doesn't show").
+    onNetFx(m) {
+        const scene = this.scene;
+        if (!scene || !scene.map) return;
+
+        switch (m.k) {
+            case 'breach': {
+                const gx = m.gx | 0;
+                const gy = m.gy | 0;
+                // Already open (duplicate event, or the tile expired first).
+                if (!scene.map.isWall(gx, gy)) return;
+                const floor = scene.applyBreachAt(gx, gy);
+                if (floor) this._decor.push(floor);
+                return;
+            }
+            case 'wall':
+                // spawnTempWall itself no-ops on an occupied tile, so a repeat
+                // is harmless; dur is the host's (Stonecaller's passive already
+                // applied) so both walls stand for the same time.
+                scene.spawnTempWall(m.gx | 0, m.gy | 0, Math.max(0, m.dur | 0));
+                return;
+            case 'frost':
+                if (Array.isArray(m.tiles)) {
+                    for (const t of m.tiles) {
+                        if (Array.isArray(t)) scene.addFrost(t[0] | 0, t[1] | 0);
+                    }
+                } else {
+                    scene.addFrost(m.gx | 0, m.gy | 0);
+                }
+                return;
+            case 'unfrost':
+                // Returns false for a tile that's already clear — nothing to do.
+                scene.removeFrost(m.gx | 0, m.gy | 0);
+                return;
+            case 'steam':
+                scene.spawnSteam(m.x, m.y);
+                audio.steam();
+                return;
+            case 'burn':
+                scene.createFireWall({ x: m.x, y: m.y, gridX: m.gx | 0, gridY: m.gy | 0 });
+                return;
+            case 'icewall':
+                scene.createIceWall({ x: m.x, y: m.y, gridX: m.gx | 0, gridY: m.gy | 0 });
+                return;
+            case 'muzzle': {
+                // Positioned off the puppet: it carries the shooter's latest
+                // synced position and rotation, which is exactly what the host
+                // built its own flash from a snapshot-interval earlier.
+                const p = scene.players[(m.n | 0) - 1];
+                if (!p || !p.isAlive) return;
+                scene.showMuzzleFlash({
+                    x: p.x, y: p.y,
+                    dirX: Math.cos(p.rotation), dirY: Math.sin(p.rotation),
+                    element: m.el,
+                });
+                return;
+            }
+            case 'death': {
+                const n = m.n | 0;
+                const p = scene.players[n - 1];
+                if (!p || !p.deathBurst || this._deathFxSeats.has(n)) return;
+                this._deathFxSeats.add(n);
+                p.deathBurst();
+                return;
+            }
+            case 'blink': {
+                const p = scene.players[(m.n | 0) - 1];
+                if (!p || !p.classDef) return;
+                scene.blinkFx(p.classDef.color, m.x, m.y, m.tx, m.ty);
+                return;
+            }
+            default:
+                // Unknown kind — ignore it rather than guessing.
+        }
+    }
+
+    // Destroy every arena decoration this guest mirrored, so nothing survives
+    // into the next round. Guest-only and idempotent: it reaches into shared
+    // scene state (frost tiles, the conjured-wall and wall-decal lists), which
+    // on a host or in a local match belongs to the simulation and must never be
+    // touched from here. Wired to exactly the points clearNetPuppets is.
+    clearNetDecor() {
+        const scene = this.scene;
+        if (!scene || scene.netRole !== 'guest') return;
+
+        // Frost overlays + their expiry timers.
+        if (scene.clearAllFrost) scene.clearAllFrost();
+
+        // Conjured walls and the fire/ice wall decals, each with its own
+        // pending expiry timer — the timers are guarded on `active`, so
+        // destroying the object here leaves them safe no-ops.
+        if (scene.effects) {
+            for (const key of ['tempWalls', 'fireWalls', 'iceWalls']) {
+                const list = scene.effects[key];
+                if (!Array.isArray(list)) continue;
+                for (const obj of list) {
+                    if (obj && obj.active) obj.destroy();
+                }
+                list.length = 0;
+            }
+        }
+
+        for (const obj of this._decor) {
+            if (obj && obj.active) obj.destroy();
+        }
+        this._decor.length = 0;
+        this._deathFxSeats.clear();
+    }
+
     // Destroy + drop every guest projectile/rune puppet. Safe to call repeatedly
     // (shutdown, round restart, gameover all route here). No-op for the host.
     clearNetPuppets() {
@@ -403,6 +571,8 @@ export class NetGameSync {
         } else if (this.scene.netRole === 'guest') {
             // Stage 2b: host-authoritative round flow, mirrored on the guest.
             if (m.t === 'snap') this._lastSnap = m;
+            // Phase 10.3: one-shot arena mutations / FX the snapshot can't carry.
+            else if (m.t === 'fx') this.onNetFx(m);
             else if (m.t === 'roundend') this.onNetRoundEnd(m);
             else if (m.t === 'restart') this.onNetRestart(m);
             else if (m.t === 'gameover') this.onNetGameOver(m);
@@ -432,6 +602,7 @@ export class NetGameSync {
     onNetRestart(m) {
         if (typeof m.round === 'number') MATCH_STATE.round = m.round;
         this.clearNetPuppets();
+        this.clearNetDecor();
         this.scene.scene.restart();
     }
 
@@ -440,6 +611,7 @@ export class NetGameSync {
     onNetGameOver(m) {
         this.scene.roundOver = true;
         this.clearNetPuppets();
+        this.clearNetDecor();
         this.scene.scene.start('GameOverScene', {
             winner: m.winner,
             scores: m.scores || { ...MATCH_STATE.scores },

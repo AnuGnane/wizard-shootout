@@ -34,8 +34,8 @@ npm test         # headless smoke suite (see Development)
 - **Survival (1–2 players, co-op PvE)** — endless escalating waves of dark
   wizards. See [Survival](#survival) below.
 - **Online 1v1** — connect to a friend over WebRTC with a 5-character room
-  code, a QR scan, or a copy-paste connection code (no game server). See
-  [Online](#online-1v1-prototype) for the prototype's current limits.
+  code, a QR scan, or a copy-paste connection code (no game server). Any class,
+  any built-in map, full orb pool. See [Online](#online-1v1-prototype).
 - **Daily Challenge** — a seeded map + mutator + bot combo that's the same
   for everyone that day; your local best is tracked.
 
@@ -211,16 +211,31 @@ can connect at all. If it's down or blocked, ICE simply produces no relay
 candidates and behaviour degrades to the old STUN-only path. **Playing on the
 same network never touches TURN.**
 
-**Current prototype limits** (deliberate, to keep it desync-free):
+### What's synced
 
-- Both players are Arcanists on one fixed map.
-- Orbs are restricted to the four that don't mutate the arena (no earth walls
-  or ice floors online, which would desync the guest's map).
-- A few host-side one-shot effects (muzzle flash, death burst, steam) render
-  only on the host.
+All of it. Both players pick any of the seven classes in the post-connect
+lobby (the host also picks the battleground, or rolls RANDOM), every orb can
+spawn, and the arena mutates in step on both screens: a Stonecaller's Breach
+opens the same wall tile for both, conjured earth walls rise and expire
+together, frost floors and the steam that melts them appear on both, and the
+one-shot flourishes — muzzle flashes, death bursts, Blink's rings, burning and
+frozen wall decals — are mirrored to the guest as well. The host also decides
+the match length: its "first to N" setting is what both score readouts show.
 
-The actual duel — move, shoot, hit, score, round flow — is fully synced.
-Lifting these limits is Phase 10 on the [roadmap](ROADMAP.md).
+Only the host simulates; the guest renders what it's told. So there is exactly
+one authority for every collision, and the two arenas can't drift apart.
+
+**Remaining limits** (deliberate):
+
+- **Custom maps are local-only.** Editor-made maps live in your own
+  `localStorage` and simply don't exist on the other machine, so the online
+  battleground strip offers the built-in maps.
+- **Signaling is best-effort third-party infra** — a public MQTT broker for
+  room codes, public STUN, and free TURN (see above). All three degrade to the
+  copy-paste path, which needs nothing but the two browsers.
+- **Cosmetics don't cross the wire.** Each screen paints its own equipped
+  robe/staff on its seat-1 wizard, so you always see your own outfit and never
+  your opponent's.
 
 ## Settings
 

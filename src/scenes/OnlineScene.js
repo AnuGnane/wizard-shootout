@@ -7,6 +7,7 @@ import { MAP_DEFS } from '../systems/Maps.js';
 import { THEMES, DEFAULT_THEME } from '../systems/Themes.js';
 import { WIZARD_CLASSES, CLASS_KEYS } from '../systems/Classes.js';
 import { NET_CLASS_POOL, coerceNetClass } from '../systems/NetGameSync.js';
+import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../systems/NetSignal.js';
@@ -100,7 +101,7 @@ export class OnlineScene extends Phaser.Scene {
         // data channel opens and _buildPickLobby() runs.
         this.lobbyNav = null;
         this.lobbyEls = [];       // Phaser objects belonging to the pick screen
-        this.classCards = [];     // { key, locked, bg, ... } per wizard class
+        this.classCards = [];     // { key, bg, ... } per wizard class
         this.mapCards = [];       // { choice, bg, ... } per map + RANDOM
         this.pickedClass = null;      // this peer's own confirmed class
         this.guestClass = null;       // host only: the guest's confirmed class
@@ -628,7 +629,7 @@ export class OnlineScene extends Phaser.Scene {
     //   guest -> host  { t:'classpick', cls }   sent on every confirm, so a
     //                                           change before the match starts
     //                                           simply overwrites the last one.
-    //   host  -> guest { t:'start', mapIndex, classes:{1,2} }
+    //   host  -> guest { t:'start', mapIndex, classes:{1,2}, targetScore }
     //
     // The host is authoritative over BOTH: it resolves its own map choice
     // (including rolling RANDOM) and stamps both classes into 'start'. Every
@@ -647,9 +648,10 @@ export class OnlineScene extends Phaser.Scene {
         }
 
         if (m.t !== 'start') return;
-        // Host has chosen the map + both classes — mirror it exactly and enter
-        // the match. Nothing is re-decided here; whatever arrived is the truth.
-        this._startNetMatch(m.mapIndex, false, m.classes);
+        // Host has chosen the map, both classes and the match length — mirror
+        // it exactly and enter the match. Nothing is re-decided here; whatever
+        // arrived is the truth.
+        this._startNetMatch(m.mapIndex, false, m.classes, m.targetScore);
     }
 
     _onOpen() {
@@ -723,16 +725,15 @@ export class OnlineScene extends Phaser.Scene {
         return el;
     }
 
-    // One wizard card. The two classes outside NET_CLASS_POOL are drawn greyed
-    // and are NOT wired up at all — no pointer handler, no nav entry — so
-    // there is no path (mouse, keyboard or pad) that selects one.
+    // One wizard card. Phase 10.3: every class is online-legal now that arena
+    // mutations sync (see NET_CLASS_POOL), so every card is live — no greyed
+    // "coming online soon" state left to draw.
     _createClassCard(x, y, key, index) {
         const cls = WIZARD_CLASSES[key];
-        const locked = !NET_CLASS_POOL.includes(key);
         const top = y - LOBBY_CARD_H / 2;
 
-        const bg = this.add.rectangle(x, y, LOBBY_CARD_W, LOBBY_CARD_H, locked ? 0x14141f : 0x1a1a2e);
-        bg.setStrokeStyle(2, locked ? 0x2a2a3a : 0x3a3a5a);
+        const bg = this.add.rectangle(x, y, LOBBY_CARD_W, LOBBY_CARD_H, 0x1a1a2e);
+        bg.setStrokeStyle(2, 0x3a3a5a);
 
         const sprite = this.add.image(x, top + 42, `wizard_${key}_1`).setScale(2.4);
         const name = this.add.text(x, top + 76, cls.name.toUpperCase(), {
@@ -741,31 +742,22 @@ export class OnlineScene extends Phaser.Scene {
         const sig = this.add.text(x, top + 96, cls.signature.label.toUpperCase(), {
             font: 'bold 10px monospace', fill: '#ffdd44',
         }).setOrigin(0.5);
-        const note = this.add.text(x, top + 116, locked ? 'coming online soon' : cls.passive, {
+        const note = this.add.text(x, top + 116, cls.passive, {
             font: '10px monospace',
-            fill: locked ? '#ff9955' : '#8888aa',
+            fill: '#8888aa',
             align: 'center',
             wordWrap: { width: LOBBY_CARD_W - 16 },
         }).setOrigin(0.5, 0);
 
-        const card = { key, locked, bg, sprite, name, sig, note };
-
-        if (locked) {
-            sprite.setAlpha(0.3);
-            sprite.setTint(0x555566);
-            name.setAlpha(0.4);
-            sig.setAlpha(0.35);
-        } else {
-            const activate = () => this._pickClass(key);
-            bg.setInteractive({ useHandCursor: true });
-            bg.on('pointerover', () => { if (this.pickedClass !== key) bg.setFillStyle(0x232340); });
-            bg.on('pointerout', () => this._refreshLobby());
-            bg.on('pointerdown', activate);
-            this.lobbyNav.add(bg, activate, { row: 0, col: index });
-        }
+        const activate = () => this._pickClass(key);
+        bg.setInteractive({ useHandCursor: true });
+        bg.on('pointerover', () => { if (this.pickedClass !== key) bg.setFillStyle(0x232340); });
+        bg.on('pointerout', () => this._refreshLobby());
+        bg.on('pointerdown', activate);
+        this.lobbyNav.add(bg, activate, { row: 0, col: index });
 
         this.lobbyEls.push(bg, sprite, name, sig, note);
-        this.classCards.push(card);
+        this.classCards.push({ key, bg, sprite, name, sig, note });
     }
 
     // One map slot: a tiny layout preview plus the map's name. `choice` is a
@@ -843,8 +835,9 @@ export class OnlineScene extends Phaser.Scene {
 
     _pickClass(key) {
         if (!this._alive || this.starting) return;
-        // Defence in depth: locked cards are never wired to this, but a class
-        // outside the pool must never become our pick even if one were.
+        // Defence in depth. Every class is in the pool today, so this never
+        // fires — it stays because NET_CLASS_POOL is the gate a future class
+        // lands behind, and this is the path a card click takes to the wire.
         if (!NET_CLASS_POOL.includes(key)) return;
 
         audio.uiClick();
@@ -878,12 +871,16 @@ export class OnlineScene extends Phaser.Scene {
         const mapIndex = this.pickedMapChoice === RANDOM_MAP
             ? Phaser.Math.Between(0, MAP_DEFS.length - 1)
             : this.pickedMapChoice;
-        this._startNetMatch(mapIndex, true, { 1: this.pickedClass, 2: this.guestClass });
+        // Phase 10.3: the HOST's "first to N" setting decides the match length
+        // for both peers. Read live off RUNTIME_SETTINGS rather than
+        // MATCH_STATE, which only picks the setting up when a local start
+        // screen (Settings/MapSelect/GameOver) has been through it.
+        this._startNetMatch(mapIndex, true, { 1: this.pickedClass, 2: this.guestClass },
+            RUNTIME_SETTINGS.targetScore);
     }
 
     _refreshLobby() {
         for (const card of this.classCards) {
-            if (card.locked) continue;
             const picked = this.pickedClass === card.key;
             card.bg.setFillStyle(picked ? 0x1e3320 : 0x1a1a2e);
             card.bg.setStrokeStyle(picked ? 3 : 2, picked ? 0x66ff66 : 0x3a3a5a);
@@ -931,9 +928,9 @@ export class OnlineScene extends Phaser.Scene {
 
     // Configure MATCH_STATE for a net match identically on both peers, then
     // enter GameScene. The host additionally sends the 'start' cue carrying the
-    // resolved map index and BOTH classes, so the guest builds the same arena
-    // with the same two wizards.
-    _startNetMatch(mapIndex, isHost, classes) {
+    // resolved map index, BOTH classes and the match length, so the guest
+    // builds the same arena with the same two wizards and the same score pips.
+    _startNetMatch(mapIndex, isHost, classes, targetScore) {
         if (!this._alive) return;
 
         const clamped = (typeof mapIndex === 'number' && mapIndex >= 0 && mapIndex < MAP_DEFS.length)
@@ -942,6 +939,14 @@ export class OnlineScene extends Phaser.Scene {
         // filled so nothing downstream ever reads a null class key.
         const seat1 = coerceNetClass(classes && classes[1]);
         const seat2 = coerceNetClass(classes && classes[2]);
+        // Match length: the host's own setting, or the one it stamped into
+        // 'start'. Clamped to the Settings slider's range so a forged value
+        // can't produce an unwinnable match or a nonsense pip row; anything
+        // that isn't a real number (a peer on an older build sends no field at
+        // all) falls back to whatever this peer already had.
+        const target = typeof targetScore === 'number' && Number.isFinite(targetScore)
+            ? Phaser.Math.Clamp(Math.round(targetScore), 1, 10)
+            : MATCH_STATE.targetScore;
 
         MATCH_STATE.online = true;
         MATCH_STATE.mode = '2p';
@@ -951,10 +956,13 @@ export class OnlineScene extends Phaser.Scene {
         MATCH_STATE.mapIndex = clamped;
         MATCH_STATE.round = 1;
         MATCH_STATE.scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        MATCH_STATE.targetScore = target;
         MATCH_STATE.isDailyChallenge = false;
 
         if (isHost && this.conn) {
-            this.conn.send({ t: 'start', mapIndex: clamped, classes: { 1: seat1, 2: seat2 } });
+            this.conn.send({
+                t: 'start', mapIndex: clamped, classes: { 1: seat1, 2: seat2 }, targetScore: target,
+            });
         }
 
         this.scene.start('GameScene');
