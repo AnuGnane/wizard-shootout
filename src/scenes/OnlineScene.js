@@ -38,6 +38,22 @@ import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from 
 const GAME_W = 1024;
 const GAME_H = 700;
 
+// M5 fix: bound how long the guest waits, after publishing its answer, for
+// the data channel to actually open. A simultaneous double-join's loser has
+// its answer silently ignored by the host (NetSignal's "first answer wins" —
+// see _onPublish there), so nothing will ever open its channel; WebRTC does
+// not reliably transition 'connecting' -> 'failed' on its own in that
+// specific case (observed hanging well past 2 minutes with the peer
+// connection stuck at 'connecting' the whole time — see docs/QA_AUDIT.md M5).
+// 10s: double NetSignal's own broker round-trip bounds (CONNECT_TIMEOUT_MS /
+// SUBSCRIBE_TIMEOUT_MS = 6000ms each, the two steps already completed by the
+// time this timer starts), comfortably longer than the ~6-8s the audit
+// measured for the browser's own *loss* detection, so a real connection
+// (including one needing the TURN relay) has time to finish — all its ICE
+// candidates are already baked into the codes, so there's no further
+// trickle-ICE round trip to wait on.
+const JOIN_CONNECT_TIMEOUT_MS = 10000;
+
 // Panel + two-column layout, in game pixels. Left column carries the flow,
 // right column carries the QR.
 const PANEL_X = 110;
@@ -93,6 +109,7 @@ export class OnlineScene extends Phaser.Scene {
         this.roomCode = null;
         this.role = null;
         this.handedOff = false;   // true once NetSession has adopted this.conn
+        this._joinTimeoutTimer = null; // M5 fix: bounds the guest's post-answer wait
         this.overlay = null;      // the document.body overlay <div>
         this.flowEls = [];        // DOM nodes for the current HOST/JOIN flow
         this.confirmText = null;
@@ -488,7 +505,17 @@ export class OnlineScene extends Phaser.Scene {
                 this.answerPaste.value = answerCode;
                 this.conn.acceptAnswer(answerCode).catch((err) => this._fail(err));
             })
-            .catch((err) => this._signalFallback(this._signalMessage(err)));
+            .catch((err) => {
+                // Guard against a STALE rejection from a signal we've since
+                // replaced/closed ourselves (mode switch, retry, shutdown) —
+                // NetSignal.close() now rejects any waiter still pending at
+                // that moment, and without this guard that late rejection
+                // would clobber whatever UI the newer attempt has since put
+                // up. Mirrors the same guard the .then() steps above already
+                // use.
+                if (!this._alive || this.signal !== signal) return;
+                this._signalFallback(this._signalMessage(err));
+            });
     }
 
     _hostConnect() {
@@ -568,8 +595,44 @@ export class OnlineScene extends Phaser.Scene {
                 signal.sendAnswer(answerCode);
                 this.roomStatus.textContent = 'reply sent — connecting…';
                 this.statusText.setText('connecting…');
+                // M5 fix: the answer is out, but nothing guarantees the host
+                // ever accepts it (see JOIN_CONNECT_TIMEOUT_MS above) — bound
+                // the wait instead of sitting at "connecting…" forever.
+                this._armJoinTimeout(signal, this.conn);
             })
-            .catch((err) => this._signalFallback(this._signalMessage(err)));
+            .catch((err) => {
+                // Stale-signal guard — see the matching one in _openRoom().
+                if (!this._alive || this.signal !== signal) return;
+                this._signalFallback(this._signalMessage(err));
+            });
+    }
+
+    // M5 fix: fires JOIN_CONNECT_TIMEOUT_MS after the guest's answer is
+    // published. If the channel still hasn't opened by then (this exact
+    // signal/connection attempt is still the live one), treat it as a lost
+    // race rather than hanging — close out this attempt and leave the JOIN
+    // screen (room-code box + the always-present manual fallback) in a state
+    // the player can retry from.
+    _armJoinTimeout(signal, conn) {
+        clearTimeout(this._joinTimeoutTimer);
+        this._joinTimeoutTimer = setTimeout(() => {
+            this._joinTimeoutTimer = null;
+            if (!this._alive || this.handedOff || this.signal !== signal || this.conn !== conn) return;
+            this._closeSignal();
+            if (this.conn === conn) {
+                this.conn.close();
+                this.conn = null;
+            }
+            this.roomStatus.textContent = 'no response — someone else may have joined this room.';
+            this.statusText.setText('Connection timed out. Try JOIN again, or use the manual code exchange below.');
+        }, JOIN_CONNECT_TIMEOUT_MS);
+    }
+
+    _clearJoinTimeout() {
+        if (this._joinTimeoutTimer) {
+            clearTimeout(this._joinTimeoutTimer);
+            this._joinTimeoutTimer = null;
+        }
     }
 
     _guestGenerate() {
@@ -665,6 +728,10 @@ export class OnlineScene extends Phaser.Scene {
 
     _onOpen() {
         if (!this._alive) return;
+        // M5 fix: the channel is open, so the connect-timeout (if one was
+        // armed) is moot — cancel it so it can't fire later and tear down a
+        // now-live connection.
+        this._clearJoinTimeout();
         // The broker's job ends the moment the peer-to-peer channel is up.
         this._closeSignal();
 
@@ -988,6 +1055,10 @@ export class OnlineScene extends Phaser.Scene {
 
     _onClose() {
         if (!this._alive) return;
+        // The connection itself just reported closed/failed — that already
+        // supersedes any pending "still waiting to open" timeout (and avoids
+        // a stale double-message when it would otherwise fire later).
+        this._clearJoinTimeout();
         this.statusText.setText(this.handedOff
             ? 'Connection closed. Press BACK to return.'
             : 'Connection closed / failed. Retry or press BACK.');
@@ -995,13 +1066,30 @@ export class OnlineScene extends Phaser.Scene {
 
     _onError() {
         if (!this._alive) return;
+        this._clearJoinTimeout();
         this.statusText.setText('Connection error — check the codes and retry, or BACK.');
     }
 
-    // Signaling-time failure (bad/partial code, decode error, etc.).
-    _fail() {
+    // Signaling-time failure (bad/partial code, decode error, wrong code
+    // pasted in the wrong box, etc.).
+    //
+    // #4/#5 fix: NetConnection now rejects a bad or mismatched code BEFORE
+    // touching the peer connection and tags the reason on the error (see
+    // NetConnectionError), so this can say something accurate instead of
+    // reflexively blaming "the guest" for a code the HOST pasted wrong (M4).
+    _fail(err) {
         if (!this._alive) return;
-        this.statusText.setText('Invalid code — paste the full code and retry.');
+        switch (err && err.reason) {
+            case 'wrong-type':
+            case 'bad-state':
+                this.statusText.setText(err.message || 'That code is not valid right now — check it and retry.');
+                break;
+            case 'bad-code':
+                this.statusText.setText('That code looks incomplete or corrupted — copy the whole thing and try again.');
+                break;
+            default:
+                this.statusText.setText('Invalid code — paste the full code and retry.');
+        }
     }
 
     // ---- copy helper ------------------------------------------------------
@@ -1034,6 +1122,7 @@ export class OnlineScene extends Phaser.Scene {
     // Close a half-built connection that hasn't been handed to NetSession yet
     // (e.g. switching HOST<->JOIN, or retrying) so we never leak a peer conn.
     _resetConnection() {
+        this._clearJoinTimeout();
         this._closeSignal();
         this._clearLobby();
         this.pickedClass = null;
@@ -1054,6 +1143,7 @@ export class OnlineScene extends Phaser.Scene {
 
     _shutdown() {
         this._alive = false;
+        this._clearJoinTimeout();
         this.scale.off('resize', this._layoutOverlay, this);
         this._closeSignal();
 

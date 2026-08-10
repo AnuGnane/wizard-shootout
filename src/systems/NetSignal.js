@@ -416,11 +416,25 @@ export class NetSignal {
 
     // Idempotent. A host clears its retained offer on the way out so a stale
     // room code can't strand someone typing it in an hour from now.
+    //
+    // Fix: previously cleared each waiter's timer and emptied the list
+    // without ever settling its promise, so waitForAnswer()/joinRoom() calls
+    // still pending at close() time hung forever. Reject them instead, with a
+    // reason a caller can recognise. Every caller in this codebase (see
+    // OnlineScene.js's _openRoom/_joinByRoomCode) already terminates its
+    // promise chain in a .catch() guarded on `this.signal === signal`, so a
+    // stale rejection from a signal that has since been replaced/closed is
+    // swallowed there rather than surfacing — this reject can never become an
+    // *unhandled* rejection in normal teardown (mode switch, BACK, scene
+    // shutdown, or our own connect-timeout).
     close() {
         this._stopRepublish();
         for (const list of [this.answerWaiters, this.offerWaiters]) {
-            for (const w of list) clearTimeout(w.timer);
-            list.length = 0;
+            const waiters = list.splice(0, list.length);
+            for (const w of waiters) {
+                clearTimeout(w.timer);
+                w.reject(new SignalError('closed', 'the room service connection was closed'));
+            }
         }
         if (this.client) {
             if (this.role === 'host' && this.roomCode) {
