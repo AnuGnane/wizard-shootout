@@ -81,6 +81,25 @@ try {
     await page.waitForTimeout(900);
     console.log('active:', await active(), 'errors:', errors.length);
     errors.forEach((e) => console.log('  THROW:', e));
+    console.log('\n-- bounding: does a LOCAL match started afterwards inherit net mode? --');
+    await page.evaluate(() => {
+        const g = window.__game;
+        for (const k of ['GameOverScene', 'GameScene', 'SettingsScene']) if (g.scene.isActive(k)) g.scene.stop(k);
+        g.scene.getScene('MenuScene').scene.start('MapSelectScene', { mode: '1p' });
+    });
+    await page.waitForFunction(() => window.__game.scene.isActive('MapSelectScene'), null, { timeout: 20000 });
+    await page.evaluate(() => window.__game.scene.getScene('MapSelectScene').startMatch(0));
+    await page.waitForFunction(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').player2, null, { timeout: 30000 });
+    await page.waitForTimeout(800);
+    console.log('local match:', await page.evaluate(() => {
+        const s = window.__game.scene.getScene('GameScene');
+        return { netRole: s.netRole, online: window.__match.online, connStillHeld: !!window.__net.NetSession.connection, netConnected: window.__net.NetSession.connected };
+    }));
+    await page.evaluate(() => setTimeout(() => window.__stub.onMessage({ t: 'restart', round: 9 }), 0));
+    await page.evaluate(() => setTimeout(() => window.__stub.onMessage({ t: 'gameover', winner: 2, scores: { 1: 0, 2: 5 }, rounds: 5 }), 30));
+    await page.waitForTimeout(1500);
+    console.log('after host messages during the local match:', await active(), 'round=', await page.evaluate(() => window.__match.round), 'errors:', errors.length);
+    errors.forEach((e) => console.log('  THROW:', e));
 } catch (e) {
     console.log('ERR', e.message);
 } finally {
