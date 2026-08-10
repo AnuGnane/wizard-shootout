@@ -113,9 +113,9 @@ maintenance debt. Pay it down before adding more surface area.
 
 ## Phase 10 — Online for real (rides on Phase 8's `NetGameSync` extraction)
 
-- [ ] `[O]` Friendlier signaling: short room code or QR instead of copy-paste SDP
+- [x] `[O]` Friendlier signaling: short room code or QR instead of copy-paste SDP — 5-char room codes via a public MQTT broker (`NetSignal.js`), in-repo QR encoder (`QRCode.js`), deflate-compressed codes; copy-paste stays as the guaranteed fallback
 - [ ] `[O]` Lift the prototype limits: any class, any map, render host-only FX (muzzle/death/steam) on the guest
-- [ ] `[F]` Decide on a relay (free TURN) so strict-symmetric-NAT players can connect at all
+- [x] `[F]` Decide on a relay (free TURN) so strict-symmetric-NAT players can connect at all — **decision: Open Relay Project's free TURN** (`openrelay.metered.ca`, ports 80/443 + TLS), added alongside Google STUN in `NetConnection.js`. Best-effort third-party infra: we run no server, and an unreachable relay degrades to the old STUN-only behaviour by ICE design, so there's no reachability logic to maintain. Same-network play never uses it. Revisit only if free TURN proves unreliable enough to justify hosting coturn.
 
 ## Phase 11 — Ship & reach (release the finished thing)
 
