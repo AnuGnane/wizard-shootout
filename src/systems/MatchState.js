@@ -3,7 +3,13 @@
 import { MATCH_CONFIG } from '../config.js';
 
 export const MATCH_STATE = {
-    mode: '2p',            // '1p' | '2p' | 'party'
+    // '1p' | '2p' | 'party' | 'survival'. Phase 9b's 'survival' is the PvE
+    // co-op wave mode: seats 1-2 are the hero team, 3-4 are the two concurrent
+    // horde slots, and the run is owned by systems/SurvivalDirector.js. Every
+    // survival-specific branch in shared code is gated on this value (or on
+    // the scene-level `isSurvival` flag derived from it), so the four other
+    // modes are byte-identical to before the phase.
+    mode: '2p',
     scores: { 1: 0, 2: 0, 3: 0, 4: 0 },
     round: 1,
     targetScore: MATCH_CONFIG.targetScore,

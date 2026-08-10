@@ -236,6 +236,29 @@ export const MAP_DEFS = [
     },
 ];
 
+// Phase 9a — Map editor. Maps built in-game are kept here, appended after the
+// built-ins, so MAP_DEFS and the customs form ONE combined list that pickMap()
+// and MapSelectScene address by a single index (see allMapDefs). This module
+// only holds the array — reading/writing localStorage lives in the browser-only
+// systems/CustomMaps.js — so Maps.js stays importable from plain Node (CI's
+// validate-maps step runs it outside a browser). In Node nothing ever
+// registers, EXTRA_DEFS stays empty, and every path below behaves exactly as
+// it did before this phase.
+const EXTRA_DEFS = [];
+
+// Replaces the registered custom maps wholesale. Callers pass defs that have
+// already passed validateMap — nothing downstream re-checks them.
+export function registerExtraMaps(defs) {
+    EXTRA_DEFS.length = 0;
+    for (const def of defs) EXTRA_DEFS.push(def);
+}
+
+// Built-ins first, then registered customs. An index into THIS list is the map
+// id used by MATCH_STATE.mapIndex / pickMap's forcedIndex / MapSelect cards.
+export function allMapDefs() {
+    return [...MAP_DEFS, ...EXTRA_DEFS];
+}
+
 // Phase 5c — Mirror Maps mutator. Reverses each row string, producing a
 // horizontally-flipped layout; spawn markers ('1'/'2') and walls flip along
 // with everything else since they're just characters in the row. Never
@@ -396,20 +419,24 @@ if (import.meta.env && import.meta.env.DEV) {
 
 let lastMapIndex = -1;
 
-// forcedIndex: play a specific map (from the map-select screen).
-// null/invalid: random map, never the same one twice in a row.
+// forcedIndex: play a specific map (from the map-select screen). Indexes the
+// COMBINED list (built-ins + registered customs), so a custom map's card index
+// travels straight through MATCH_STATE.mapIndex to here.
+// null/invalid: random map, never the same one twice in a row — the rotation
+// draws from the combined list too, so customs join the Random pool.
 export function pickMap(forcedIndex = null, { mirror = false } = {}) {
+    const defs = allMapDefs();
     let idx;
-    if (forcedIndex !== null && forcedIndex >= 0 && forcedIndex < MAP_DEFS.length) {
+    if (forcedIndex !== null && forcedIndex >= 0 && forcedIndex < defs.length) {
         idx = forcedIndex;
     } else {
         do {
-            idx = Math.floor(Math.random() * MAP_DEFS.length);
-        } while (MAP_DEFS.length > 1 && idx === lastMapIndex);
+            idx = Math.floor(Math.random() * defs.length);
+        } while (defs.length > 1 && idx === lastMapIndex);
     }
     lastMapIndex = idx;
 
-    const map = new GameMap(MAP_DEFS[idx], { mirror });
+    const map = new GameMap(defs[idx], { mirror });
     applyArena(map);
     return map;
 }

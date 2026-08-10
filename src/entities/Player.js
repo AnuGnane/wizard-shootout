@@ -115,11 +115,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // GameScene confirms the effect actually fired (see useSignature).
         this.abilityReadyAt = 0;
 
-        // Stormcaller Zap Dash state. dashUntil is a scene.time.now timestamp;
-        // dashHitDone gates the once-per-dash stun so one dash can't multi-hit.
+        // Dash state, shared by Stormcaller's Zap Dash and Trickster's Scatter
+        // Dash. dashUntil is a scene.time.now timestamp; dashHitDone gates the
+        // once-per-dash contact stun so one dash can't multi-hit (it simply
+        // never flips for Trickster — see Classes.js's comment on why).
         this.dashUntil = 0;
         this.dashHitDone = false;
         this.nextAfterimageAt = 0;
+
+        // Warden Reflect Ward state. wardUntil is a scene.time.now timestamp
+        // (GameScene.checkWardReflections reads it every frame); wardBubble is
+        // the visible bubble sprite, tracked here so it can follow the caster
+        // and be cleaned up on death like shieldBubble below.
+        this.wardUntil = 0;
+        this.wardBubble = null;
 
         // Phase 6c — cosmetic animation state (purely visual, no physics).
         // animLockUntil: a short window (set by pickupRune) during which the
@@ -228,6 +237,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // Keep shield bubble attached
         if (this.shieldBubble) {
             this.shieldBubble.setPosition(this.x, this.y);
+        }
+
+        // Keep the Reflect Ward bubble attached (Warden only — always null
+        // otherwise, since only abilityReflectWard ever sets it).
+        if (this.wardBubble) {
+            this.wardBubble.setPosition(this.x, this.y);
         }
 
         // Redraw cooldown arcs + aim hint
@@ -723,7 +738,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Can only hold ONE rune type at a time
         this.heldRune = element;
-        if (element === ELEMENT_TYPES.TRIPLE) {
+        if (element === ELEMENT_TYPES.TRIPLE && this.classKey === 'trickster') {
+            this.runeShots = 3; // passive: triple orb pickup grants 3 uses (base is 2)
+        } else if (element === ELEMENT_TYPES.TRIPLE) {
             this.runeShots = RUNE_CONFIG.tripleShotsPerPickup;
         } else if (element === ELEMENT_TYPES.FIRE && this.classKey === 'pyromancer') {
             this.runeShots = 4; // passive: fire orb pickup grants 4 shots
@@ -744,7 +761,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     addShield() {
-        this.shieldCharges = 1;
+        this.shieldCharges = this.classKey === 'warden' ? 2 : 1; // passive: shield orb = 2 charges
         audio.shieldUp();
 
         if (this.shieldBubble) this.shieldBubble.destroy();
@@ -760,9 +777,26 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         });
     }
 
+    // Consumes ONE charge (Warden's passive can grant more than the usual
+    // single charge — see addShield). A charge remaining after the hit keeps
+    // the bubble up with just a pulse; hitting zero pops it exactly like
+    // before, so every class that only ever holds 1 charge is byte-identical
+    // to the pre-Warden behavior (1 - 1 = 0 either way).
     breakShield() {
-        this.shieldCharges = 0;
+        this.shieldCharges = Math.max(0, this.shieldCharges - 1);
         audio.shieldBreak();
+
+        if (this.shieldCharges > 0) {
+            if (this.shieldBubble) {
+                this.scene.tweens.add({
+                    targets: this.shieldBubble,
+                    scale: { from: 1, to: 0.7 },
+                    duration: 90,
+                    yoyo: true,
+                });
+            }
+            return;
+        }
 
         if (this.shieldBubble) {
             const bubble = this.shieldBubble;
@@ -790,6 +824,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         if (this.shieldBubble) {
             this.shieldBubble.destroy();
             this.shieldBubble = null;
+        }
+        if (this.wardBubble) {
+            this.wardBubble.destroy();
+            this.wardBubble = null;
         }
         if (this.indicator) {
             this.indicator.destroy();

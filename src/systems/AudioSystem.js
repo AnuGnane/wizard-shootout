@@ -338,6 +338,13 @@ class AudioSystem {
         this.tone({ type: 'triangle', from: 900, to: 500, duration: 0.04, volume: 0.12 });
     }
 
+    // Reflect Ward: a single metallic "ping" per projectile bounced back,
+    // separate from the (louder) cast sound played once when the bubble goes up.
+    wardPing() {
+        this.tone({ type: 'sine', from: 1200, to: 1800, duration: 0.08, volume: 0.25 });
+        this.tone({ type: 'triangle', from: 900, to: 1300, duration: 0.06, volume: 0.15, delay: 0.02 });
+    }
+
     hit() {
         this.noise({ duration: 0.14, volume: 0.35, filterFrom: 1800, filterTo: 250 });
         this.tone({ type: 'sine', from: 250, to: 90, duration: 0.15, volume: 0.35 });
@@ -407,6 +414,14 @@ class AudioSystem {
                 break;
             case 'stormcaller': // Zap Dash: fast rising saw zap
                 this.tone({ type: 'sawtooth', from: 300, to: 1600, duration: 0.14, volume: 0.28 });
+                break;
+            case 'warden': // Reflect Ward: shimmering rising chime (the bubble going up)
+                this.tone({ type: 'sine', from: 700, to: 1100, duration: 0.18, volume: 0.28 });
+                this.tone({ type: 'sine', from: 1050, to: 1450, duration: 0.18, volume: 0.16, delay: 0.04 });
+                break;
+            case 'trickster': // Scatter Dash: quick descending zip + a triple-note pop
+                this.tone({ type: 'sawtooth', from: 900, to: 300, duration: 0.1, volume: 0.22 });
+                this.tone({ type: 'square', from: 500, to: 700, duration: 0.06, volume: 0.15, delay: 0.06 });
                 break;
             default:
                 this.uiClick();

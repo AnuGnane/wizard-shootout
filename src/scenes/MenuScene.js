@@ -79,7 +79,15 @@ export class MenuScene extends Phaser.Scene {
         this.makeButton(width / 2, 258, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
         this.makeButton(width / 2, 314, '[ 2 PLAYERS ]', '#336633', '#66ff66', () => this.startGame('2p'));
         this.makeButton(width / 2, 370, '[ PARTY  3-4 P ]', '#336633', '#66ff66', () => this.startGame('party'));
-        this.makeButton(width / 2, 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
+        // Phase 9b: [ SURVIVAL ] shares the ONLINE row rather than taking a new
+        // one — the mode column is already packed against the fixed lower block
+        // (secondary row at y=509), so there is no vertical room left. Both are
+        // compact 20px buttons: SURVIVAL is ~194px wide and ONLINE ~218px, so
+        // at ±112 from center they span 303-497 and 515-733, an 18px gap
+        // between them and ~290px clear on either outer edge.
+        this.makeButton(width / 2 - 112, 421, '[ SURVIVAL ]', '#5a3a1a', '#ffbb55',
+            () => this.startGame('survival'), '20px');
+        this.makeButton(width / 2 + 112, 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
             audio.uiClick();
             this.scene.start('OnlineScene');
         }, '20px');
@@ -94,8 +102,14 @@ export class MenuScene extends Phaser.Scene {
         // without reflowing this one. Everything below here (legend/controls/
         // gamepad/hint) shifts down from its original position to make room —
         // verified overlap-free by screenshot (see Phase 6a verification).
-        const secondarySpacing = 160;
-        const secondarySlots = 3;
+        //
+        // Phase 9a takes a FOURTH slot for MAP EDITOR. The row still centers
+        // itself off these two numbers, so widening it is just a matter of the
+        // spacing clearing the longest label ([ MAP EDITOR ] ~ 162px wide) —
+        // 175 leaves ~20px between every neighbouring pair, and the row's
+        // outer edge (~186px from screen left) stays clear of everything.
+        const secondarySpacing = 175;
+        const secondarySlots = 4;
         const secondaryStartX = width / 2 - ((secondarySlots - 1) * secondarySpacing) / 2;
         this.makeSmallButton(secondaryStartX, 509, '[ STATS ]', () => {
             audio.uiClick();
@@ -133,6 +147,13 @@ export class MenuScene extends Phaser.Scene {
         this.makeSmallButton(wardrobeX, 509, '[ WARDROBE ]', () => {
             audio.uiClick();
             this.scene.start('WardrobeScene');
+        });
+
+        // Phase 9a: [ MAP EDITOR ] — build your own arena; saved maps show up
+        // on the map-select screen right after the built-ins.
+        this.makeSmallButton(secondaryStartX + 3 * secondarySpacing, 509, '[ MAP EDITOR ]', () => {
+            audio.uiClick();
+            this.scene.start('MapEditorScene');
         });
 
         // Orb legend
@@ -186,7 +207,7 @@ export class MenuScene extends Phaser.Scene {
         controlsGamepad.setOrigin(0.5);
 
         // Hint
-        const hint = this.add.text(width / 2, 690, '1 / 2 / 3 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
+        const hint = this.add.text(width / 2, 690, '1 / 2 / 3 / 4 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
             font: '14px monospace',
             fill: '#666688',
         });
@@ -203,6 +224,7 @@ export class MenuScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-ONE', () => this.startGame('1p'));
         this.input.keyboard.on('keydown-TWO', () => this.startGame('2p'));
         this.input.keyboard.on('keydown-THREE', () => this.startGame('party'));
+        this.input.keyboard.on('keydown-FOUR', () => this.startGame('survival'));
         this.input.keyboard.once('keydown-SPACE', () => this.startGame('2p'));
     }
 

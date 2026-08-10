@@ -26,6 +26,14 @@ export class GameOverScene extends Phaser.Scene {
         // match (see rematch()).
         this.isDaily = !!data.isDaily;
         this.dailyStatus = data.dailyStatus || null;
+        // Phase 9b: survival run result. When true this scene reads as "how
+        // far did the co-op team get" instead of a winner/score match result,
+        // and REMATCH simply starts survival over at wave 1 (see rematch()).
+        this.isSurvival = !!data.isSurvival;
+        this.wavesSurvived = data.wavesSurvived || 0;
+        this.wave = data.wave || 1;
+        this.teamKills = data.teamKills || 0;
+        this.bestWave = data.bestWave || 0;
     }
 
     create() {
@@ -34,6 +42,127 @@ export class GameOverScene extends Phaser.Scene {
         // Background
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
+        if (this.isSurvival) {
+            this.createSurvivalResult(width, height);
+        } else {
+            this.createMatchResult(width, height);
+        }
+
+        // Leaving to the menu tears down a live net session first (close the
+        // connection + drop online mode) so the next match starts clean. In
+        // local mode this branch is skipped and behavior is unchanged.
+        const goToMenu = () => {
+            audio.uiClick();
+            if (MATCH_STATE.online) {
+                clearSession();
+                MATCH_STATE.online = false;
+            }
+            this.scene.start('MenuScene');
+        };
+
+        // Phase 8 — focus nav over Rematch (when present) + Main Menu.
+        // ESC/pad B goes to the menu, same as the ESC shortcut this replaces.
+        const isNet = MATCH_STATE.online;
+        this.menuNav = new MenuNav(this, { onBack: goToMenu });
+
+        // Rematch button. Stage 2b: a net match has no rematch — re-hosting is a
+        // fresh lobby flow, not a scene restart — so the button is hidden and the
+        // SPACE shortcut below is suppressed when the match was online.
+        if (!isNet) {
+            const restartBtn = this.add.text(width / 2, 470, this.isSurvival ? '[ RUN IT BACK ]' : '[ REMATCH ]', {
+                font: '28px monospace',
+                fill: '#ffffff',
+                backgroundColor: '#336633',
+                padding: { x: 25, y: 12 },
+            });
+            restartBtn.setOrigin(0.5);
+            restartBtn.setInteractive({ useHandCursor: true });
+
+            const doRematch = () => this.rematch();
+            restartBtn.on('pointerover', () => restartBtn.setStyle({ fill: '#66ff66' }));
+            restartBtn.on('pointerout', () => restartBtn.setStyle({ fill: '#ffffff' }));
+            restartBtn.on('pointerdown', doRematch);
+            this.menuNav.add(restartBtn, doRematch);
+        }
+
+        // Menu button
+        const menuBtn = this.add.text(width / 2, 545, '[ MAIN MENU ]', {
+            font: '24px monospace',
+            fill: '#888888',
+            padding: { x: 20, y: 10 },
+        });
+        menuBtn.setOrigin(0.5);
+        menuBtn.setInteractive({ useHandCursor: true });
+
+        menuBtn.on('pointerover', () => menuBtn.setStyle({ fill: '#ffffff' }));
+        menuBtn.on('pointerout', () => menuBtn.setStyle({ fill: '#888888' }));
+        menuBtn.on('pointerdown', goToMenu);
+        this.menuNav.add(menuBtn, goToMenu);
+
+        // Keyboard shortcut. SPACE (rematch) is suppressed in net mode; ESC
+        // is now handled by menuNav's onBack above.
+        if (!isNet) this.input.keyboard.once('keydown-SPACE', () => this.rematch());
+
+        // Hint
+        const hint = this.add.text(width / 2, 630, isNet ? 'ESC - Menu' : 'SPACE - Rematch | ESC - Menu', {
+            font: '14px monospace',
+            fill: '#666688',
+        });
+        hint.setOrigin(0.5);
+    }
+
+    // Phase 9b — survival run result: how many waves the co-op team survived,
+    // the shared kill tally, and the local best to beat. No winner, no score.
+    createSurvivalResult(width, height) {
+        this.add.text(width / 2, 40, 'WAVE SURVIVAL', {
+            font: 'bold 22px monospace',
+            fill: '#ffbb55',
+        }).setOrigin(0.5);
+
+        const wiz = this.add.image(width / 2, 130, `wizard_${MATCH_STATE.classes[1]}_1`).setScale(5);
+        this.tweens.add({
+            targets: wiz,
+            y: 140,
+            duration: 900,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+        });
+
+        const wavesText = this.add.text(width / 2, 250, `WAVES SURVIVED: ${this.wavesSurvived}`, {
+            font: 'bold 44px monospace',
+            fill: '#ffbb55',
+            align: 'center',
+        }).setOrigin(0.5);
+        wavesText.setStroke('#ffffff', 2);
+        this.tweens.add({
+            targets: wavesText,
+            scale: 1.06,
+            duration: 500,
+            yoyo: true,
+            repeat: -1,
+        });
+
+        this.add.text(width / 2, 330, `HORDE SLAIN: ${this.teamKills}`, {
+            font: 'bold 26px monospace',
+            fill: '#ffffff',
+        }).setOrigin(0.5);
+
+        this.add.text(width / 2, 370, `fell on wave ${this.wave}`, {
+            font: '16px monospace',
+            fill: '#8888aa',
+        }).setOrigin(0.5);
+
+        const isRecord = this.wavesSurvived > 0 && this.wavesSurvived >= this.bestWave;
+        this.add.text(width / 2, 405, isRecord ? `BEST: ${this.bestWave}  ★ new record` : `BEST: ${this.bestWave}`, {
+            font: '16px monospace',
+            fill: isRecord ? '#66ff66' : '#8888aa',
+        }).setOrigin(0.5);
+    }
+
+    // The classic winner/score result. Unchanged from before Phase 9b — only
+    // lifted out of create() so the survival variant above can take its place.
+    createMatchResult(width, height) {
         // Phase 6b: daily challenge header, framing this as a daily result
         // rather than a normal match.
         if (this.isDaily) {
@@ -141,68 +270,6 @@ export class GameOverScene extends Phaser.Scene {
                 fill: hasBest ? '#66ff66' : '#8888aa',
             }).setOrigin(0.5);
         }
-
-        // Leaving to the menu tears down a live net session first (close the
-        // connection + drop online mode) so the next match starts clean. In
-        // local mode this branch is skipped and behavior is unchanged.
-        const goToMenu = () => {
-            audio.uiClick();
-            if (MATCH_STATE.online) {
-                clearSession();
-                MATCH_STATE.online = false;
-            }
-            this.scene.start('MenuScene');
-        };
-
-        // Phase 8 — focus nav over Rematch (when present) + Main Menu.
-        // ESC/pad B goes to the menu, same as the ESC shortcut this replaces.
-        const isNet = MATCH_STATE.online;
-        this.menuNav = new MenuNav(this, { onBack: goToMenu });
-
-        // Rematch button. Stage 2b: a net match has no rematch — re-hosting is a
-        // fresh lobby flow, not a scene restart — so the button is hidden and the
-        // SPACE shortcut below is suppressed when the match was online.
-        if (!isNet) {
-            const restartBtn = this.add.text(width / 2, 470, '[ REMATCH ]', {
-                font: '28px monospace',
-                fill: '#ffffff',
-                backgroundColor: '#336633',
-                padding: { x: 25, y: 12 },
-            });
-            restartBtn.setOrigin(0.5);
-            restartBtn.setInteractive({ useHandCursor: true });
-
-            const doRematch = () => this.rematch();
-            restartBtn.on('pointerover', () => restartBtn.setStyle({ fill: '#66ff66' }));
-            restartBtn.on('pointerout', () => restartBtn.setStyle({ fill: '#ffffff' }));
-            restartBtn.on('pointerdown', doRematch);
-            this.menuNav.add(restartBtn, doRematch);
-        }
-
-        // Menu button
-        const menuBtn = this.add.text(width / 2, 545, '[ MAIN MENU ]', {
-            font: '24px monospace',
-            fill: '#888888',
-            padding: { x: 20, y: 10 },
-        });
-        menuBtn.setOrigin(0.5);
-        menuBtn.setInteractive({ useHandCursor: true });
-
-        menuBtn.on('pointerover', () => menuBtn.setStyle({ fill: '#ffffff' }));
-        menuBtn.on('pointerout', () => menuBtn.setStyle({ fill: '#888888' }));
-        menuBtn.on('pointerdown', goToMenu);
-        this.menuNav.add(menuBtn, goToMenu);
-
-        // Keyboard shortcut. SPACE (rematch) is suppressed in net mode; ESC
-        // is now handled by menuNav's onBack above.
-        if (!isNet) this.input.keyboard.once('keydown-SPACE', () => this.rematch());
-
-        // Hint
-        const hint = this.add.text(width / 2, 630, isNet ? 'ESC - Menu' : 'SPACE - Rematch | ESC - Menu', {
-            font: '14px monospace',
-            fill: '#666688',
-        });
-        hint.setOrigin(0.5);
     }
 
     update() {
@@ -218,6 +285,9 @@ export class GameOverScene extends Phaser.Scene {
             DailyChallenge.startChallenge(this);
             return;
         }
+        // Phase 9b: survival needs no special handling here — resetMatch keeps
+        // mode/seatTypes/classes/playerCount, and GameScene builds a brand-new
+        // SurvivalDirector in create(), so the run simply starts again at wave 1.
         resetMatch(MATCH_STATE.mode);
         MATCH_STATE.targetScore = RUNTIME_SETTINGS.targetScore;
         this.scene.start('GameScene');

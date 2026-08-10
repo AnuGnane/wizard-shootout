@@ -54,6 +54,8 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 | Cryomancer  | ice       | **Frost Ring** — frost nearby tiles, slow nearby enemies    | 10s | immune to slow                   |
 | Stonecaller | earth     | **Breach** — shatter the wall tile you're facing (not border) | 12s | conjured walls last longer       |
 | Stormcaller | lightning | **Zap Dash** — fast dash forward, stuns anyone touched      | 9s  | shorter orb-shot cooldown        |
+| Warden      | shield    | **Reflect Ward** — bubble reflects enemy projectiles      | 10s | shield orb = 2 charges           |
+| Trickster   | triple    | **Scatter Dash** — short dash, fires a spread backward    | 9s  | triple orb = 3 uses              |
 
 - [ ] `[F]` Finalize class stats/cooldowns (balance pass on the table above)
 - [x] `[S]` Class data module + class-select scene (both players pick; bot picks randomly in 1P)
@@ -105,9 +107,9 @@ maintenance debt. Pay it down before adding more surface area.
 
 ## Phase 9 — Content (highest player value; cheap because everything's procedural)
 
-- [ ] `[O]` Map editor UI (maps are already ASCII + `validateMap`-checked — build a grid editor that saves to localStorage and feeds MapSelect)
-- [ ] `[O]` PvE co-op wave-survival mode (reuse AI + spawning + classes: 1–2 players vs escalating bot waves, shared score)
-- [ ] `[S]` One or two new classes/elements to prove the class framework extends cleanly
+- [x] `[O]` Map editor UI (maps are already ASCII + `validateMap`-checked — build a grid editor that saves to localStorage and feeds MapSelect)
+- [x] `[O]` PvE co-op wave-survival mode (reuse AI + spawning + classes: 1–2 players vs escalating bot waves, shared score)
+- [x] `[S]` One or two new classes/elements to prove the class framework extends cleanly
 
 ## Phase 10 — Online for real (rides on Phase 8's `NetGameSync` extraction)
 

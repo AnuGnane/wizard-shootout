@@ -23,7 +23,7 @@ import { chromium } from 'playwright';
 
 const SCENES = [
     'BootScene', 'MenuScene', 'SettingsScene', 'ControlsScene', 'ClassSelectScene',
-    'MapSelectScene', 'GameScene', 'PauseScene', 'GameOverScene',
+    'MapSelectScene', 'MapEditorScene', 'GameScene', 'PauseScene', 'GameOverScene',
     'StatsScene', 'WardrobeScene', 'OnlineScene',
 ];
 
@@ -135,6 +135,65 @@ try {
     check('orb pickup grants the rune (SpawnDirector seam)',
         orb.before >= 1 && orb.after === orb.before - 1 && !!orb.held,
         `before=${orb.before} after=${orb.after} held=${orb.held}`);
+
+    // 3c. Survival co-op (Phase 9b): a solo run spawns two team-tagged horde
+    // wizards, the wave-1 pool is 2 + 1 = 3, draining it clears the wave, and
+    // the breather heals the heroes before wave 2 fields 2 + 2 = 4.
+    await page.evaluate(() => {
+        const M = window.__match;
+        M.online = false; M.isDailyChallenge = false;
+        M.mode = 'survival';
+        M.seatTypes = { 1: 'human', 2: 'off', 3: 'bot', 4: 'bot' };
+        M.playerCount = 3;
+        M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+        M.mapIndex = 0; M.round = 1;
+        M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        window.__game.scene.getScene('GameScene').scene.start('GameScene');
+    });
+    await page.waitForFunction(() => {
+        const s = window.__game.scene.getScene('GameScene');
+        return s && window.__game.scene.isActive('GameScene') && s.survivalDirector && s.players.length === 3;
+    }, null, { timeout: 8000 });
+
+    const surv = await page.evaluate(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const s = window.__game.scene.getScene('GameScene');
+        const d = s.survivalDirector;
+
+        const horde = s.players.filter((p) => p.team === 'horde').length;
+        const heroes = s.players.filter((p) => p.team === 'heroes').length;
+        const wave1Total = d.pool + d.livingHorde().length;
+
+        // Force-kill the whole wave-1 pool: each death frees a slot the
+        // director refills ~1.5s later, so keep swinging until it's drained.
+        const t0 = Date.now();
+        while ((d.pool > 0 || d.livingHorde().length > 0) && Date.now() - t0 < 12000) {
+            for (const p of s.players) if (p.team === 'horde' && p.isAlive) p.takeDamage(1000);
+            await wait(100);
+        }
+
+        // Field is clear, so nothing can chip the hero before the wave-clear
+        // heal lands at the end of the 3s breather.
+        for (const p of s.allProjectiles.slice()) if (p && p.active) p.destroy();
+        s.player1.statusEffects.burning = false;
+        s.player1.health = 40;
+        const hpBefore = s.player1.health;
+
+        await wait(3600);
+        return {
+            horde, heroes, wave1Total,
+            kills: d.kills,
+            wave: d.wave,
+            wave2Total: d.pool + d.livingHorde().length,
+            hpBefore, hpAfter: s.player1.health,
+        };
+    });
+    check('survival: 2 team-tagged horde vs 1 hero, wave-1 pool = 3',
+        surv.horde === 2 && surv.heroes === 1 && surv.wave1Total === 3,
+        `horde=${surv.horde} heroes=${surv.heroes} wave1Total=${surv.wave1Total}`);
+    check('survival: clearing wave 1 advances to wave 2 and heals heroes',
+        surv.wave === 2 && surv.kills === 3 && surv.wave2Total === 4 && surv.hpAfter > surv.hpBefore,
+        `wave=${surv.wave} kills=${surv.kills} wave2Total=${surv.wave2Total} hp=${surv.hpBefore}->${surv.hpAfter}`);
 
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {

@@ -13,6 +13,7 @@ import { NetSession } from '../systems/NetSession.js';
 import { FogController } from '../systems/FogController.js';
 import { SpawnDirector } from '../systems/SpawnDirector.js';
 import { RoundFlow } from '../systems/RoundFlow.js';
+import { SurvivalDirector, SURVIVAL_CONFIG, SURVIVAL_TEAMS, sameSurvivalTeam } from '../systems/SurvivalDirector.js';
 import { NetGameSync } from '../systems/NetGameSync.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
@@ -38,6 +39,22 @@ export class GameScene extends Phaser.Scene {
         // net match, else null. EVERYTHING net-specific below is gated on it;
         // when null, every code path is byte-identical to a local match.
         this.netRole = (MATCH_STATE.online && NetSession.connected) ? NetSession.role : null;
+
+        // Phase 9b — PvE co-op wave survival. EVERYTHING survival-specific
+        // below is gated on this flag (the same discipline netRole uses); when
+        // false, every code path is byte-identical to a pre-Phase-9b match.
+        // The director itself is built further down (it needs the roster) and
+        // is nulled HERE unconditionally because the Scene instance is reused
+        // across restarts — a stale director from a prior survival run must
+        // never leak into a 1P/2P/party round.
+        this.isSurvival = MATCH_STATE.mode === 'survival';
+        this.survivalDirector = null;
+        // Same reasoning for the survival HUD handles: createUI() only builds
+        // them in survival mode, so drop any left over from a previous run
+        // rather than leaving destroyed objects reachable on the scene.
+        this.survivalPanels = null;
+        this.survivalWaveText = null;
+        this.survivalKillsText = null;
 
         // Everything else net-specific (roster, snapshots, puppets, round
         // mirroring) lives in this module; it is inert while netRole is null.
@@ -140,13 +157,24 @@ export class GameScene extends Phaser.Scene {
         this.projectiles = this.physics.add.group();
         this.setupCollisions();
         this.setupEvents();
+
+        // Phase 9b: the survival run owns the wave counter the HUD reads, so
+        // build + start it before createUI(). start() also books wave 1's
+        // opening enemies (already spawned by createPlayers) against the pool.
+        if (this.isSurvival) {
+            this.survivalDirector = new SurvivalDirector(this);
+            this.survivalDirector.start();
+        }
+
         this.createUI();
         // Stage 2b: the HOST runs rune spawning (restricted to the map-safe net
         // pool — see spawnRunes) and syncs the orbs to the guest, which only
         // renders rune puppets from snapshots and never simulates its own.
         // Local modes (netRole null) are unchanged.
         if (this.netRole !== 'guest') this.spawnDirector.startRuneSpawning();
-        this.roundFlow.showRoundBanner();
+        // Phase 9b: survival has no rounds, so its own WAVE banner (already
+        // shown by SurvivalDirector.start above) replaces the round banner.
+        if (!this.isSurvival) this.roundFlow.showRoundBanner();
 
         // Stage 2a: take ownership of the live connection's message/close
         // callbacks (the lobby's are now dead). Done after create() has built
@@ -256,6 +284,19 @@ export class GameScene extends Phaser.Scene {
             }
         });
 
+        // Phase 9b — survival co-op team tags. Set ONLY in survival mode, so
+        // `player.team` stays undefined in 1P/2P/party/online/daily and every
+        // team-aware branch (getOpponentsOf, sameSurvivalTeam) falls through to
+        // the existing free-for-all behaviour there. Must run BEFORE the AI
+        // wiring below, which reads getOpponentsOf.
+        if (this.isSurvival) {
+            for (const player of this.players) {
+                player.team = SURVIVAL_CONFIG.hordeSeats.includes(player.playerNumber)
+                    ? SURVIVAL_TEAMS.HORDE
+                    : SURVIVAL_TEAMS.HEROES;
+            }
+        }
+
         // Aliases: much existing code (and 1P/2P HUD) references player1/player2.
         this.player1 = this.players[0] || null;
         this.player2 = this.players[1] || null;
@@ -269,7 +310,16 @@ export class GameScene extends Phaser.Scene {
     // All players other than `player` (alive or dead — callers filter by
     // isAlive where the semantics require it). In 1P/2P this is the single
     // other wizard, so behaviour is unchanged there.
+    //
+    // Phase 9b: in survival this is the ONLY definition of "who is my enemy",
+    // so filtering it by team is all it takes for the AI (nearestLivingOpponent
+    // / tryShoot / tryAbility all read it through setPlayers), Zap Dash's
+    // contact stun, Frost Ring's slow and Blink's landing check to respect the
+    // hero/horde split without any of them knowing survival exists.
     getOpponentsOf(player) {
+        if (this.isSurvival) {
+            return this.players.filter(p => p !== player && p.team !== player.team);
+        }
         return this.players.filter(p => p !== player);
     }
 
@@ -415,6 +465,8 @@ export class GameScene extends Phaser.Scene {
             case 'cryomancer':  success = this.abilityFrostRing(player);  break;
             case 'stonecaller': success = this.abilityBreach(player);     break;
             case 'stormcaller': success = this.abilityZapDash(player);    break;
+            case 'warden':      success = this.abilityReflectWard(player); break;
+            case 'trickster':   success = this.abilityScatterDash(player); break;
         }
 
         if (success) {
@@ -666,6 +718,141 @@ export class GameScene extends Phaser.Scene {
         player.dashHitDone = false;
         player.nextAfterimageAt = 0;
         return true;
+    }
+
+    // Warden — Reflect Ward. Pops a visible bubble around the caster for
+    // sig.durationMs; the actual reflect-on-contact work happens every frame
+    // in checkWardReflections while player.wardUntil is in the future.
+    abilityReflectWard(player) {
+        const sig = player.classDef.signature;
+        player.wardUntil = this.time.now + sig.durationMs;
+
+        if (player.wardBubble) player.wardBubble.destroy();
+        const bubble = this.add.circle(player.x, player.y, sig.radius, sig.flashColor, 0.12);
+        bubble.setStrokeStyle(2, sig.flashColor, 0.9);
+        bubble.setDepth(19);
+        player.wardBubble = bubble;
+
+        this.tweens.add({
+            targets: bubble,
+            scale: { from: 0.5, to: 1 },
+            duration: 180,
+            ease: 'Back.easeOut',
+        });
+
+        this.time.delayedCall(sig.durationMs, () => {
+            // Only pop OUR bubble — a re-cast before this one expired would
+            // already have replaced player.wardBubble with a fresh circle.
+            if (player.wardBubble !== bubble) return;
+            player.wardBubble = null;
+            this.tweens.add({
+                targets: bubble,
+                alpha: 0,
+                scale: 1.3,
+                duration: 220,
+                onComplete: () => bubble.destroy(),
+            });
+        });
+
+        return true;
+    }
+
+    // Trickster — Scatter Dash. Reuses Player's generic dash plumbing (see
+    // Classes.js's comment on why the contact-stun block never fires here),
+    // then fires 3 weakened triple pellets BACKWARD (opposite the locked
+    // dash facing) at the moment of launch — same spawn shape as Pyromancer's
+    // Flame Burst sparks, bypassing the per-player projectile cap.
+    abilityScatterDash(player) {
+        const sig = player.classDef.signature;
+        player.dashUntil = this.time.now + sig.dashMs;
+        player.dashHitDone = false;
+        player.nextAfterimageAt = 0;
+
+        // handleMovement() freezes aimDirection for the whole dash (it
+        // returns before reading input while dashing), so this snapshot is
+        // exactly the direction the dash itself will travel.
+        const dir = player.aimDirection;
+        const backAngle = Math.atan2(-dir.y, -dir.x);
+
+        for (const offset of [-sig.spreadAngle, 0, sig.spreadAngle]) {
+            const bx = Math.cos(backAngle + offset);
+            const by = Math.sin(backAngle + offset);
+
+            const pellet = new Projectile(
+                this,
+                player.x + bx * 16,
+                player.y + by * 16,
+                bx, by,
+                ELEMENT_TYPES.TRIPLE,
+                player.playerNumber,
+                true,
+                { ...sig.backPellet }
+            );
+
+            // NOT added to projectilesByPlayer — like Flame Burst's sparks,
+            // an ability-spawned burst doesn't eat the player's shot cap.
+            this.projectiles.add(pellet);
+            this.allProjectiles.push(pellet);
+            pellet.init();
+        }
+
+        return true;
+    }
+
+    // ============ WARD REFLECTION (Phase 9c) ============
+
+    // Polled once per frame from update(), before checkProjectileHits(): any
+    // enemy projectile whose CENTER enters an active ward's radius gets
+    // bounced back the way it came, ownership transferred to the Warden.
+    // `ownerPlayerNumber === player.playerNumber` is the one guard this needs
+    // — it excludes the Warden's own shots up front, AND (since reflecting
+    // sets that same field) excludes an already-reflected shot from being
+    // re-reflected by the same ward every frame it lingers in the bubble, so
+    // no extra "already bounced" flag is needed to stop it ping-ponging.
+    checkWardReflections() {
+        const now = this.time.now;
+        for (const player of this.players) {
+            if (!player.isAlive || now >= player.wardUntil) continue;
+
+            const sig = player.classDef.signature;
+            const radius = sig.radius;
+
+            for (const projectile of this.allProjectiles) {
+                if (!projectile || !projectile.active || !projectile.body) continue;
+                if (projectile.ownerPlayerNumber === player.playerNumber) continue;
+
+                const dx = projectile.x - player.x;
+                const dy = projectile.y - player.y;
+                if (dx * dx + dy * dy > radius * radius) continue;
+
+                this.reflectProjectile(projectile, player, sig);
+            }
+        }
+    }
+
+    reflectProjectile(projectile, warden, sig) {
+        const vx = projectile.body.velocity.x;
+        const vy = projectile.body.velocity.y;
+        projectile.body.setVelocity(-vx, -vy);
+        projectile.dirX = -projectile.dirX;
+        projectile.dirY = -projectile.dirY;
+
+        // Ownership transfer: checkProjectileHits/AIController.tryDodge/
+        // sameSurvivalTeam (survival's team-flip) all read ownerPlayerNumber
+        // live, so reassigning it here is the entire fix for damage/kill
+        // credit AND survival team allegiance flowing to the Warden from now on.
+        const oldOwner = projectile.ownerPlayerNumber;
+        projectile.ownerPlayerNumber = warden.playerNumber;
+        if (this.projectilesByPlayer[oldOwner]) {
+            const idx = this.projectilesByPlayer[oldOwner].indexOf(projectile);
+            if (idx > -1) this.projectilesByPlayer[oldOwner].splice(idx, 1);
+        }
+        if (this.projectilesByPlayer[warden.playerNumber]) {
+            this.projectilesByPlayer[warden.playerNumber].push(projectile);
+        }
+
+        audio.wardPing();
+        this.spawnRing(projectile.x, projectile.y, sig.flashColor, 1.6, 220);
     }
 
     // ============ FROST FLOOR (Phase 4) ============
@@ -935,8 +1122,11 @@ export class GameScene extends Phaser.Scene {
         this.roundTimer = 0;
 
         // playerCount <= 2 keeps today's HUD EXACTLY; party mode uses compact
-        // per-seat panels across the top bar.
-        if (MATCH_STATE.playerCount <= 2) {
+        // per-seat panels across the top bar. Phase 9b's survival HUD is
+        // checked FIRST so its 3-4 active seats never fall into the party path.
+        if (this.isSurvival) {
+            this.createSurvivalHUD();
+        } else if (MATCH_STATE.playerCount <= 2) {
             this.createStandardHUD();
         } else {
             this.createPartyHUD();
@@ -945,7 +1135,24 @@ export class GameScene extends Phaser.Scene {
         // --- Bottom hint bar (shared shell) ---
         this.add.rectangle(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, GAME_CONFIG.width, 30, 0x1a1a2e).setDepth(10);
 
-        if (MATCH_STATE.playerCount <= 2) {
+        if (this.isSurvival) {
+            // Same shape as the party bar: controls hard left, the live
+            // run clock (written by update()) hard right.
+            const b1 = getBindings(1);
+            const duo = MATCH_STATE.seatTypes[2] === 'human';
+            const b2 = getBindings(2);
+            const hint = duo
+                ? `P1: WASD + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  ·  P2: Arrows + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  ·  M mute`
+                : `WASD move · ${keyLabel(b1.shoot)} shoot · ${keyLabel(b1.runeShoot)} orb shot · ${keyLabel(b1.ability)} ability · M mute`;
+            this.add.text(14, GAME_CONFIG.height - 15, hint, {
+                font: '11px monospace',
+                fill: '#666688',
+            }).setOrigin(0, 0.5).setDepth(11);
+            this.roundText = this.add.text(GAME_CONFIG.width - 14, GAME_CONFIG.height - 15, '', {
+                font: '12px monospace',
+                fill: '#8888aa',
+            }).setOrigin(1, 0.5).setDepth(11);
+        } else if (MATCH_STATE.playerCount <= 2) {
             // Shoot/orb-shot/ability read the live rebindable bindings (see
             // systems/KeyBindings.js) so a rebind shows up here immediately;
             // "WASD move" / "Arrows" stay fixed since they name a whole
@@ -1099,6 +1306,83 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    // Phase 9b — survival HUD: one party-style panel per HERO (the horde uses
+    // the normal floating per-wizard health bars), plus a centered WAVE / kills
+    // readout where the score pips would otherwise sit. Deliberately leaves
+    // usePips false and scoreText undefined so updateScoreDisplay() — still
+    // called by createUI() — is a harmless no-op in this mode.
+    createSurvivalHUD() {
+        this.usePips = false;
+        this.survivalPanels = [];
+
+        const teamColors = getTeamColors();
+        const heroes = this.players.filter(p => p.team === SURVIVAL_TEAMS.HEROES);
+        const panelW = 300;
+
+        heroes.forEach((player, i) => {
+            const seat = player.playerNumber;
+            // Hero 1 hugs the left edge, hero 2 the right — the wave readout
+            // owns the middle, so the two never collide even in duo.
+            const cx = i === 0 ? 20 + panelW / 2 : GAME_CONFIG.width - 20 - panelW / 2;
+            const color = teamColors[seat - 1];
+            const colorStr = '#' + color.toString(16).padStart(6, '0');
+            const className = WIZARD_CLASSES[player.classKey].name.toUpperCase();
+
+            const nameText = this.add.text(cx, 5, `${TEAM_NAMES[seat - 1]} · ${className}`, {
+                font: 'bold 11px monospace',
+                fill: colorStr,
+            }).setOrigin(0.5, 0).setDepth(11);
+
+            const barW = 180;
+            const bg = this.add.rectangle(cx, 22, barW, 10, 0x222233).setOrigin(0.5, 0).setDepth(11);
+            bg.setStrokeStyle(1, 0x000000, 0.8);
+            const fill = this.add.rectangle(cx - barW / 2 + 1, 23, barW - 2, 8, color).setOrigin(0, 0).setDepth(12);
+
+            const elemText = this.add.text(cx, 36, '', {
+                font: '10px monospace',
+                fill: '#8888aa',
+            }).setOrigin(0.5, 0).setDepth(11);
+
+            this.survivalPanels.push({ player, cx, color, barW, bg, fill, nameText, elemText });
+        });
+
+        this.survivalWaveText = this.add.text(GAME_CONFIG.width / 2, 6, '', {
+            font: 'bold 22px monospace',
+            fill: '#ffdd44',
+        }).setOrigin(0.5, 0).setDepth(11);
+
+        this.survivalKillsText = this.add.text(GAME_CONFIG.width / 2, 36, '', {
+            font: '11px monospace',
+            fill: '#aaaacc',
+        }).setOrigin(0.5, 0).setDepth(11);
+    }
+
+    updateSurvivalUI() {
+        for (const panel of this.survivalPanels) {
+            const p = panel.player;
+            const pct = Math.max(0, p.health / p.maxHealth);
+            panel.fill.width = (panel.barW - 2) * pct;
+            panel.fill.fillColor = pct <= 0.25 ? 0xff3333 : panel.color;
+
+            let txt = `${Math.ceil(p.health)} HP`;
+            if (p.heldRune) {
+                const name = p.heldRune.charAt(0).toUpperCase() + p.heldRune.slice(1);
+                txt += `  ·  ${name} x${p.runeShots}`;
+            } else if (p.shieldCharges > 0) {
+                txt += '  ·  Shield';
+            }
+            panel.elemText.setText(txt);
+
+            const alpha = p.isAlive ? 1 : 0.4;
+            panel.nameText.setAlpha(alpha);
+            panel.elemText.setAlpha(alpha);
+        }
+
+        const director = this.survivalDirector;
+        this.survivalWaveText.setText(`WAVE ${director.wave}`);
+        this.survivalKillsText.setText(`HORDE SLAIN ${director.kills}`);
+    }
+
     updateScoreText() {
         this.updateScoreDisplay();
     }
@@ -1164,6 +1448,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     updateUI() {
+        // Phase 9b: checked first — survival's 3-4 active seats would
+        // otherwise fall into the party path and read panels it never built.
+        if (this.isSurvival) {
+            this.updateSurvivalUI();
+            return;
+        }
         if (MATCH_STATE.playerCount > 2) {
             this.updatePartyUI();
             return;
@@ -1256,6 +1546,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.cleanupProjectiles();
+        this.checkWardReflections();
         this.checkProjectileHits();
         this.spawnDirector.checkRuneCollection();
         this.checkWallEffects();
@@ -1266,10 +1557,18 @@ export class GameScene extends Phaser.Scene {
         // Stage 2b: the host resolves rounds authoritatively (like a local
         // match) and mirrors the transition to the guest via round events (see
         // resolveRound). The guest never reaches here — it early-returns above.
-        const alive = this.players.filter(p => p.isAlive);
-        if (alive.length <= 1) {
-            this.roundFlow.resolveRound(alive);
-            return;
+        // Phase 9b: survival NEVER resolves a round — it has no score and no
+        // first-to-N. The director owns the equivalent poll (waves, respawns,
+        // and the one end condition: no hero left standing) and reports back
+        // whether the run is over so we stop stepping this frame.
+        if (this.survivalDirector) {
+            if (this.survivalDirector.update(time, delta)) return;
+        } else {
+            const alive = this.players.filter(p => p.isAlive);
+            if (alive.length <= 1) {
+                this.roundFlow.resolveRound(alive);
+                return;
+            }
         }
 
         this.roundTimer += delta;
@@ -1277,14 +1576,23 @@ export class GameScene extends Phaser.Scene {
         // Orb Surge fires once per round when the clock crosses surgeAtMs.
         // Stage 2a: no orbs in a net match, so no surge (would be a misleading
         // banner with nothing to spawn).
-        if (!this.netRole && !this.spawnDirector.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
+        // Phase 9b: no surge in survival either — orbs are the heroes' lifeline
+        // there, so the "this round is dragging" pressure valve makes no sense.
+        // The normal spawn cadence (and the Orb Rain mutator) still run.
+        if (!this.netRole && !this.isSurvival && !this.spawnDirector.surgeActive && this.roundTimer >= PRESSURE_CONFIG.surgeAtMs) {
             this.spawnDirector.triggerOrbSurge();
         }
 
         const seconds = Math.floor(this.roundTimer / 1000);
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
-        this.roundText.setText(`ROUND ${MATCH_STATE.round}  •  ${mins}:${secs.toString().padStart(2, '0')}`);
+        if (this.isSurvival) {
+            this.roundText.setText(
+                `SURVIVED ${mins}:${secs.toString().padStart(2, '0')}  •  ${this.survivalDirector.remainingThisWave()} LEFT`
+            );
+        } else {
+            this.roundText.setText(`ROUND ${MATCH_STATE.round}  •  ${mins}:${secs.toString().padStart(2, '0')}`);
+        }
 
         this.updateUI();
 
@@ -1305,6 +1613,13 @@ export class GameScene extends Phaser.Scene {
             const projectile = this.allProjectiles[i];
             if (!projectile || !projectile.active) continue;
 
+            // Phase 9b — survival co-op: resolve this shot's owner ONCE so the
+            // friendly-fire skip below is a plain reference comparison. Stays
+            // null in every other mode, where the skip can never trigger.
+            const shooter = this.isSurvival
+                ? this.players.find(p => p.playerNumber === projectile.ownerPlayerNumber)
+                : null;
+
             for (const player of this.players) {
                 if (!player.isAlive) continue;
 
@@ -1314,6 +1629,18 @@ export class GameScene extends Phaser.Scene {
 
                 if (distance < hitRadius) {
                     if (projectile.ownerPlayerNumber === player.playerNumber && !projectile.hasHitWall) {
+                        continue;
+                    }
+
+                    // Phase 9b: no hero-on-hero and no horde-on-horde damage.
+                    // Skipping the whole hit (rather than just the damage) also
+                    // covers every projectile-delivered side effect — burn,
+                    // slow, lightning stun, shield break — and lets the shot
+                    // fly on through a teammate. `shooter !== player` keeps the
+                    // classic self-hit-your-own-bounce mechanic intact, and
+                    // sameSurvivalTeam is false whenever either side carries no
+                    // team tag, i.e. in every non-survival mode.
+                    if (shooter && shooter !== player && sameSurvivalTeam(shooter, player)) {
                         continue;
                     }
 
