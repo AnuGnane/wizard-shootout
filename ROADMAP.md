@@ -117,6 +117,21 @@ maintenance debt. Pay it down before adding more surface area.
 - [x] `[O]` Lift the prototype limits: any class, any map, render host-only FX (muzzle/death/steam) on the guest — post-connect pick lobby (all 7 classes, all 10 built-in maps or RANDOM), full six-orb pool, and a host→guest `fx` event stream mirroring every arena mutation (breach, conjured wall, frost/unfrost, steam, wall decals) plus the one-shot FX (muzzle, death burst, blink); the host's target score travels with `start`. Custom maps stay local-only by design — the peer doesn't have them.
 - [x] `[F]` Decide on a relay (free TURN) so strict-symmetric-NAT players can connect at all — **decision: Open Relay Project's free TURN** (`openrelay.metered.ca`, ports 80/443 + TLS), added alongside Google STUN in `NetConnection.js`. Best-effort third-party infra: we run no server, and an unreachable relay degrades to the old STUN-only behaviour by ICE design, so there's no reachability logic to maintain. Same-network play never uses it. Revisit only if free TURN proves unreliable enough to justify hosting coturn.
 
+## Phase 10.5 — QA fix pass (from the full-game audit, see docs/QA_AUDIT.md)
+
+A five-stream audit (~350 runtime assertions) found 4 criticals, 8 majors and
+a minor/polish tail against an otherwise very healthy game. Repro probes are
+committed as dot-prefixed scripts in `tests/`. Fix in this order:
+
+- [ ] `[O]` C1+C2 crashes: burn-tick death freezes the game (`.qa1-crash.mjs`); survival softlock after a "first to 8+" match (`.qa2-survival-softlock.mjs`)
+- [ ] `[O]` Leaving online (C3+C4+M2+M3): PauseScene net teardown parity with GameOverScene, a `bye` message routed into OPPONENT LEFT, restart-from-pause sends before restarting, guest input unlatched on pause (`.qa5-netquit.mjs`, `.qa4-quit.mjs`)
+- [ ] `[S]` M1 + siblings: orb shot at the projectile cap must not consume charge/cooldown; capped triple pellets and phantom `fired++` likewise
+- [ ] `[S]` Signaling UX: reject pasting your own offer as an answer; timeout after the guest publishes its answer (double-join loser)
+- [ ] `[S]` Keyboard nav: MenuNav for Wardrobe, settings sliders, Online HOST/JOIN/BACK (+ StatsScene)
+- [ ] `[S]` Hardening batch: guest message validation (gameover/snapshot/fx/roundend), `send()` try/catch, NetSignal waiter rejection, disconnect grace period
+- [ ] `[H]` Cosmetic sweep: lobby "(PROTOTYPE)" title, MATCH POINT for seats 3-4, survival record tie, wall-effect kill credit + slider durations, stats-save throttle, survival stats row, remap-aware hints, dead code
+- [ ] `[F]` Blink design decision: mechanic says "teleport through one wall", implementation is a short-range hop (85% of hops cross no wall) — fix the mechanic or the copy
+
 ## Phase 11 — Ship & reach (release the finished thing)
 
 - [ ] `[S]` itch.io release + installable mobile PWA (offline play, add-to-home-screen)
