@@ -31,6 +31,11 @@ async function toMenu(peer) {
     await peer.page.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 20000 });
 }
 
+async function reload(peer) {
+    await peer.page.reload({ waitUntil: 'networkidle', timeout: 90000 });
+    await peer.page.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 90000 });
+}
+
 let server, stub, host, guest, guest2;
 try {
     ({ server } = await startVite());
@@ -53,42 +58,36 @@ try {
     }
     console.log('  guest page errors so far:', guest.errors.filter((e) => !/45999/.test(e)));
 
-    // ---------------- 4b: host pastes its OWN offer as the answer -----------
-    section('4b: host pastes its own offer code into the answer box');
-    await setBroker(host.page, DEAD_BROKER);
-    await gotoOnline(host.page);
+    // ---------------- 4b: see .qa4-selfpaste.mjs ----------------------------
+    section('4b: host pastes its own offer as the answer — see .qa4-selfpaste.mjs');
+
+    // ---------------- 4c: accept an answer twice / after open ---------------
+    section('4c: accepting an answer a second time, after the channel is open');
+    await reload(guest); await reload(host);
+    await setBroker(host.page, DEAD_BROKER); await setBroker(guest.page, DEAD_BROKER);
+    await gotoOnline(host.page); await gotoOnline(guest.page);
     await online(host.page, (s) => s.startHost());
     await host.page.waitForFunction(() => !!window.__game.scene.getScene('OnlineScene').offerArea?.value, null, { timeout: 60000 });
     const offer = await online(host.page, (s) => s.offerArea.value);
-    await online(host.page, (s, code) => { s.answerPaste.value = code; s._hostConnect(); }, offer);
-    await wait(1500);
-    console.log('  host lobby:', JSON.stringify(await lobby(host.page)));
-    console.log('  host errors:', host.errors.filter((e) => !/45999/.test(e)));
-
-    // ...and does the host still work afterwards with the REAL answer?
+    await online(guest.page, (s) => s.startJoin());
     await online(guest.page, (s, code) => { s.offerPaste.value = code; s._guestGenerate(); }, offer);
     await guest.page.waitForFunction(() => !!window.__game.scene.getScene('OnlineScene').answerArea?.value, null, { timeout: 60000 });
     const answer = await online(guest.page, (s) => s.answerArea.value);
     await online(host.page, (s, code) => { s.answerPaste.value = code; s._hostConnect(); }, answer);
     await host.page.waitForFunction(() => window.__game.scene.getScene('OnlineScene').handedOff, null, { timeout: 60000 });
-    console.log('  recovered — host connected after the bad paste:', JSON.stringify(await lobby(host.page)));
-
-    // ---------------- 4c: accept an answer twice / after open ---------------
-    section('4c: accepting an answer a second time, after the channel is open');
+    console.log('  connected:', JSON.stringify(await lobby(host.page)));
     const twice = await host.page.evaluate(async (code) => {
         const s = window.__game.scene.getScene('OnlineScene');
         const before = { status: s.statusText.text, flowEls: s.flowEls.length, open: s.conn.isOpen() };
         let threw = null;
         try { await s.conn.acceptAnswer(code); } catch (e) { threw = e.name + ': ' + e.message; }
-        return { before, threw, after: { status: s.statusText.text, open: s.conn.isOpen() } };
+        await new Promise((r) => setTimeout(r, 500));
+        return { before, threw, after: { status: s.statusText.text, open: s.conn.isOpen(), handedOff: s.handedOff } };
     }, answer);
-    console.log('  ', JSON.stringify(twice));
-    console.log('   (the CONNECT button is gone post-connect: flowEls =', twice.before.flowEls, ')');
-    // and through the UI path (_hostConnect swallows it into statusText)
-    await online(host.page, (s, code) => { s.answerPaste = s.answerPaste || { value: '' }; s.answerPaste.value = code; s._hostConnect(); }, answer);
-    await wait(800);
-    console.log('  after _hostConnect() again:', JSON.stringify(await lobby(host.page)));
+    console.log('  second acceptAnswer:', JSON.stringify(twice));
+    console.log('   (post-connect the DOM CONNECT button is gone: flowEls =', twice.before.flowEls, ')');
     await toMenu(host); await toMenu(guest);
+    await reload(host); await reload(guest);
 
     // ---------------- 4d: wrong room code, stub broker running --------------
     section('4d: a wrong 5-char room code with the broker up');
