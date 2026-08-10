@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { audio } from '../systems/AudioSystem.js';
 import { NetConnection } from '../systems/NetConnection.js';
-import { setSession } from '../systems/NetSession.js';
+import { setSession, leaveSession } from '../systems/NetSession.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { MAP_DEFS } from '../systems/Maps.js';
 import { THEMES, DEFAULT_THEME } from '../systems/Themes.js';
@@ -144,6 +144,18 @@ export class OnlineScene extends Phaser.Scene {
         const doJoin = () => this.startJoin();
         const doBack = () => {
             audio.uiClick();
+            // Same deliberate-exit rule as PauseScene's QUIT TO MENU, one
+            // level up: once the connection has been handed to NetSession
+            // (we're in the post-connect pick lobby), _shutdown deliberately
+            // leaves it open for GameScene — so backing out from here used to
+            // leave the peer sitting in the lobby forever with a live session.
+            // Say goodbye and drop it. Before hand-off, _shutdown still owns
+            // closing the connection, so this stays out of the way.
+            if (this.handedOff) {
+                leaveSession();
+                this.handedOff = false;
+                this.conn = null;
+            }
             this.scene.start('MenuScene');
         };
         this.hostBtn = this.makeButton(width / 2 - 120, 145, '[ HOST ]', '#334455', '#66ccff', doHost);
