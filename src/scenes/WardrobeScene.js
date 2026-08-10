@@ -8,6 +8,7 @@ import {
 } from '../systems/Cosmetics.js';
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 import { STATS } from '../systems/Stats.js';
+import { MenuNav } from '../systems/MenuNav.js';
 
 // Phase 6c — the Wardrobe: preview + equip the seat-1 (blue team) cosmetics.
 // Two rows of swatches (robe base + staff material); unlocked ones are
@@ -45,6 +46,14 @@ export class WardrobeScene extends Phaser.Scene {
 
         this.swatches = [];
 
+        // M6 fix — the swatch grid is 2 rows (robe / staff) of unlocked
+        // options plus the back button, so grid mode (row/col nearest-
+        // neighbor, same as MapSelectScene/OnlineScene's lobbyNav) reads
+        // naturally: up/down crosses rows, left/right walks a row. Created
+        // before buildRow() below since swatches register themselves as
+        // they're built, exactly like SettingsScene's toggles.
+        this.menuNav = new MenuNav(this, { grid: true, onBack: () => this.goBack() });
+
         // --- ROBE row ---
         this.add.text(width / 2, 268, 'ROBE', {
             font: 'bold 16px monospace',
@@ -74,19 +83,25 @@ export class WardrobeScene extends Phaser.Scene {
         }).setOrigin(0.5).setInteractive({ useHandCursor: true });
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
-        backBtn.on('pointerdown', () => this.goBack());
-
-        this.input.keyboard.once('keydown-ESC', () => this.goBack());
+        const doBack = () => this.goBack();
+        backBtn.on('pointerdown', doBack);
+        // Row 2 (below both swatch rows): a lone item, so its column doesn't
+        // matter for reachability, only for which swatch "up" returns to.
+        this.menuNav.add(backBtn, doBack, { row: 2, col: 0 });
 
         this.refreshPreview();
         this.refreshHighlights();
+    }
+
+    update() {
+        this.menuNav.pollPad();
     }
 
     buildRow(slot, options, width, yRect) {
         const spacing = slot === 'robe' ? 130 : 150;
         const startX = width / 2 - ((options.length - 1) * spacing) / 2;
         options.forEach((option, i) => {
-            this.makeSwatch(startX + i * spacing, yRect, slot, option);
+            this.makeSwatch(startX + i * spacing, yRect, slot, option, i);
         });
     }
 
@@ -99,7 +114,7 @@ export class WardrobeScene extends Phaser.Scene {
         return option.color;
     }
 
-    makeSwatch(x, yRect, slot, option) {
+    makeSwatch(x, yRect, slot, option, index) {
         const unlocked = isUnlocked(option, STATS);
         const color = this.swatchColor(slot, option);
 
@@ -128,7 +143,14 @@ export class WardrobeScene extends Phaser.Scene {
             }).setOrigin(0.5, 0);
         } else {
             rect.setInteractive({ useHandCursor: true });
-            rect.on('pointerdown', () => this.onSwatchClick(slot, option.id));
+            const activate = () => this.onSwatchClick(slot, option.id);
+            rect.on('pointerdown', activate);
+            // Only unlocked swatches are focusable, matching mouse behaviour
+            // (locked ones have no pointerdown handler either). row 0 = robe,
+            // row 1 = staff; col = the option's position in its own row, so
+            // left/right nav tracks the on-screen layout even though locked
+            // options between unlocked ones leave gaps in the column numbers.
+            this.menuNav.add(rect, activate, { row: slot === 'robe' ? 0 : 1, col: index });
         }
 
         this.swatches.push({ slot, id: option.id, border, unlocked });

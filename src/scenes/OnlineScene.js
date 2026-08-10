@@ -123,14 +123,26 @@ export class OnlineScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         // Mode buttons (Phaser). HOST / JOIN start the two signaling flows.
-        this.hostBtn = this.makeButton(width / 2 - 120, 145, '[ HOST ]', '#334455', '#66ccff',
-            () => this.startHost());
-        this.joinBtn = this.makeButton(width / 2 + 120, 145, '[ JOIN ]', '#334455', '#66ccff',
-            () => this.startJoin());
-        this.backBtn = this.makeButton(width / 2, 662, '[ BACK ]', '#333355', '#5599ff', () => {
+        const doHost = () => this.startHost();
+        const doJoin = () => this.startJoin();
+        const doBack = () => {
             audio.uiClick();
             this.scene.start('MenuScene');
-        }, '20px');
+        };
+        this.hostBtn = this.makeButton(width / 2 - 120, 145, '[ HOST ]', '#334455', '#66ccff', doHost);
+        this.joinBtn = this.makeButton(width / 2 + 120, 145, '[ JOIN ]', '#334455', '#66ccff', doJoin);
+        this.backBtn = this.makeButton(width / 2, 662, '[ BACK ]', '#333355', '#5599ff', doBack, '20px');
+
+        // M8 fix — top-level HOST/JOIN/BACK focus nav, same shape as every
+        // other menu (activate callbacks are the exact functions already
+        // wired to pointerdown, above). This is a SEPARATE MenuNav from the
+        // post-connect lobbyNav built in _buildPickLobby(): only one is ever
+        // live at a time (see setActive(false) there) so their keydown
+        // listeners never both react to the same press.
+        this.menuNav = new MenuNav(this, { onBack: doBack });
+        this.menuNav.add(this.hostBtn, doHost);
+        this.menuNav.add(this.joinBtn, doJoin);
+        this.menuNav.add(this.backBtn, doBack);
 
         // Status line, updated across the flow.
         this.statusText = this.add.text(width / 2, 196, 'Choose HOST or JOIN to begin.', {
@@ -142,18 +154,15 @@ export class OnlineScene extends Phaser.Scene {
         this._buildOverlay();
         this.scale.on('resize', this._layoutOverlay, this);
 
-        this.input.keyboard.once('keydown-ESC', () => {
-            audio.uiClick();
-            this.scene.start('MenuScene');
-        });
-
         this.events.once('shutdown', this._shutdown, this);
     }
 
-    // Gamepad polling for the pick lobby's focus nav (Phaser has no
-    // keydown-style pad events — same shape every other menu scene uses).
-    // Inert until _buildPickLobby() creates the nav.
+    // Gamepad polling for both the top-level nav and the pick lobby's focus
+    // nav (Phaser has no keydown-style pad events — same shape every other
+    // menu scene uses). Each MenuNav no-ops its own pollPad() while inactive,
+    // so calling both here is safe regardless of which stage we're in.
     update() {
+        if (this.menuNav) this.menuNav.pollPad();
         if (this.lobbyNav) this.lobbyNav.pollPad();
     }
 
@@ -682,6 +691,15 @@ export class OnlineScene extends Phaser.Scene {
         this._clearLobby();         // idempotent — nothing to clear the first time
         this.hostBtn.setVisible(false);
         this.joinBtn.setVisible(false);
+
+        // M8 fix — hand keyboard/pad off to the pick lobby's own nav. Mirrors
+        // ControlsScene's setActive(false)/(true) hand-off pattern: this
+        // keeps this.menuNav intact (so its highlight/listener teardown still
+        // happens exactly once, on scene shutdown) rather than destroying and
+        // rebuilding it, while guaranteeing only one nav's keydown handler
+        // ever acts on a given press. HOST/JOIN/BACK never come back once the
+        // channel is open, so there's no path that needs to re-activate it.
+        if (this.menuNav) this.menuNav.setActive(false);
 
         const isHost = this.role === 'host';
         this.subtitleText.setText(isHost

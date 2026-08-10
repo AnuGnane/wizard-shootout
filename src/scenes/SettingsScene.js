@@ -79,10 +79,11 @@ export class SettingsScene extends Phaser.Scene {
         };
         this.controls = [];
 
-        // Phase 8 — keyboard/pad focus nav over every toggle + the Save/
-        // Controls/Back buttons (sliders stay mouse/touch-only for now, see
-        // ROADMAP follow-ups). Created before addToggle()/buttons below run,
-        // since they register themselves as items as they're built.
+        // Phase 8 — keyboard/pad focus nav over every toggle, every slider's
+        // [-]/[+] steppers, and the Save/Controls/Back buttons (M7 fix:
+        // sliders used to be mouse/touch-only). Created before addToggle()/
+        // addSlider()/buttons below run, since they register themselves as
+        // items as they're built.
         this.menuNav = new MenuNav(this, { onBack: () => this.goToMenu() });
 
         // === LEFT COLUMN ===
@@ -267,17 +268,27 @@ export class SettingsScene extends Phaser.Scene {
             fill: '#66ff66',
         }).setInteractive({ useHandCursor: true });
 
-        minus.on('pointerdown', () => {
+        // M7 fix — the same decrement/increment functions drive both the
+        // mouse pointerdown handlers and the keyboard/pad menuNav items,
+        // exactly like addToggle's doToggle above: [-] and [+] each become
+        // their own focusable stop (reachable via arrows, fired via ENTER/
+        // SPACE/gamepad A), stepping by this slider's own `step` and
+        // clamping to [min, max] same as the mouse path.
+        const doMinus = () => {
             audio.uiClick();
             this.settings[key] = Math.max(min, Math.round((this.settings[key] - step) * 100) / 100);
             valueText.setText(`${formatter(this.settings[key])}`);
-        });
-
-        plus.on('pointerdown', () => {
+        };
+        const doPlus = () => {
             audio.uiClick();
             this.settings[key] = Math.min(max, Math.round((this.settings[key] + step) * 100) / 100);
             valueText.setText(`${formatter(this.settings[key])}`);
-        });
+        };
+
+        minus.on('pointerdown', doMinus);
+        plus.on('pointerdown', doPlus);
+        this.menuNav.add(minus, doMinus);
+        this.menuNav.add(plus, doPlus);
 
         this.controls.push({ key, valueText, formatter });
         this.yPos += 25;

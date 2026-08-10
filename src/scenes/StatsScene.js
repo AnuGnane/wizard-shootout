@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { ELEMENT_COLORS } from '../config.js';
 import { STATS, ACHIEVEMENTS } from '../systems/Stats.js';
 import { audio } from '../systems/AudioSystem.js';
+import { MenuNav } from '../systems/MenuNav.js';
 
 const ELEMENT_KEYS = ['arcane', 'fire', 'ice', 'earth', 'lightning'];
 
@@ -29,12 +30,20 @@ export class StatsScene extends Phaser.Scene {
         const winRate = totalMatches > 0 ? Math.round((s.matchWins / totalMatches) * 100) : 0;
         const kd = s.deaths > 0 ? (s.kills / s.deaths).toFixed(2) : s.kills.toFixed(2);
 
+        // StatsScene minor fix — a survival row alongside the existing
+        // columns, one line added to each so both stay the same length and
+        // it renders through the exact same drawStatColumn styling as every
+        // other row. Only survivalRuns/survivalBestWave actually exist on
+        // STATS (Stats.js:49-51) — there is no separate horde-kill counter
+        // (recordKill() doesn't distinguish survival from versus play), so
+        // that's what's shown rather than inventing a field.
         const leftLines = [
             ['Games Played', s.gamesPlayed],
             ['Match Wins', s.matchWins],
             ['Match Losses', s.matchLosses],
             ['Win Rate', `${winRate}%`],
             ['Best Streak', s.bestStreak],
+            ['Survival Runs', s.survivalRuns],
         ];
         const rightLines = [
             ['Kills', s.kills],
@@ -42,13 +51,17 @@ export class StatsScene extends Phaser.Scene {
             ['K/D', kd],
             ['Orbs Collected', s.orbsCollected],
             ['Damage Dealt', s.damageDealt],
+            ['Best Wave', s.survivalBestWave],
         ];
 
         this.drawStatColumn(width / 2 - 260, 90, leftLines);
         this.drawStatColumn(width / 2 + 40, 90, rightLines);
 
         // Per-element kill counts, colored by element (same palette as HUD/orbs).
-        this.add.text(width / 2, 236, 'KILLS BY ELEMENT', {
+        // Every y below is shifted +26 (one row) from the pre-fix layout to
+        // keep its gap to the columns above exactly as it was, now that the
+        // columns are 6 rows instead of 5.
+        this.add.text(width / 2, 262, 'KILLS BY ELEMENT', {
             font: 'bold 12px monospace',
             fill: '#8888aa',
         }).setOrigin(0.5);
@@ -56,7 +69,7 @@ export class StatsScene extends Phaser.Scene {
         const elemStartX = width / 2 - ((ELEMENT_KEYS.length - 1) * 90) / 2;
         ELEMENT_KEYS.forEach((el, i) => {
             const color = '#' + ELEMENT_COLORS[el].toString(16).padStart(6, '0');
-            this.add.text(elemStartX + i * 90, 260, `${el}\n${s.killsByElement[el]}`, {
+            this.add.text(elemStartX + i * 90, 286, `${el}\n${s.killsByElement[el]}`, {
                 font: '12px monospace',
                 fill: color,
                 align: 'center',
@@ -64,7 +77,7 @@ export class StatsScene extends Phaser.Scene {
         });
 
         // Achievements grid: 4 columns, one row per 4 achievements.
-        this.add.text(width / 2, 300, 'ACHIEVEMENTS', {
+        this.add.text(width / 2, 326, 'ACHIEVEMENTS', {
             font: 'bold 16px monospace',
             fill: '#ffdd44',
         }).setOrigin(0.5);
@@ -73,7 +86,7 @@ export class StatsScene extends Phaser.Scene {
         const cellW = 232;
         const cellH = 66;
         const gridStartX = width / 2 - (cols * cellW) / 2;
-        const gridStartY = 326;
+        const gridStartY = 352;
 
         ACHIEVEMENTS.forEach((ach, i) => {
             const col = i % cols;
@@ -83,7 +96,12 @@ export class StatsScene extends Phaser.Scene {
             this.drawAchievementCell(cx, cy, cellW - 10, cellH - 8, ach);
         });
 
-        // Back button + ESC, matching SettingsScene's convention.
+        // Back button + ESC. StatsScene minor fix: wired into a MenuNav (a
+        // single-item nav — just the back button, per the audit's "wire the
+        // back button for consistency"; the read-only stat rows/achievement
+        // grid aren't interactive so there's nothing else to focus) so ESC
+        // and gamepad B route through the same onBack path every other menu
+        // uses, instead of a standalone once-only ESC listener.
         const backBtn = this.add.text(width / 2, height - 34, '[ BACK ]', {
             font: '24px monospace',
             fill: '#ffffff',
@@ -93,9 +111,15 @@ export class StatsScene extends Phaser.Scene {
 
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
-        backBtn.on('pointerdown', () => this.goBack());
+        const doBack = () => this.goBack();
+        backBtn.on('pointerdown', doBack);
 
-        this.input.keyboard.once('keydown-ESC', () => this.goBack());
+        this.menuNav = new MenuNav(this, { onBack: doBack });
+        this.menuNav.add(backBtn, doBack);
+    }
+
+    update() {
+        this.menuNav.pollPad();
     }
 
     goBack() {
