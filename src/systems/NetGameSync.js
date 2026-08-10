@@ -4,6 +4,12 @@
 // the guest-side projectile/rune puppets, and the host-driven round/match
 // transitions (roundend / restart / gameover) plus peer disconnect.
 //
+// The in-match protocol, by direction:
+//   host -> guest   snap | fx | roundend | restart | gameover
+//   guest -> host   input
+//   either way      bye        "I am leaving on purpose" (NetSession.leaveSession)
+// (`classpick` / `start` belong to the lobby and never reach this module.)
+//
 // The role itself (`scene.netRole`, 'host' | 'guest' | null) deliberately stays
 // on the scene: it gates the scene's own hot paths (update, setupCollisions,
 // spawnProjectile, handlePlayerShoot). When it is null nothing in here is ever
@@ -16,7 +22,7 @@ import { GamepadInput, CompositeInput } from './GamepadInput.js';
 import { ARENA } from './Maps.js';
 import { MATCH_STATE } from './MatchState.js';
 import { NetSession, clearSession } from './NetSession.js';
-import { NetInput } from './NetInput.js';
+import { NetInput, EMPTY_STATE } from './NetInput.js';
 import { WIZARD_CLASSES } from './Classes.js';
 import { audio } from './AudioSystem.js';
 
@@ -211,6 +217,28 @@ export class NetGameSync {
         });
         this._lastSentInput = { ...s };
         this._netInputSendAt = time + 33; // ~30Hz heartbeat
+    }
+
+    // Guest -> host: force an all-buttons-up input and remember it as the last
+    // thing we sent. NetInput on the host replays the LAST packet it received
+    // until the next one arrives, and sendGuestInput above only runs from the
+    // scene's update loop — so the moment that loop stops with a key held, the
+    // guest's wizard keeps walking (and shooting) host-side (M3). Called
+    // wherever the guest stops reading its own controls; today that is
+    // PauseScene opening.
+    //
+    // Recording it as _lastSentInput matters both ways: it stops the heartbeat
+    // re-sending a stale held key, and it makes the still-held key read as
+    // "changed" on resume, so the very first frame back sends it again.
+    //
+    // No-op for the host and in every local mode (netRole is null there and
+    // nothing ever calls this), so local play is untouched.
+    sendNeutralInput() {
+        if (this.scene.netRole !== 'guest' || this._peerLeft) return;
+        this._lastSentInput = { ...EMPTY_STATE };
+        const conn = NetSession.connection;
+        if (!conn || !conn.isOpen()) return;
+        conn.send({ t: 'input', ...EMPTY_STATE });
     }
 
     // Apply the most recent host snapshot to the puppets: lerp positions for
@@ -566,6 +594,16 @@ export class NetGameSync {
     // a malformed/unknown packet is simply ignored.
     onNetMessage(m) {
         if (!m || typeof m !== 'object') return;
+        // `bye` — the peer left on purpose (see NetSession.leaveSession). The
+        // ONE message both roles send and both roles receive, so it is handled
+        // ahead of the role split. It routes into exactly the path a hard
+        // disconnect takes, just without the ~6-8s the transport needs to
+        // notice; onNetClose is idempotent, so the channel closing a moment
+        // later can't double-fire the notice.
+        if (m.t === 'bye') {
+            this.onNetClose();
+            return;
+        }
         if (this.scene.netRole === 'host') {
             if (m.t === 'input' && this.netInput) this.netInput.setState(m);
         } else if (this.scene.netRole === 'guest') {
@@ -577,6 +615,23 @@ export class NetGameSync {
             else if (m.t === 'restart') this.onNetRestart(m);
             else if (m.t === 'gameover') this.onNetGameOver(m);
         }
+    }
+
+    // Drop the pause menu, if it happens to be up, before acting on a message
+    // that moves this scene somewhere else. PauseScene is the only thing that
+    // pauses GameScene, and a PAUSED scene stops ticking timers and reports
+    // isActive() === false — so a host-driven transition arriving while the
+    // local player sits in that menu would either strand them there or leave
+    // the overlay parked on top of a scene that has already moved on. The
+    // remote peer's flow does not stop for our menu, so we match it.
+    //
+    // Idempotent and free when nothing is paused; never reached in a local
+    // match (no message ever arrives).
+    closePauseMenu() {
+        const scene = this.scene;
+        if (!scene.scene || !scene.scene.isPaused || !scene.scene.isPaused()) return;
+        scene.scene.stop('PauseScene');
+        scene.scene.resume();
     }
 
     // Guest: the host resolved the round. Freeze the sync loop, adopt the
@@ -596,13 +651,22 @@ export class NetGameSync {
         }
     }
 
-    // Guest: the host advanced to the next round. Adopt the round number and
-    // rebuild the scene fresh (new puppets at spawns; the fixed map matches the
-    // host). Puppets are cleared here too, though shutdown would also clear them.
+    // Guest: the host restarted the round — either advancing to the next one
+    // after the banner, or replaying this one from its pause menu. Adopt the
+    // round number and rebuild the scene fresh (new puppets at spawns; the
+    // fixed map matches the host). Puppets are cleared here too, though
+    // shutdown would also clear them.
+    //
+    // Deliberately NOT guarded on `roundOver`: a restart arriving mid-round-end
+    // is the normal case (the banner is up on both peers when the host
+    // advances) and is also how a host restarting DURING the banner unfreezes
+    // us. The rebuild drops the banner and clears roundOver, and the scores
+    // both peers adopted from `roundend` are untouched, so we come back in step.
     onNetRestart(m) {
         if (typeof m.round === 'number') MATCH_STATE.round = m.round;
         this.clearNetPuppets();
         this.clearNetDecor();
+        this.closePauseMenu();
         this.scene.scene.restart();
     }
 
@@ -612,6 +676,7 @@ export class NetGameSync {
         this.scene.roundOver = true;
         this.clearNetPuppets();
         this.clearNetDecor();
+        this.closePauseMenu();
         this.scene.scene.start('GameOverScene', {
             winner: m.winner,
             scores: m.scores || { ...MATCH_STATE.scores },
@@ -619,15 +684,33 @@ export class NetGameSync {
         });
     }
 
-    // Peer disconnected mid-match. Halt the sync loop, show a message, and bounce
-    // back to the menu — never throw. Idempotent (guarded by _peerLeft).
+    // The peer is gone — either it said so (`bye`) or the channel closed under
+    // it. Halt the sync loop, show a message, and bounce back to the menu —
+    // never throw. Idempotent (guarded by _peerLeft), so a bye immediately
+    // followed by the channel closing runs this exactly once.
     onNetClose() {
         const scene = this.scene;
         if (this._peerLeft) return;
         this._peerLeft = true;
         scene.roundOver = true; // freeze the update loop (both roles)
 
-        if (!scene.scene || !scene.scene.isActive || !scene.scene.isActive()) return;
+        const plugin = scene.scene;
+        if (!plugin) return;
+
+        // Without this, a peer leaving while WE sit in the pause menu strands
+        // us there: a paused scene's timers don't tick, so the delayedCall
+        // below would never fire.
+        const paused = !!(plugin.isPaused && plugin.isPaused());
+        if (paused) this.closePauseMenu();
+
+        // A PAUSED scene is a LIVE scene — display list and clock intact, it
+        // just isn't stepping — and closePauseMenu has already queued its
+        // resume, so it counts as present here even though isActive() won't
+        // agree until next frame (every ScenePlugin op is queued, never
+        // immediate). Anything else — shut down, never started — gets nothing
+        // beyond the flags above, which is what keeps a quit-then-message from
+        // drawing on a dead scene.
+        if (!paused && (!plugin.isActive || !plugin.isActive())) return;
 
         const cx = GAME_CONFIG.width / 2;
         const cy = ARENA.offsetY + ARENA.height / 2;

@@ -3,6 +3,9 @@
 // toasts. resolveRound is the single place a round (and therefore a match)
 // ends — it books the score, mirrors the transition to a net guest, and either
 // restarts the scene for the next round or leaves for GameOverScene.
+// restartRound is likewise the single place a round RE-starts (the round-end
+// advance, and PauseScene's RESTART ROUND) — which is what keeps a net guest
+// in step with a host that restarts out of turn.
 //
 // Round *state* (roundOver, roundStats, trackProfile) stays on the scene, where
 // the update loop and the AI read it; this module only drives the transition.
@@ -412,14 +415,39 @@ export class RoundFlow {
                 MATCH_STATE.round++;
                 // Stage 2b: advance the guest to the same next round right before
                 // we restart (order: bump round, send it, then restart locally).
-                if (scene.netRole === 'host') {
-                    const conn = NetSession.connection;
-                    if (conn && conn.isOpen()) {
-                        conn.send({ t: 'restart', round: MATCH_STATE.round });
-                    }
-                }
-                scene.scene.restart();
+                this.restartRound();
             }
         });
+    }
+
+    // The ONE place a round restart happens, for every path that triggers one:
+    // the round-end advance above and PauseScene's RESTART ROUND.
+    //
+    // Order is the whole point (M2). The host TELLS THE GUEST FIRST and only
+    // then restarts locally, because scene.restart() cancels every pending
+    // delayedCall on the scene — including, previously, the very timer the
+    // `restart` message was sent from. A host that hit RESTART ROUND while the
+    // round-end banner was still up therefore never told the guest anything:
+    // the guest sat frozen in `roundOver` for a full round and then rejoined on
+    // the NEXT round's message with a stale score. Routing every restart
+    // through here means the message is never the thing that gets cancelled.
+    //
+    // MATCH_STATE.round is read, not written: the round-end path bumps it
+    // before calling in (advance to the next round), the pause path leaves it
+    // alone (replay the current one), and the guest simply adopts whatever
+    // number arrives. Scores are untouched either way — both peers already
+    // booked them from `roundend`.
+    //
+    // Local modes take the last line and nothing else, so 1P/2P/party/survival
+    // restart exactly as before.
+    restartRound() {
+        const scene = this.scene;
+        if (scene.netRole === 'host') {
+            const conn = NetSession.connection;
+            if (conn && conn.isOpen()) {
+                conn.send({ t: 'restart', round: MATCH_STATE.round });
+            }
+        }
+        scene.scene.restart();
     }
 }

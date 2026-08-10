@@ -7,10 +7,15 @@
 // Also doubles as an inert "dummy" input (default all-false, never fed) for the
 // guest's puppet Players, which are moved by snapshot application, not input.
 
-const EMPTY_STATE = {
+// The all-buttons-up state. Exported because it is also the exact payload the
+// GUEST sends up when its own controls stop being read (pausing) — the host
+// replays the LAST input it received forever, so a held key would otherwise
+// keep walking and shooting the guest's wizard for the whole pause (M3).
+// Frozen so a caller spreading it into a packet can never mutate the default.
+export const EMPTY_STATE = Object.freeze({
     up: false, down: false, left: false, right: false,
     shoot: false, runeShoot: false, ability: false,
-};
+});
 
 export class NetInput {
     constructor() {
