@@ -8,19 +8,57 @@ import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { MenuNav } from '../systems/MenuNav.js';
 
+// The three fields below are the only ones that can arrive from ANOTHER
+// MACHINE: NetGameSync starts this scene straight off the host's `gameover`
+// message. That message is validated at the wire (see onNetGameOver), but this
+// scene gets its own defaults too, because it is the one scene whose failure
+// mode is fatal rather than ugly — a throw inside create() means the scene is
+// never added to the running list, and with GameScene already stopped the game
+// is left with ZERO active scenes: a black screen, no ESC, reload the only way
+// out. That is exactly what `{ t:'gameover', winner:'x' }` used to do, via
+// teamColors[NaN] being undefined at the winnerColor line below.
+//
+// Everything else this scene reads (survival, daily, achievements) is produced
+// locally by GameScene/RoundFlow and never crosses the wire.
+//
+// LOCAL PLAY IS UNAFFECTED: every local caller already passes a real seat
+// number, a per-seat score object and a positive round count, and for those the
+// coercions are the identity — same values, same rendering, same everything.
+function coerceSeat(v) {
+    return Number.isInteger(v) && v >= 1 && v <= 4 ? v : 1;
+}
+
+function coerceRounds(v) {
+    return Number.isInteger(v) && v >= 1 ? v : 1;
+}
+
+// A per-seat score table with a real number in every seat. A non-object (the
+// wire once delivered the string 'nope', which spreads into characters and
+// rendered an "o  -  p" final score) collapses to all-zeros.
+function coerceScoreTable(raw) {
+    const out = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    if (!raw || typeof raw !== 'object') return out;
+    for (let n = 1; n <= 4; n++) {
+        const v = raw[n];
+        if (Number.isFinite(v)) out[n] = v;
+    }
+    return out;
+}
+
 export class GameOverScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameOverScene' });
     }
 
     init(data) {
-        this.winner = data.winner || 1;
-        this.scores = data.scores || { 1: 0, 2: 0 };
-        this.rounds = data.rounds || 1;
+        data = data || {};
+        this.winner = coerceSeat(data.winner);
+        this.scores = coerceScoreTable(data.scores);
+        this.rounds = coerceRounds(data.rounds);
         // Phase 6a: achievements unlocked by GameScene's end-of-match check,
         // passed along since their toast may not have had time to show
         // before the scene changed.
-        this.unlockedAchievements = data.unlockedAchievements || [];
+        this.unlockedAchievements = Array.isArray(data.unlockedAchievements) ? data.unlockedAchievements : [];
         // Phase 6b: daily challenge framing — when true, this scene reads as
         // a daily result and REMATCH re-runs the daily instead of a normal
         // match (see rematch()).
