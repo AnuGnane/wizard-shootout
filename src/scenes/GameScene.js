@@ -503,6 +503,22 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.shake(duration, intensity);
     }
 
+    // Stage 2b / Phase 10.2 — the ONE seam that makes a projectile visible to
+    // the guest: the host stamps a monotonic net id, and sendHostSnapshot ships
+    // every active projectile by that id so the guest reconciles a puppet for
+    // it. EVERY projectile an online-legal class can put in the world routes
+    // through here — normal shots, orb shots and each triple pellet (via
+    // spawnProjectile), Flame Burst's 8 sparks, and Scatter Dash's 3 backward
+    // pellets. A Warden's reflect deliberately does NOT re-stamp: flipping
+    // ownership leaves netId alone, so the guest keeps tracking the same puppet
+    // and simply sees it turn around.
+    //
+    // No-op off the host (guest and every local mode), so nothing changes for
+    // a local match.
+    tagNetProjectile(projectile) {
+        if (this.netRole === 'host') projectile.netId = this.netSync.nextProjId();
+    }
+
     // Expanding stroked circle, styled like the death ring.
     spawnRing(x, y, color, scaleTo, duration) {
         const ring = this.add.circle(x, y, 10, color, 0);
@@ -614,6 +630,7 @@ export class GameScene extends Phaser.Scene {
 
             // NOT added to projectilesByPlayer — sparks don't count toward
             // the cap. checkProjectileHits only reads allProjectiles.
+            this.tagNetProjectile(spark);
             this.projectiles.add(spark);
             this.allProjectiles.push(spark);
             spark.init();
@@ -791,6 +808,7 @@ export class GameScene extends Phaser.Scene {
 
             // NOT added to projectilesByPlayer — like Flame Burst's sparks,
             // an ability-spawned burst doesn't eat the player's shot cap.
+            this.tagNetProjectile(pellet);
             this.projectiles.add(pellet);
             this.allProjectiles.push(pellet);
             pellet.init();
@@ -1736,7 +1754,7 @@ export class GameScene extends Phaser.Scene {
 
         // Stage 2b: tag host projectiles (normal + each triple/rune pellet routes
         // through here) so the guest can reconcile puppets by id.
-        if (this.netRole === 'host') projectile.netId = this.netSync.nextProjId();
+        this.tagNetProjectile(projectile);
 
         this.projectiles.add(projectile);
         this.projectilesByPlayer[playerNum].push(projectile);

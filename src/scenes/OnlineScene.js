@@ -4,6 +4,10 @@ import { NetConnection } from '../systems/NetConnection.js';
 import { setSession } from '../systems/NetSession.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { MAP_DEFS } from '../systems/Maps.js';
+import { THEMES, DEFAULT_THEME } from '../systems/Themes.js';
+import { WIZARD_CLASSES, CLASS_KEYS } from '../systems/Classes.js';
+import { NET_CLASS_POOL, coerceNetClass } from '../systems/NetGameSync.js';
+import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../systems/NetSignal.js';
 
@@ -53,6 +57,29 @@ const AREA_H = 68;
 const QR_SCALE = 3;
 const QR_MAX_VERSION = 20;
 
+// ---- post-connect pick lobby (Phase 10.2) ---------------------------------
+// Once the data channel is up the code-exchange widgets come down and BOTH
+// peers get a pick screen, drawn in Phaser (not DOM) so it is MenuNav-navigable
+// like every other menu. Card geometry mirrors ClassSelectScene's — derived
+// from the class count so the row keeps fitting as classes are added — just
+// shorter, since this screen also has to hold a map strip.
+const LOBBY_ROW_W = 980;
+const LOBBY_CARD_GAP = 8;
+const LOBBY_CARD_W = Math.floor((LOBBY_ROW_W - (CLASS_KEYS.length - 1) * LOBBY_CARD_GAP) / CLASS_KEYS.length);
+const LOBBY_CARD_H = 168;
+const LOBBY_CLASS_Y = 318;
+
+// Map strip: every built-in map plus RANDOM, one compact thumbnail each.
+// CUSTOM MAPS ARE DELIBERATELY ABSENT — they live in the picker's own
+// localStorage and simply do not exist on the other peer, so an index into the
+// combined list would build two different arenas. Everything here indexes
+// MAP_DEFS, which both peers ship in their bundle.
+const MAP_SLOT_W = 84;
+const MAP_SLOT_H = 48;
+const MAP_STRIP_Y = 470;
+const MAP_THUMB_TILE = 2;
+const RANDOM_MAP = 'random';
+
 export class OnlineScene extends Phaser.Scene {
     constructor() {
         super({ key: 'OnlineScene' });
@@ -69,6 +96,17 @@ export class OnlineScene extends Phaser.Scene {
         this.flowEls = [];        // DOM nodes for the current HOST/JOIN flow
         this.confirmText = null;
 
+        // Phase 10.2 — post-connect pick lobby state. All null/empty until the
+        // data channel opens and _buildPickLobby() runs.
+        this.lobbyNav = null;
+        this.lobbyEls = [];       // Phaser objects belonging to the pick screen
+        this.classCards = [];     // { key, locked, bg, ... } per wizard class
+        this.mapCards = [];       // { choice, bg, ... } per map + RANDOM
+        this.pickedClass = null;      // this peer's own confirmed class
+        this.guestClass = null;       // host only: the guest's confirmed class
+        this.pickedMapChoice = null;  // host only: map index, or RANDOM_MAP
+        this.starting = false;        // host only: 'start' already sent
+
         const { width, height } = this.cameras.main;
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
@@ -77,7 +115,7 @@ export class OnlineScene extends Phaser.Scene {
             fill: '#5599ff',
         }).setOrigin(0.5).setStroke('#ffffff', 2);
 
-        this.add.text(width / 2, 92,
+        this.subtitleText = this.add.text(width / 2, 92,
             'Serverless — share a room code, scan a QR, or paste codes. Best on the same network.', {
             font: '15px monospace',
             fill: '#aaaacc',
@@ -109,6 +147,13 @@ export class OnlineScene extends Phaser.Scene {
         });
 
         this.events.once('shutdown', this._shutdown, this);
+    }
+
+    // Gamepad polling for the pick lobby's focus nav (Phaser has no
+    // keydown-style pad events — same shape every other menu scene uses).
+    // Inert until _buildPickLobby() creates the nav.
+    update() {
+        if (this.lobbyNav) this.lobbyNav.pollPad();
     }
 
     // ---- Phaser button helper (mirrors MenuScene.makeButton) --------------
@@ -569,18 +614,42 @@ export class OnlineScene extends Phaser.Scene {
         conn.onOpen = () => this._onOpen();
         conn.onClose = () => this._onClose();
         conn.onError = (err) => this._onError(err);
-        // The guest listens here for the host's 'start' cue. Wired from the
-        // very start (before the channel opens) so there's no window in which
-        // a 'start' could arrive unhandled — 'open' always precedes 'message'
-        // on the same channel, but this is belt-and-braces regardless.
+        // Both roles listen here: the guest for the host's 'start' cue, the
+        // host for the guest's 'classpick'. Wired from the very start (before
+        // the channel opens) so there's no window in which either could arrive
+        // unhandled — 'open' always precedes 'message' on the same channel, but
+        // this is belt-and-braces regardless.
         conn.onMessage = (m) => this._onLobbyMessage(m);
     }
 
+    // ---- lobby protocol ----------------------------------------------------
+    //
+    // Exactly two messages, both host-terminated:
+    //   guest -> host  { t:'classpick', cls }   sent on every confirm, so a
+    //                                           change before the match starts
+    //                                           simply overwrites the last one.
+    //   host  -> guest { t:'start', mapIndex, classes:{1,2} }
+    //
+    // The host is authoritative over BOTH: it resolves its own map choice
+    // (including rolling RANDOM) and stamps both classes into 'start'. Every
+    // class key crossing the wire — inbound and outbound — goes through
+    // coerceNetClass, so a forged or stale pick outside NET_CLASS_POOL becomes
+    // an Arcanist instead of a class the sim can't sync.
     _onLobbyMessage(m) {
-        if (!this._alive || this.role !== 'guest') return;
-        if (!m || m.t !== 'start') return;
-        // Host has chosen the map + setup — mirror it exactly and enter the match.
-        this._startNetMatch(m.mapIndex, false);
+        if (!this._alive || !m) return;
+
+        if (this.role === 'host') {
+            if (m.t !== 'classpick') return;
+            this.guestClass = coerceNetClass(m.cls);
+            this._refreshLobby();
+            this._maybeStart();
+            return;
+        }
+
+        if (m.t !== 'start') return;
+        // Host has chosen the map + both classes — mirror it exactly and enter
+        // the match. Nothing is re-decided here; whatever arrived is the truth.
+        this._startNetMatch(m.mapIndex, false, m.classes);
     }
 
     _onOpen() {
@@ -593,47 +662,299 @@ export class OnlineScene extends Phaser.Scene {
         setSession(this.conn, this.role);
         this.handedOff = true;
 
-        if (this.role === 'host') {
-            // Host is authoritative: pick the one fixed map for the whole match,
-            // tell the guest, and drop into GameScene.
-            const mapIndex = Phaser.Math.Between(0, MAP_DEFS.length - 1);
-            this._startNetMatch(mapIndex, true);
-            return;
+        // Both peers now pick a wizard (and the host, a map) — see
+        // _buildPickLobby. Nothing starts until those picks are in.
+        this._buildPickLobby();
+    }
+
+    // ---- post-connect pick lobby ------------------------------------------
+
+    // Tear down the code-exchange UI and draw the pick screen: the class cards
+    // for both peers, plus the map strip for the host. Built in Phaser rather
+    // than DOM so MenuNav drives it like every other menu (keyboard arrows +
+    // ENTER, d-pad + A), and so it can't outlive the scene.
+    _buildPickLobby() {
+        const width = this.cameras.main.width;
+
+        this._clearFlow();          // DOM widgets are done
+        this._clearLobby();         // idempotent — nothing to clear the first time
+        this.hostBtn.setVisible(false);
+        this.joinBtn.setVisible(false);
+
+        const isHost = this.role === 'host';
+        this.subtitleText.setText(isHost
+            ? 'CONNECTED as HOST — you choose the battleground.'
+            : 'CONNECTED as GUEST — the host chooses the battleground.');
+
+        this.lobbyNav = new MenuNav(this, { grid: true, padding: 4 });
+
+        // --- class cards ---
+        const totalW = CLASS_KEYS.length * LOBBY_CARD_W + (CLASS_KEYS.length - 1) * LOBBY_CARD_GAP;
+        const startX = width / 2 - totalW / 2 + LOBBY_CARD_W / 2;
+        CLASS_KEYS.forEach((key, i) => {
+            this._createClassCard(startX + i * (LOBBY_CARD_W + LOBBY_CARD_GAP), LOBBY_CLASS_Y, key, i);
+        });
+
+        // --- map strip (host) / a note that the host owns it (guest) ---
+        if (isHost) {
+            this._lobbyText(width / 2, 418, 'BATTLEGROUND', 'bold 15px monospace', '#aab4e8');
+            const choices = [RANDOM_MAP, ...MAP_DEFS.map((def, i) => i)];
+            const stripW = choices.length * MAP_SLOT_W;
+            const mapX0 = width / 2 - stripW / 2 + MAP_SLOT_W / 2;
+            choices.forEach((choice, i) => {
+                this._createMapCard(mapX0 + i * MAP_SLOT_W, MAP_STRIP_Y, choice, i);
+            });
+        } else {
+            this._lobbyText(width / 2, 440, 'The host is choosing the battleground.',
+                '15px monospace', '#8888aa');
         }
 
-        // Guest: wait for the host's 'start' (see _onLobbyMessage).
-        this.statusText.setText('CONNECTED as GUEST — waiting for host…');
-        this._clearFlow();
-        if (this.confirmText) this.confirmText.destroy();
-        this.confirmText = this.add.text(this.cameras.main.width / 2, 380,
-            'Connected. Waiting for host to start the match…', {
-            font: 'bold 20px monospace',
-            fill: '#66ff66',
-            align: 'center',
+        this._lobbyText(width / 2, 548,
+            '←/→ move  ·  ENTER picks  ·  mouse works too  ·  ESC leaves',
+            '12px monospace', '#666688');
+        this.pickStatus = this._lobbyText(width / 2, 592, '', 'bold 15px monospace', '#66ff66');
+
+        this._refreshLobby();
+    }
+
+    _lobbyText(x, y, text, font, fill) {
+        const el = this.add.text(x, y, text, { font, fill, align: 'center' }).setOrigin(0.5);
+        this.lobbyEls.push(el);
+        return el;
+    }
+
+    // One wizard card. The two classes outside NET_CLASS_POOL are drawn greyed
+    // and are NOT wired up at all — no pointer handler, no nav entry — so
+    // there is no path (mouse, keyboard or pad) that selects one.
+    _createClassCard(x, y, key, index) {
+        const cls = WIZARD_CLASSES[key];
+        const locked = !NET_CLASS_POOL.includes(key);
+        const top = y - LOBBY_CARD_H / 2;
+
+        const bg = this.add.rectangle(x, y, LOBBY_CARD_W, LOBBY_CARD_H, locked ? 0x14141f : 0x1a1a2e);
+        bg.setStrokeStyle(2, locked ? 0x2a2a3a : 0x3a3a5a);
+
+        const sprite = this.add.image(x, top + 42, `wizard_${key}_1`).setScale(2.4);
+        const name = this.add.text(x, top + 76, cls.name.toUpperCase(), {
+            font: 'bold 13px monospace', fill: '#ffffff',
         }).setOrigin(0.5);
+        const sig = this.add.text(x, top + 96, cls.signature.label.toUpperCase(), {
+            font: 'bold 10px monospace', fill: '#ffdd44',
+        }).setOrigin(0.5);
+        const note = this.add.text(x, top + 116, locked ? 'coming online soon' : cls.passive, {
+            font: '10px monospace',
+            fill: locked ? '#ff9955' : '#8888aa',
+            align: 'center',
+            wordWrap: { width: LOBBY_CARD_W - 16 },
+        }).setOrigin(0.5, 0);
+
+        const card = { key, locked, bg, sprite, name, sig, note };
+
+        if (locked) {
+            sprite.setAlpha(0.3);
+            sprite.setTint(0x555566);
+            name.setAlpha(0.4);
+            sig.setAlpha(0.35);
+        } else {
+            const activate = () => this._pickClass(key);
+            bg.setInteractive({ useHandCursor: true });
+            bg.on('pointerover', () => { if (this.pickedClass !== key) bg.setFillStyle(0x232340); });
+            bg.on('pointerout', () => this._refreshLobby());
+            bg.on('pointerdown', activate);
+            this.lobbyNav.add(bg, activate, { row: 0, col: index });
+        }
+
+        this.lobbyEls.push(bg, sprite, name, sig, note);
+        this.classCards.push(card);
+    }
+
+    // One map slot: a tiny layout preview plus the map's name. `choice` is a
+    // MAP_DEFS index, or RANDOM_MAP for the roll-it card.
+    _createMapCard(x, y, choice, index) {
+        const isRandom = choice === RANDOM_MAP;
+        const def = isRandom ? null : MAP_DEFS[choice];
+
+        const bg = this.add.rectangle(x, y, MAP_SLOT_W - 6, MAP_SLOT_H, 0x1a1a2e);
+        bg.setStrokeStyle(2, 0x3a3a5a);
+        this.lobbyEls.push(bg);
+
+        let preview;
+        if (isRandom) {
+            preview = this.add.text(x, y, '?', {
+                font: 'bold 28px monospace', fill: '#66ff66',
+            }).setOrigin(0.5);
+        } else {
+            preview = this._drawMapThumb(x, y, def);
+        }
+        this.lobbyEls.push(preview);
+
+        const name = this.add.text(x, y + MAP_SLOT_H / 2 + 9, isRandom ? 'RANDOM' : def.name.toUpperCase(), {
+            font: '9px monospace',
+            fill: isRandom ? '#66ff66' : '#aaaacc',
+            align: 'center',
+            wordWrap: { width: MAP_SLOT_W - 2 },
+        }).setOrigin(0.5, 0.5);
+        this.lobbyEls.push(name);
+
+        const activate = () => this._pickMap(choice);
+        bg.setInteractive({ useHandCursor: true });
+        bg.on('pointerover', () => { if (this.pickedMapChoice !== choice) bg.setFillStyle(0x232340); });
+        bg.on('pointerout', () => this._refreshLobby());
+        bg.on('pointerdown', activate);
+        this.lobbyNav.add(bg, activate, { row: 1, col: index });
+
+        this.mapCards.push({ choice, bg, preview, name });
+    }
+
+    // Compact layout preview, drawn straight off the ASCII def (walls, plus a
+    // dot per spawn) in the map's own theme colors — same read as
+    // MapSelectScene's thumbnail, at a third the size.
+    _drawMapThumb(cx, cy, def) {
+        const theme = THEMES[def.theme] || THEMES[DEFAULT_THEME];
+        const rows = def.layout.length;
+        const cols = def.layout[0].length;
+        const w = cols * MAP_THUMB_TILE;
+        const h = rows * MAP_THUMB_TILE;
+        const x0 = cx - w / 2;
+        const y0 = cy - h / 2;
+
+        const g = this.add.graphics();
+        g.fillStyle(theme.floor.base, 1);
+        g.fillRect(x0, y0, w, h);
+        for (let ty = 0; ty < rows; ty++) {
+            for (let tx = 0; tx < cols; tx++) {
+                const ch = def.layout[ty][tx];
+                if (ch === '#') {
+                    g.fillStyle(theme.wall.base, 1);
+                } else if (ch === '1') {
+                    g.fillStyle(0x5599ff, 1);
+                } else if (ch === '2') {
+                    g.fillStyle(0xff5566, 1);
+                } else {
+                    continue;
+                }
+                g.fillRect(x0 + tx * MAP_THUMB_TILE, y0 + ty * MAP_THUMB_TILE, MAP_THUMB_TILE, MAP_THUMB_TILE);
+            }
+        }
+        return g;
+    }
+
+    // ---- picks -------------------------------------------------------------
+
+    _pickClass(key) {
+        if (!this._alive || this.starting) return;
+        // Defence in depth: locked cards are never wired to this, but a class
+        // outside the pool must never become our pick even if one were.
+        if (!NET_CLASS_POOL.includes(key)) return;
+
+        audio.uiClick();
+        this.pickedClass = key;
+        this._refreshLobby();
+
+        // Guest: the host needs this to build 'start'. Re-sent on every change
+        // (the host just keeps the latest), so switching before the match
+        // begins works exactly like never having picked the first one.
+        if (this.role === 'guest' && this.conn && this.conn.isOpen()) {
+            this.conn.send({ t: 'classpick', cls: this.pickedClass });
+        }
+        this._maybeStart();
+    }
+
+    _pickMap(choice) {
+        if (!this._alive || this.role !== 'host' || this.starting) return;
+        audio.uiClick();
+        this.pickedMapChoice = choice;
+        this._refreshLobby();
+        this._maybeStart();
+    }
+
+    // Host: the moment all three picks are in (our class, our map, their
+    // class), resolve RANDOM and start the match for both peers.
+    _maybeStart() {
+        if (this.role !== 'host' || this.starting) return;
+        if (!this.pickedClass || this.pickedMapChoice === null || !this.guestClass) return;
+
+        this.starting = true;
+        const mapIndex = this.pickedMapChoice === RANDOM_MAP
+            ? Phaser.Math.Between(0, MAP_DEFS.length - 1)
+            : this.pickedMapChoice;
+        this._startNetMatch(mapIndex, true, { 1: this.pickedClass, 2: this.guestClass });
+    }
+
+    _refreshLobby() {
+        for (const card of this.classCards) {
+            if (card.locked) continue;
+            const picked = this.pickedClass === card.key;
+            card.bg.setFillStyle(picked ? 0x1e3320 : 0x1a1a2e);
+            card.bg.setStrokeStyle(picked ? 3 : 2, picked ? 0x66ff66 : 0x3a3a5a);
+        }
+        for (const card of this.mapCards) {
+            const picked = this.pickedMapChoice === card.choice;
+            card.bg.setFillStyle(picked ? 0x1e3320 : 0x1a1a2e);
+            card.bg.setStrokeStyle(picked ? 3 : 2, picked ? 0x66ff66 : 0x3a3a5a);
+        }
+
+        const mine = this.pickedClass ? WIZARD_CLASSES[this.pickedClass].name.toUpperCase() : '—';
+        if (this.role === 'host') {
+            const theirs = this.guestClass ? WIZARD_CLASSES[this.guestClass].name.toUpperCase() : '—';
+            const map = this.pickedMapChoice === null ? '—'
+                : this.pickedMapChoice === RANDOM_MAP ? 'RANDOM'
+                : MAP_DEFS[this.pickedMapChoice].name.toUpperCase();
+            if (this.pickStatus) this.pickStatus.setText(`YOU: ${mine}   ·   THEM: ${theirs}   ·   MAP: ${map}`);
+            this.statusText.setText(
+                !this.pickedClass ? 'Pick your wizard.'
+                : this.pickedMapChoice === null ? 'Now pick the battleground.'
+                : !this.guestClass ? 'Waiting for the other wizard to pick…'
+                : 'Starting…'
+            );
+        } else {
+            if (this.pickStatus) this.pickStatus.setText(`YOU: ${mine}`);
+            this.statusText.setText(this.pickedClass
+                ? `Locked in as ${mine} — waiting for the host to start…`
+                : 'Pick your wizard.');
+        }
+    }
+
+    _clearLobby() {
+        if (this.lobbyNav) {
+            this.lobbyNav.destroy();
+            this.lobbyNav = null;
+        }
+        for (const el of this.lobbyEls) {
+            if (el && el.destroy) el.destroy();
+        }
+        this.lobbyEls = [];
+        this.classCards = [];
+        this.mapCards = [];
+        this.pickStatus = null;
     }
 
     // Configure MATCH_STATE for a net match identically on both peers, then
-    // enter GameScene. The host additionally sends the 'start' cue with its
-    // fixed map pick so the guest builds the same arena.
-    _startNetMatch(mapIndex, isHost) {
+    // enter GameScene. The host additionally sends the 'start' cue carrying the
+    // resolved map index and BOTH classes, so the guest builds the same arena
+    // with the same two wizards.
+    _startNetMatch(mapIndex, isHost, classes) {
         if (!this._alive) return;
 
         const clamped = (typeof mapIndex === 'number' && mapIndex >= 0 && mapIndex < MAP_DEFS.length)
             ? mapIndex : 0;
+        // Seats 1/2 are the two peers; 3/4 never exist in a net match but are
+        // filled so nothing downstream ever reads a null class key.
+        const seat1 = coerceNetClass(classes && classes[1]);
+        const seat2 = coerceNetClass(classes && classes[2]);
 
         MATCH_STATE.online = true;
         MATCH_STATE.mode = '2p';
         MATCH_STATE.seatTypes = { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
         MATCH_STATE.playerCount = 2;
-        MATCH_STATE.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+        MATCH_STATE.classes = { 1: seat1, 2: seat2, 3: 'arcanist', 4: 'arcanist' };
         MATCH_STATE.mapIndex = clamped;
         MATCH_STATE.round = 1;
         MATCH_STATE.scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
         MATCH_STATE.isDailyChallenge = false;
 
         if (isHost && this.conn) {
-            this.conn.send({ t: 'start', mapIndex: clamped, classes: { 1: 'arcanist', 2: 'arcanist' } });
+            this.conn.send({ t: 'start', mapIndex: clamped, classes: { 1: seat1, 2: seat2 } });
         }
 
         this.scene.start('GameScene');
@@ -688,6 +1009,11 @@ export class OnlineScene extends Phaser.Scene {
     // (e.g. switching HOST<->JOIN, or retrying) so we never leak a peer conn.
     _resetConnection() {
         this._closeSignal();
+        this._clearLobby();
+        this.pickedClass = null;
+        this.guestClass = null;
+        this.pickedMapChoice = null;
+        this.starting = false;
         this.roomCode = null;
         if (this.conn && !this.handedOff) {
             this.conn.close();
@@ -713,6 +1039,7 @@ export class OnlineScene extends Phaser.Scene {
         this.conn = null;
 
         this._clearFlow();
+        this._clearLobby();
         if (this.overlay) {
             this.overlay.remove();
             this.overlay = null;

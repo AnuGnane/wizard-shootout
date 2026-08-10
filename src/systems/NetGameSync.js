@@ -17,6 +17,7 @@ import { ARENA } from './Maps.js';
 import { MATCH_STATE } from './MatchState.js';
 import { NetSession, clearSession } from './NetSession.js';
 import { NetInput } from './NetInput.js';
+import { WIZARD_CLASSES } from './Classes.js';
 import { audio } from './AudioSystem.js';
 
 // Stage 2b — Online netcode. Orbs allowed to spawn in a net match: only the
@@ -30,6 +31,41 @@ export const NET_RUNE_POOL = [
     ELEMENT_TYPES.SHIELD,
     ELEMENT_TYPES.TRIPLE,
 ];
+
+// Phase 10.2 — classes playable online, for exactly the same reason as the
+// rune pool above: a signature that MUTATES THE ARENA has no sync path yet.
+// Stonecaller's Breach deletes a wall tile and Cryomancer's Frost Ring frosts
+// the floor; the guest holds a static copy of the map, so either one would
+// silently desync the two arenas. Everything else (blink, novas, dashes,
+// wards) only moves entities the snapshot already carries.
+//
+// This list is the ONE place the restriction lives: the lobby builds its
+// selectable cards from it, inbound picks are validated against it (see
+// coerceNetClass), and the next stage lifts the restriction by adding the two
+// missing keys here plus the arena-mutation sync they need.
+export const NET_CLASS_POOL = [
+    'arcanist',
+    'pyromancer',
+    'stormcaller',
+    'warden',
+    'trickster',
+];
+
+// The class a net peer falls back to when it asks for one we can't run.
+const NET_CLASS_FALLBACK = 'arcanist';
+
+// Validate a class key that arrived over the wire (or out of persisted
+// settings). Anything not in NET_CLASS_POOL — an excluded class, an unknown
+// string, a forged packet, undefined — becomes the fallback, so a peer can
+// never talk the other side into simulating something it can't sync.
+export function coerceNetClass(key) {
+    return NET_CLASS_POOL.includes(key) ? key : NET_CLASS_FALLBACK;
+}
+
+// Guest-side dash trail cadence, mirroring Player's afterimageEveryMs so a
+// remote dash reads like a local one. Snapshots arrive every ~40ms, so this
+// works out to roughly one ghost per snapshot while the flag is up.
+const PUPPET_DASH_TRAIL_MS = 30;
 
 export class NetGameSync {
     constructor(scene) {
@@ -51,6 +87,11 @@ export class NetGameSync {
         this._projPuppets = new Map();
         this._runePuppets = new Map();
 
+        // Phase 10.2 — guest: next allowed dash-afterimage time per seat, so a
+        // remote dash trails ghosts at a fixed cadence instead of one per
+        // snapshot application. Keyed by playerNumber.
+        this._dashFxAt = new Map();
+
         // Host: the remote guest's latest input, driving seat 2's Player.
         // Guest: its OWN controls, read each frame and sent up (see below).
         this.netInput = null;
@@ -67,9 +108,15 @@ export class NetGameSync {
         return this._netRuneId++;
     }
 
-    // Stage 2a — net roster. Always a fixed two-seat arcanist duel; both peers
-    // build the SAME two Player objects (identical map -> identical spawns) so
-    // seat N lines up on both sides. No AIController is ever created.
+    // Stage 2a — net roster. A fixed two-seat duel; both peers build the SAME
+    // two Player objects (identical map -> identical spawns) so seat N lines
+    // up on both sides. No AIController is ever created.
+    //
+    // Phase 10.2: each seat's CLASS comes from MATCH_STATE.classes, which the
+    // lobby's 'start' message set identically on both peers — Player's
+    // constructor reads it for the texture, robe/staff colors, passives and
+    // signature, so a puppet is built from the real class rather than a
+    // hardcoded one. Nothing here needs to know which class it is.
     //  - HOST simulates: seat 1 = local human, seat 2 = remote guest's input.
     //  - GUEST renders: both seats are puppets (real Players for the sprite +
     //    health bar, but physics disabled) moved only by snapshot application;
@@ -190,11 +237,51 @@ export class NetGameSync {
             // Keep the floating health bar tracking the sprite while alive
             // (Player.update, which normally does this, doesn't run on the guest).
             if (alive) player.updateHealthBar();
+
+            // Phase 10.2 — signature state the puppet can't derive on its own:
+            // an active Reflect Ward gets the same bubble the caster sees, and
+            // an active dash trails the same afterimages. Both flags are
+            // omitted from the snapshot when false, so `!!ps.x` is the read.
+            this.setPuppetWard(player, alive && !!ps.ward);
+            if (alive && ps.dash) this.spawnPuppetDashTrail(player);
         }
 
         // Stage 2b: reconcile projectile + rune puppets against this snapshot.
         this.reconcileProjPuppets(snap.proj);
         this.reconcileRunePuppets(snap.runes);
+    }
+
+    // Guest: show/hide a puppet's Reflect Ward bubble from the snapshot flag.
+    // Deliberately builds the SAME circle abilityReflectWard builds locally
+    // (same radius/color/alpha/stroke/depth, straight off the Warden's class
+    // data) so the bubble reads identically on both peers, and parks it on
+    // `player.wardBubble` — the field Player.die() already cleans up.
+    setPuppetWard(player, active) {
+        if (active) {
+            if (!player.wardBubble) {
+                const sig = WIZARD_CLASSES.warden.signature;
+                const bubble = this.scene.add.circle(player.x, player.y, sig.radius, sig.flashColor, 0.12);
+                bubble.setStrokeStyle(2, sig.flashColor, 0.9);
+                bubble.setDepth(19);
+                player.wardBubble = bubble;
+            }
+            // Player.update (which normally carries the bubble along) never
+            // runs on the guest, so the snapshot moves it.
+            player.wardBubble.setPosition(player.x, player.y);
+        } else if (player.wardBubble) {
+            player.wardBubble.destroy();
+            player.wardBubble = null;
+        }
+    }
+
+    // Guest: one fading afterimage behind a dashing puppet, throttled to the
+    // same cadence Player.updateDash uses. Purely cosmetic — the dash's actual
+    // movement already arrives as position updates.
+    spawnPuppetDashTrail(player) {
+        const now = this.scene.time.now;
+        if (now < (this._dashFxAt.get(player.playerNumber) || 0)) return;
+        this._dashFxAt.set(player.playerNumber, now + PUPPET_DASH_TRAIL_MS);
+        player.spawnAfterimage(player.classDef.signature.afterimageFadeMs || 150);
     }
 
     // Guest: keep the projectile puppet Map (netId -> image) in step with the
@@ -272,19 +359,29 @@ export class NetGameSync {
         const conn = NetSession.connection;
         if (!conn || !conn.isOpen()) return;
 
-        const players = this.scene.players.map(p => ({
-            n: p.playerNumber,
-            x: Math.round(p.x),
-            y: Math.round(p.y),
-            rot: Math.round(p.rotation * 1000) / 1000,
-            hp: Math.round(p.health),
-            alive: p.isAlive,
-            // Stage 2b: held-orb / shield HUD state, so the guest can drive its
-            // existing updateUI()/updateRuneDisplay for BOTH wizards.
-            rune: p.heldRune || null,
-            shots: p.runeShots | 0,
-            shield: p.shieldCharges | 0,
-        }));
+        const now = this.scene.time.now;
+        const players = this.scene.players.map(p => {
+            const ps = {
+                n: p.playerNumber,
+                x: Math.round(p.x),
+                y: Math.round(p.y),
+                rot: Math.round(p.rotation * 1000) / 1000,
+                hp: Math.round(p.health),
+                alive: p.isAlive,
+                // Stage 2b: held-orb / shield HUD state, so the guest can drive its
+                // existing updateUI()/updateRuneDisplay for BOTH wizards.
+                rune: p.heldRune || null,
+                shots: p.runeShots | 0,
+                shield: p.shieldCharges | 0,
+            };
+            // Phase 10.2: signature state with no other tell on the wire. Both
+            // are OMITTED when false — they're only true for a fraction of a
+            // second at a time, so the packet stays exactly as lean as before
+            // for all the frames nobody is warding or dashing.
+            if (now < p.wardUntil) ps.ward = true;
+            if (now < p.dashUntil) ps.dash = true;
+            return ps;
+        });
         // Stage 2b: live projectiles + runes, each keyed by its host net id so
         // the guest reconciles puppet sprites (create-new / update / drop-absent).
         const proj = this.scene.allProjectiles
