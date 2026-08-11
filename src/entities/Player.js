@@ -83,12 +83,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.canNormalShot = true;
         this.canRuneShot = true;
         this.normalCooldown = NORMAL_SHOT_CONFIG.cooldown;
-        this.runeCooldown = 800; // Slightly faster for rune shots
+        this.runeCooldown = RUNE_CONFIG.cooldown; // Slightly faster for rune shots
 
         // Simple stat-tweak passives (Stonecaller's is Phase 3b — it affects
-        // conjured-wall lifetime, which lives in GameScene, not here).
-        if (this.classKey === 'arcanist') this.normalCooldown *= 0.72;
-        if (this.classKey === 'stormcaller') this.runeCooldown *= 0.7;
+        // conjured-wall lifetime, which lives in GameScene, not here). The
+        // multipliers themselves live in Classes.js (classDef.passiveConfig)
+        // rather than as literals here — see that file's header comment.
+        if (this.classKey === 'arcanist') this.normalCooldown *= this.classDef.passiveConfig.normalCooldownMultiplier;
+        if (this.classKey === 'stormcaller') this.runeCooldown *= this.classDef.passiveConfig.runeCooldownMultiplier;
 
         // Signature ability cooldown, mirrored per-instance from class data
         // (rather than read live off classDef.signature.cooldown) so the Low
@@ -775,11 +777,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         // Can only hold ONE rune type at a time
         this.heldRune = element;
         if (element === ELEMENT_TYPES.TRIPLE && this.classKey === 'trickster') {
-            this.runeShots = 3; // passive: triple orb pickup grants 3 uses (base is 2)
+            // passive: triple orb pickup grants extra uses (base is RUNE_CONFIG.tripleShotsPerPickup)
+            this.runeShots = this.classDef.passiveConfig.tripleOrbShots;
         } else if (element === ELEMENT_TYPES.TRIPLE) {
             this.runeShots = RUNE_CONFIG.tripleShotsPerPickup;
         } else if (element === ELEMENT_TYPES.FIRE && this.classKey === 'pyromancer') {
-            this.runeShots = 4; // passive: fire orb pickup grants 4 shots
+            this.runeShots = this.classDef.passiveConfig.fireOrbShots; // passive: fire orb pickup grants extra shots
         } else {
             this.runeShots = RUNE_CONFIG.shotsPerPickup;
         }
@@ -797,7 +800,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     addShield() {
-        this.shieldCharges = this.classKey === 'warden' ? 2 : 1; // passive: shield orb = 2 charges
+        // passive: Warden's shield orb grants extra charges (see Classes.js)
+        this.shieldCharges = this.classKey === 'warden' ? this.classDef.passiveConfig.shieldCharges : 1;
         audio.shieldUp();
 
         if (this.shieldBubble) this.shieldBubble.destroy();

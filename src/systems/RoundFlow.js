@@ -73,7 +73,12 @@ export class RoundFlow {
             matchPointY += 24;
         }
 
-        const isMatchPoint = MATCH_STATE.scores[1] === target - 1 || MATCH_STATE.scores[2] === target - 1;
+        // Phase 10.5 — roster-driven: any active seat (1-2 in a duel/online
+        // match, up to 1-4 in party) one round from winning puts the match on
+        // the line, not just seats 1-2. Same active-seat filter GameOverScene
+        // already uses for its final score line.
+        const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
+        const isMatchPoint = activeSeats.some(n => MATCH_STATE.scores[n] === target - 1);
         if (isMatchPoint) {
             const matchPoint = scene.add.text(
                 GAME_CONFIG.width / 2,

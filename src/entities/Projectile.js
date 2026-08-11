@@ -18,10 +18,8 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.ownerPlayerNumber = ownerPlayerNumber;
         this.isRuneShot = isRuneShot;
         this.config = config;
-        this.configOverride = configOverride;
         this.bounceCount = 0;
         this.hasHitWall = false;
-        this.hasPierced = false;
 
         this.dirX = dirX;
         this.dirY = dirY;
@@ -182,7 +180,12 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
 
         audio.bounce();
 
-        // Element-specific wall effects (for rune shots)
+        // Element-specific wall effects (for rune shots). Lightning has no
+        // case here: its maxBounces is 0 (see config.js), so the maxBounces
+        // check just above always detonates and returns on a lightning
+        // shot's first wall hit — a case for it here would be dead code, and
+        // used to be (see docs/QA_AUDIT.md's dead-code entry on hasPierced /
+        // the 'lightningPierce' event, both removed alongside this comment).
         if (this.isRuneShot) {
             switch (this.element) {
                 case ELEMENT_TYPES.FIRE:
@@ -203,10 +206,6 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
                         gridX,
                         gridY
                     });
-                    break;
-
-                case ELEMENT_TYPES.LIGHTNING:
-                    this.scene.events.emit('lightningPierce', { x: this.x, y: this.y, projectile: this });
                     break;
             }
         }
@@ -269,7 +268,6 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         });
 
         this.cleanup();
-        this.scene.events.emit('projectileDestroyed', this);
         super.destroy();
     }
 
@@ -289,7 +287,6 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
         this.isDestroying = true;
 
         this.cleanup();
-        this.scene.events.emit('projectileDestroyed', this);
         super.destroy();
     }
 }

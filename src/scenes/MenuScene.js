@@ -3,7 +3,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { getDailyStatus } from '../systems/Stats.js';
-import { getBindings, keyLabel } from '../systems/KeyBindings.js';
+import { getBindings, keyLabel, movementLabel } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
 
 export class MenuScene extends Phaser.Scene {
@@ -175,15 +175,15 @@ export class MenuScene extends Phaser.Scene {
             }).setOrigin(0.5);
         });
 
-        // Controls info. Shoot/Orb Shot read the live rebindable bindings
-        // (see systems/KeyBindings.js) so a rebind shows up here immediately;
-        // "WASD - Move" / "Arrows - Move" stay as fixed labels since they
-        // name a whole 4-key cluster, not a single rebindable action.
+        // Controls info. Every line reads the live rebindable bindings (see
+        // systems/KeyBindings.js) so a rebind — including the movement
+        // cluster itself — shows up here immediately instead of a stale
+        // "WASD"/"Arrows" left over from the defaults.
         const p1Bindings = getBindings(1);
         const p2Bindings = getBindings(2);
 
         const controlsP1 = this.add.text(width / 2 - 180, 625,
-            `Player 1 (Blue)\nWASD - Move\n${keyLabel(p1Bindings.shoot)} - Shoot\n${keyLabel(p1Bindings.runeShoot)} - Orb Shot`, {
+            `Player 1 (Blue)\n${movementLabel(1)} - Move\n${keyLabel(p1Bindings.shoot)} - Shoot\n${keyLabel(p1Bindings.runeShoot)} - Orb Shot`, {
             font: '13px monospace',
             fill: '#5599ff',
             align: 'center',
@@ -191,7 +191,7 @@ export class MenuScene extends Phaser.Scene {
         controlsP1.setOrigin(0.5);
 
         const controlsP2 = this.add.text(width / 2 + 180, 625,
-            `Player 2 (Red)\nArrows - Move\n${keyLabel(p2Bindings.shoot)} - Shoot\n${keyLabel(p2Bindings.runeShoot)} - Orb Shot`, {
+            `Player 2 (Red)\n${movementLabel(2)} - Move\n${keyLabel(p2Bindings.shoot)} - Shoot\n${keyLabel(p2Bindings.runeShoot)} - Orb Shot`, {
             font: '13px monospace',
             fill: '#ff5566',
             align: 'center',

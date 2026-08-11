@@ -35,7 +35,7 @@ npm test         # headless smoke suite (see Development)
   wizards. See [Survival](#survival) below.
 - **Online 1v1** — connect to a friend over WebRTC with a 5-character room
   code, a QR scan, or a copy-paste connection code (no game server). Any class,
-  any built-in map, full orb pool. See [Online](#online-1v1-prototype).
+  any built-in map, full orb pool. See [Online](#online-1v1).
 - **Daily Challenge** — a seeded map + mutator + bot combo that's the same
   for everyone that day; your local best is tracked.
 
@@ -65,6 +65,10 @@ element's orb is empowered. In 1P the bot picks a class at random.
 | Signature  | E               | .              |
 | Pause      | ESC             | ESC            |
 | Mute       | M               | M              |
+
+These are the defaults — every key above (including movement) can be rebound
+per-player from Settings > Controls, with conflict-swap and a reset-to-default,
+and the change applies immediately, live in a match.
 
 **Gamepads** join seamlessly (Phaser Gamepad API) — a connected pad can take
 a seat in any mode; left stick / d-pad to move, face buttons to shoot, orb,
@@ -169,7 +173,7 @@ have the same arena.
 - **Music** — a procedural chiptune loop that ramps in intensity at match
   point. Toggle in Settings.
 
-## Online 1v1 (prototype)
+## Online 1v1
 
 Online play is a **host-authoritative** WebRTC data channel between two
 browsers — there is no game server, and the game is static-hosted. The host

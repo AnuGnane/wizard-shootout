@@ -18,6 +18,10 @@ export const PLAYER_CONFIG = {
     speed: 200,
     size: 20,
     maxHealth: 100,
+    // The per-player live-projectile cap GameScene enforces before a shot is
+    // even allowed to spend its cooldown/charge (see canAcceptShot). Moved
+    // out of GameScene (Phase 10.5 config hygiene) — same 5, byte-identical.
+    maxProjectiles: 5,
     colors: {
         player1: 0x5599ff, // Blue wizard
         player2: 0xff5566, // Red wizard
@@ -147,8 +151,13 @@ export const RUNE_ELEMENTS = [
 ];
 
 export const RUNE_CONFIG = {
-    spawnIntervalMin: 8000,
-    spawnIntervalMax: 13000,
+    // Base orb-shot cooldown (Player.js's counterpart to NORMAL_SHOT_CONFIG's
+    // own `cooldown` above) — every class starts here; Stormcaller's passive
+    // multiplies it (see WIZARD_CLASSES.stormcaller.passiveConfig in
+    // Classes.js). Orb spawn cadence itself is RUNTIME_SETTINGS.runeSpawnMin/
+    // Max (user-tunable, see SettingsScene) plus PRESSURE_CONFIG's surge-mode
+    // override — this file doesn't own that number.
+    cooldown: 800,
     maxRunes: 3,
     runesPerSpawn: 2,       // Spawn 2 at a time
     shotsPerPickup: 3,
@@ -167,6 +176,13 @@ export const RUNE_CONFIG = {
 export const WALL_EFFECT_CONFIG = {
     burnDurationFactor: 0.5,
     slowDurationFactor: 0.43,
+    // How long the decal itself (the visible scorch/frost tile GameScene
+    // draws on a hit wall — independent of the burn/slow duration above,
+    // which is how long a PLAYER standing next to it is affected) stays on
+    // screen before fading. Moved out of GameScene (Phase 10.5 config
+    // hygiene) — same 3000/5000ms as before, byte-identical.
+    fireDecalLifetimeMs: 3000,
+    iceDecalLifetimeMs: 5000,
 };
 
 // Phase 4 — slippery ice floor tiles

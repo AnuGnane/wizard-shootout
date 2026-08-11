@@ -171,6 +171,43 @@ export function saveStats() {
 // module owns its own loading rather than waiting to be called explicitly.
 loadStats();
 
+// ============ THROTTLED WRITES (Phase 10.5) =================================
+//
+// recordShot/recordDamage fire on every shot and every hit — dozens of times
+// a minute in a real fight — and used to call saveStats() (a JSON.stringify
+// of the whole profile + a synchronous localStorage.setItem) on every single
+// one. scheduleSave() coalesces a burst of those into one write per
+// SAVE_COALESCE_MS window instead. Every other mutator below (kills, deaths,
+// orbs, rounds, matches, survival runs, achievements, daily) fires at most a
+// few times a match, so they keep writing immediately — there is nothing to
+// coalesce and no reason to add latency to an already-infrequent save.
+//
+// A coalesced write must never be the ONLY copy of a stat change sitting in
+// memory when a session ends: flushStats() forces it out immediately, and
+// GameScene calls it on the one 'shutdown' hook that fires at every point a
+// session can end — round end (scene.restart()), match end (handoff to
+// GameOverScene) and quit-to-menu — so a throttled write is never a lost one.
+const SAVE_COALESCE_MS = 1000;
+let saveTimer = null;
+
+function scheduleSave() {
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        saveStats();
+    }, SAVE_COALESCE_MS);
+}
+
+// Force out any pending coalesced write right now. See GameScene's
+// 'shutdown' hook — this is the flush side of scheduleSave() above.
+export function flushStats() {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+    saveStats();
+}
+
 // ============ MUTATORS (each persists immediately — infrequent calls) ======
 
 export function recordKill(element) {
@@ -193,12 +230,12 @@ export function recordOrb() {
 
 export function recordShot() {
     STATS.shotsFired++;
-    saveStats();
+    scheduleSave();
 }
 
 export function recordDamage(n) {
     STATS.damageDealt += Math.round(n);
-    saveStats();
+    scheduleSave();
 }
 
 export function recordRound(youWon) {
@@ -324,7 +361,7 @@ if (import.meta.env && import.meta.env.DEV) {
     window.__stats = STATS;
     window.__statsApi = {
         recordKill, recordDeath, recordOrb, recordShot, recordDamage,
-        recordRound, recordMatch, recordSurvivalRun, checkAchievements, loadStats, saveStats,
+        recordRound, recordMatch, recordSurvivalRun, checkAchievements, loadStats, saveStats, flushStats,
         ACHIEVEMENTS,
         recordDailyAttempt, recordDailyResult, getDailyStatus,
     };

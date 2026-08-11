@@ -18,12 +18,12 @@ import { NetGameSync } from '../systems/NetGameSync.js';
 import { WIZARD_CLASSES } from '../systems/Classes.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
-import { recordKill, recordShot, recordDamage, checkAchievements } from '../systems/Stats.js';
-import { getBindings, keyLabel } from '../systems/KeyBindings.js';
+import { recordKill, recordShot, recordDamage, checkAchievements, flushStats } from '../systems/Stats.js';
+import { getBindings, keyLabel, movementLabel } from '../systems/KeyBindings.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
-    'lightningPierce', 'playerDied', 'runeCollected', 'playerDamaged', 'signatureUsed',
+    'playerDied', 'runeCollected', 'playerDamaged', 'signatureUsed',
     'playerKilled',
 ];
 
@@ -116,7 +116,7 @@ export class GameScene extends Phaser.Scene {
         this.wallHitSource = null;
 
         this.projectilesByPlayer = { 1: [], 2: [], 3: [], 4: [] };
-        this.maxProjectilesPerPlayer = 5;
+        this.maxProjectilesPerPlayer = PLAYER_CONFIG.maxProjectiles;
         this.allProjectiles = [];
         this.runes = [];
 
@@ -139,6 +139,13 @@ export class GameScene extends Phaser.Scene {
         // The scene restarts between rounds; make sure frost overlays/timers are
         // torn down on shutdown so nothing leaks or double-fires next round.
         this.events.once('shutdown', this.clearAllFrost, this);
+
+        // Phase 10.5 — force out any stats write Stats.js's recordShot/
+        // recordDamage coalesced (see there). 'shutdown' fires here on every
+        // path a session can end mid-batch: scene.restart() between rounds,
+        // the handoff to GameOverScene at match/run end, and quit-to-menu —
+        // so a throttled write can never be the one that gets lost.
+        this.events.once('shutdown', flushStats);
 
         // Phase 6e: same restart-safety for any on-screen touch controls —
         // createPlayers() also destroys+recreates on every round, but a
@@ -465,7 +472,6 @@ export class GameScene extends Phaser.Scene {
         this.events.on('createFireWall', this.createFireWall, this);
         this.events.on('createIceWall', this.createIceWall, this);
         this.events.on('createTempWall', this.createTempWall, this);
-        this.events.on('lightningPierce', this.handleLightningPierce, this);
         // 'playerDied' is emitted by Player.die() but has no handler: round
         // resolution is polled in update() so simultaneous deaths settle first.
         // Phase 10.3 — the one exception, and only on a net host: the snapshot's
@@ -1215,7 +1221,7 @@ export class GameScene extends Phaser.Scene {
         });
 
         // Remove after duration
-        this.time.delayedCall(3000, () => {
+        this.time.delayedCall(WALL_EFFECT_CONFIG.fireDecalLifetimeMs, () => {
             const index = this.effects.fireWalls.indexOf(fireWall);
             if (index > -1) this.effects.fireWalls.splice(index, 1);
             fireWall.destroy();
@@ -1251,7 +1257,7 @@ export class GameScene extends Phaser.Scene {
         });
 
         // Remove after duration
-        this.time.delayedCall(5000, () => {
+        this.time.delayedCall(WALL_EFFECT_CONFIG.iceDecalLifetimeMs, () => {
             const index = this.effects.iceWalls.indexOf(iceWall);
             if (index > -1) this.effects.iceWalls.splice(index, 1);
             iceWall.destroy();
@@ -1351,8 +1357,8 @@ export class GameScene extends Phaser.Scene {
             const duo = MATCH_STATE.seatTypes[2] === 'human';
             const b2 = getBindings(2);
             const hint = duo
-                ? `P1: WASD + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  ·  P2: Arrows + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  ·  M mute`
-                : `WASD move · ${keyLabel(b1.shoot)} shoot · ${keyLabel(b1.runeShoot)} orb shot · ${keyLabel(b1.ability)} ability · M mute`;
+                ? `P1: ${movementLabel(1)} + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  ·  P2: ${movementLabel(2)} + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  ·  M mute`
+                : `${movementLabel(1)} move · ${keyLabel(b1.shoot)} shoot · ${keyLabel(b1.runeShoot)} orb shot · ${keyLabel(b1.ability)} ability · M mute`;
             this.add.text(14, GAME_CONFIG.height - 15, hint, {
                 font: '11px monospace',
                 fill: '#666688',
@@ -1362,24 +1368,23 @@ export class GameScene extends Phaser.Scene {
                 fill: '#8888aa',
             }).setOrigin(1, 0.5).setDepth(11);
         } else if (MATCH_STATE.playerCount <= 2) {
-            // Shoot/orb-shot/ability read the live rebindable bindings (see
-            // systems/KeyBindings.js) so a rebind shows up here immediately;
-            // "WASD move" / "Arrows" stay fixed since they name a whole
-            // 4-key movement cluster, not a single rebindable action.
+            // Every field, including the movement cluster, reads the live
+            // rebindable bindings (see systems/KeyBindings.js) so a rebind
+            // shows up here immediately instead of a stale "WASD"/"Arrows".
             const b1 = getBindings(1);
             let hint;
             if (MATCH_STATE.mode === '1p') {
-                hint = `WASD move | ${keyLabel(b1.shoot)} shoot | ${keyLabel(b1.runeShoot)} orb shot | ${keyLabel(b1.ability)} ability | Grab orbs for powers | M mute`;
+                hint = `${movementLabel(1)} move | ${keyLabel(b1.shoot)} shoot | ${keyLabel(b1.runeShoot)} orb shot | ${keyLabel(b1.ability)} ability | Grab orbs for powers | M mute`;
             } else {
                 const b2 = getBindings(2);
-                hint = `P1: WASD + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  |  P2: Arrows + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  |  Grab orbs for powers  |  M mute`;
+                hint = `P1: ${movementLabel(1)} + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  |  P2: ${movementLabel(2)} + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  |  Grab orbs for powers  |  M mute`;
             }
             this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
                 font: '11px monospace',
                 fill: '#666688',
             }).setOrigin(0.5).setDepth(11);
         } else {
-            this.add.text(14, GAME_CONFIG.height - 15, 'P1 WASD · P2 Arrows · P3/P4 pads · M mute', {
+            this.add.text(14, GAME_CONFIG.height - 15, `P1 ${movementLabel(1)} · P2 ${movementLabel(2)} · P3/P4 pads · M mute`, {
                 font: '11px monospace',
                 fill: '#666688',
             }).setOrigin(0, 0.5).setDepth(11);
@@ -2097,9 +2102,5 @@ export class GameScene extends Phaser.Scene {
             // from tempWalls above); guard so the timer stays a safe no-op.
             if (tempWall.active) tempWall.destroy();
         });
-    }
-
-    handleLightningPierce(data) {
-        data.projectile.hasPierced = true;
     }
 }

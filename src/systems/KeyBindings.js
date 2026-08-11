@@ -137,6 +137,20 @@ export function keyLabel(keyName) {
     return DISPLAY_NAMES[keyName] || keyName;
 }
 
+// Compact rendering of a seat's whole movement cluster — up/left/down/right,
+// the same reading order the word "WASD" itself follows — for the menu +
+// in-match HUD hint lines, which are one-line hints with no room for four
+// separate labels. Those lines used to hardcode literal "WASD"/"Arrows"
+// regardless of what was actually bound, so a player who remapped movement
+// saw permanently stale advice; this always reflects the live bindings
+// instead. Unremapped P1 still reads exactly "WASD" (up=W, left=A, down=S,
+// right=D spells the word), and unremapped P2 reads "↑←↓→" off keyLabel's
+// own arrow glyphs in place of the old literal word "Arrows".
+export function movementLabel(playerNumber) {
+    const b = getBindings(playerNumber);
+    return `${keyLabel(b.up)}${keyLabel(b.left)}${keyLabel(b.down)}${keyLabel(b.right)}`;
+}
+
 // Reverse lookup used by ControlsScene's key-capture: given a native
 // KeyboardEvent.keyCode, finds the Phaser KeyCodes name it corresponds to
 // (or null if unmappable, e.g. a modifier-only key Phaser doesn't name).

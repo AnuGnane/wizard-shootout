@@ -251,8 +251,21 @@ export class SurvivalDirector {
 
         // Seat-1 profile hook, gated exactly like every other mode's recording
         // (trackProfile is false during a daily; a daily is never survival).
+        //
+        // Phase 10.5 — read the PRIOR best before recording this run. The old
+        // order recorded first (survivalBestWave = max(old best, this run))
+        // and then compared this run against that already-updated number with
+        // `>=`, so a run merely EQUAL to your existing best always passed —
+        // every tie announced "★ new record". isNewRecord is the one honest
+        // comparison (strictly greater than what was on the books before this
+        // run), computed once here and threaded through to GameOverScene
+        // rather than recomputed there from a bestWave that already includes
+        // the run being judged.
+        const priorBestWave = STATS.survivalBestWave;
+        let isNewRecord = false;
         if (scene.trackProfile && MATCH_STATE.seatTypes[1] === 'human') {
             recordSurvivalRun(this.wavesCleared);
+            isNewRecord = this.wavesCleared > priorBestWave;
         }
         const bestWave = STATS.survivalBestWave;
 
@@ -274,6 +287,7 @@ export class SurvivalDirector {
                 wave: this.wave,
                 teamKills: this.kills,
                 bestWave,
+                isNewRecord,
             });
         });
     }

@@ -128,7 +128,7 @@ export class OnlineScene extends Phaser.Scene {
         const { width, height } = this.cameras.main;
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
-        this.add.text(width / 2, 48, 'ONLINE 1v1 (PROTOTYPE)', {
+        this.add.text(width / 2, 48, 'ONLINE 1v1', {
             font: 'bold 34px monospace',
             fill: '#5599ff',
         }).setOrigin(0.5).setStroke('#ffffff', 2);

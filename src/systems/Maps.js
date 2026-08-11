@@ -316,13 +316,6 @@ export class GameMap {
         };
     }
 
-    getSpawnPoints() {
-        return {
-            player1: this.tileToWorld(this.spawnTiles['1'].x, this.spawnTiles['1'].y),
-            player2: this.tileToWorld(this.spawnTiles['2'].x, this.spawnTiles['2'].y),
-        };
-    }
-
     // World spawn positions for `count` wizards, as an array of {x, y}.
     // count <= 2 returns exactly the legacy two-spawn layout (spawn '1' then
     // '2') so 1P/2P are untouched. count 3/4 is corner-based: BFS out from each

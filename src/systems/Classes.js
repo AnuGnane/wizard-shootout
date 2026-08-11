@@ -2,6 +2,15 @@
 // passive stat tweak. Every tunable an ability needs lives under that
 // class's `signature` object so GameScene stays free of magic numbers.
 // See ROADMAP.md Phase 3 for the design table this mirrors.
+//
+// `passive` (below, on classes that have one) is the human-readable line
+// shown in menus/lobby cards; `passiveConfig` (Phase 10.5 config hygiene) is
+// the number(s) that actually implement it, read by Player.js off
+// `this.classDef.passiveConfig` instead of a hardcoded literal behind a
+// `this.classKey === '...'` check. Only classes whose passive needs a tunable
+// number carry one — a class without one (Cryomancer, Stonecaller's own
+// wallDurationMultiplier already lives under `signature`) simply has no field
+// to read.
 
 export const WIZARD_CLASSES = {
     arcanist: {
@@ -30,6 +39,7 @@ export const WIZARD_CLASSES = {
             maxWallBands: 1,
         },
         passive: 'Faster normal shots',
+        passiveConfig: { normalCooldownMultiplier: 0.72 },
     },
     pyromancer: {
         name: 'Pyromancer',
@@ -45,6 +55,7 @@ export const WIZARD_CLASSES = {
             spark: { damage: 8, speed: 260, maxBounces: 0, lifetime: 380, color: 0xff6600, size: 6 },
         },
         passive: 'Burn immune · fire orb x4',
+        passiveConfig: { fireOrbShots: 4 },
     },
     cryomancer: {
         name: 'Cryomancer',
@@ -58,8 +69,6 @@ export const WIZARD_CLASSES = {
             ringRadius: 95,
             ringFadeMs: 400,
             frostRadius: 90,      // tiles/foes within this range are affected
-            overlayColor: 0xbbffff,
-            overlayFadeMs: 3000,
             slowPercent: 0.45,
             slowMs: 2500,
         },
@@ -99,6 +108,7 @@ export const WIZARD_CLASSES = {
             afterimageFadeMs: 150,
         },
         passive: 'Faster orb shots',
+        passiveConfig: { runeCooldownMultiplier: 0.7 },
     },
     // Phase 9c: Warden reuses the SHIELD orb element (own-element empowerment
     // = bigger shield charges, mirroring Pyromancer's fire-orb=4-shots deal).
@@ -115,6 +125,7 @@ export const WIZARD_CLASSES = {
             flashColor: 0xbfe3ff,
         },
         passive: 'Shield orb = 2 charges',
+        passiveConfig: { shieldCharges: 2 },
     },
     // Phase 9c: Trickster reuses the TRIPLE orb element (own-element
     // empowerment = more uses per pickup, same pattern as Warden/Pyromancer).
@@ -141,6 +152,7 @@ export const WIZARD_CLASSES = {
             backPellet: { damage: 12, speed: 350, maxBounces: Infinity, lifetime: 5000, color: 0xff88dd, size: 7 },
         },
         passive: 'Triple orb = 3 uses',
+        passiveConfig: { tripleOrbShots: 3 },
     },
 };
 

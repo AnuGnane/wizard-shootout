@@ -72,6 +72,12 @@ export class GameOverScene extends Phaser.Scene {
         this.wave = data.wave || 1;
         this.teamKills = data.teamKills || 0;
         this.bestWave = data.bestWave || 0;
+        // Phase 10.5 — whether THIS run actually beat the prior best, decided
+        // once by SurvivalDirector (which has both the prior and the recorded
+        // value to compare) rather than re-derived here from bestWave, which
+        // by the time it arrives already includes this run and can no longer
+        // tell a genuine improvement from a tie (see the comment there).
+        this.isNewRecord = !!data.isNewRecord;
     }
 
     create() {
@@ -191,7 +197,7 @@ export class GameOverScene extends Phaser.Scene {
             fill: '#8888aa',
         }).setOrigin(0.5);
 
-        const isRecord = this.wavesSurvived > 0 && this.wavesSurvived >= this.bestWave;
+        const isRecord = this.isNewRecord;
         this.add.text(width / 2, 405, isRecord ? `BEST: ${this.bestWave}  ★ new record` : `BEST: ${this.bestWave}`, {
             font: '16px monospace',
             fill: isRecord ? '#66ff66' : '#8888aa',
