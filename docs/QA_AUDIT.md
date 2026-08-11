@@ -1,5 +1,21 @@
 # Full-game QA audit — August 2026
 
+> **STATUS: every finding in this document has been fixed** (Phase 10.5, see
+> ROADMAP.md). This file is kept as the record of what was found, how it was
+> proved, and why each fix took the shape it did — the "Recommended fix order"
+> at the bottom is what was actually followed. Each fix landed with a repro
+> probe committed under `tests/` (dot-prefixed, run directly with `node`), and
+> the two crash bugs also gained permanent checks in the CI smoke suite, which
+> is now 11/11. Guard totals after the pass: smoke 11/11, nav 17/17, crash 5/5,
+> survival-softlock 4/4, cap 14/14, wall-fx 12/12, blink 12/12, leave 16/16,
+> m2m3 14/14, lobby-back 4/4, hardening 15/15, guest-guards 28/28.
+>
+> Two findings resolved as design decisions rather than code repairs, both
+> recorded in the entries below: **Blink** was fixed by making the mechanic
+> match its description (not by rewording it), and the **transient-disconnect
+> grace period** deliberately trades ~5s of extra hard-disconnect detection
+> latency for not ending matches on a wifi blip.
+
 A systematic pre-release audit of every game surface, run after Phase 10
 (feature-complete through "online for real") and before Phase 11 (ship).
 Five audit streams ran ~350 runtime assertions in headless Chromium against
