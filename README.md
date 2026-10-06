@@ -11,6 +11,11 @@ generated in code** — pixel-art textures built at boot, Web Audio synth for
 SFX and music, no binary assets in the repo. That keeps cosmetics, map
 theming, and new classes nearly free.
 
+![Four bots duel on Four Chambers](https://anugnane.github.io/wizard-shootout/trailer.gif)
+
+*The trailer is recorded from a headless four-bot match on every deploy
+(`npm run trailer`), so it always shows the live game.*
+
 ## Running
 
 ```bash
@@ -18,6 +23,7 @@ npm install
 npm run dev      # dev server at http://localhost:3000/wizard-shootout/
 npm run build    # production build in dist/
 npm test         # headless smoke suite (see Development)
+npm run trailer  # record docs/trailer.gif from a bot match (needs a build)
 ```
 
 ## Install it (play offline)
@@ -271,9 +277,17 @@ persists to `localStorage`.
   own dev server, so no server needs to be running first. Requires the
   Playwright browser: `npx playwright install chromium`.
 
+- `npm run trailer` — records a 12-second, four-bot match from the build in
+  `dist/` in headless Chromium and writes `docs/trailer.gif` (under 4 MB;
+  `--out <path>` to write elsewhere). The GIF encoder is in-repo
+  (`scripts/gif.js`); the output is gitignored, never committed.
+
 CI (`.github/workflows/ci.yml`) runs map validation, the production build,
 and the smoke suite on every push and PR. Pushes to `main` additionally build
-and deploy to GitHub Pages (`.github/workflows/deploy.yml`).
+and deploy to GitHub Pages (`.github/workflows/deploy.yml`), recording a fresh
+`trailer.gif` into the site on the way (a failed recording never blocks the
+deploy). The **Trailer** workflow (`.github/workflows/trailer.yml`, run by hand
+from the Actions tab) records one and uploads it as a downloadable artifact.
 
 ## Survival
 
@@ -308,6 +322,8 @@ class per spawn.
 ```
 scripts/
   pwa.js                Vite plugin: manifest, procedural PNG icons, service worker
+  trailer.mjs           Records the trailer GIF from a headless bot match
+  gif.js                Dependency-free animated GIF encoder
 src/
   main.js               Phaser game bootstrap (+ service worker registration)
   config.js             All tunable gameplay constants
@@ -337,6 +353,6 @@ src/
     NetSession.js       Active net session singleton
     NetInput.js         Remote-input source for the guest's puppet
 tests/
-  smoke.mjs             Headless boot/scene/bot-round/survival/netcode/PWA smoke suite
+  smoke.mjs             Headless boot/scene/bot-round/survival/netcode/PWA/GIF smoke suite
   mqtt-stub.mjs         Local stub broker for testing room codes offline
 ```
