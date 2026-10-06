@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/smoke.mjs"
+    "test": "node tests/smoke.mjs",
+    "trailer": "node scripts/trailer.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"
