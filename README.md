@@ -20,6 +20,20 @@ npm run build    # production build in dist/
 npm test         # headless smoke suite (see Development)
 ```
 
+## Install it (play offline)
+
+The game is an installable web app. Open
+https://anugnane.github.io/wizard-shootout/ on a phone and add it to the home
+screen — **Share → Add to Home Screen** in iOS Safari, **⋮ → Install app** (or
+Add to Home screen) in Android Chrome. A service worker caches the whole game
+on first load, so after that it opens and plays with no network: every mode
+except Online works in airplane mode. A new deploy is picked up the next time
+the app is opened with a connection.
+
+The manifest, the service worker and the icons are generated at build time by
+`scripts/pwa.js` (the icon is a 16×16 pixel-art wizard drawn and PNG-encoded in
+code), so the repo still holds no binary assets.
+
 ## Modes
 
 - **1 Player vs Bot** — an AI wizard that pathfinds through the maze, grabs
@@ -247,10 +261,13 @@ persists to `localStorage`.
 ## Development
 
 - `npm run dev` — Vite dev server (base path `/wizard-shootout/`).
-- `npm run build` — production build to `dist/` (also the CI deploy artifact).
+- `npm run build` — production build to `dist/` (also the CI deploy artifact),
+  including the generated PWA manifest, icons and service worker.
 - `npm test` — headless smoke suite (`tests/smoke.mjs`): boots the game in
   Chromium, checks every scene is registered, plays a bot round, runs a
-  WebRTC loopback handshake, and asserts zero console errors. It spins up its
+  WebRTC loopback handshake, checks the PWA manifest/icons/worker are served,
+  and — against the production build in `dist/` — that the worker installs and
+  the game boots and starts a bot round offline. Asserts zero console errors. It spins up its
   own dev server, so no server needs to be running first. Requires the
   Playwright browser: `npx playwright install chromium`.
 
@@ -289,8 +306,10 @@ class per spawn.
 ## Project layout
 
 ```
+scripts/
+  pwa.js                Vite plugin: manifest, procedural PNG icons, service worker
 src/
-  main.js               Phaser game bootstrap
+  main.js               Phaser game bootstrap (+ service worker registration)
   config.js             All tunable gameplay constants
   scenes/               Boot, Menu, Settings, ClassSelect, MapSelect,
                         MapEditor, Game, Pause, GameOver, Stats, Wardrobe,
@@ -318,6 +337,6 @@ src/
     NetSession.js       Active net session singleton
     NetInput.js         Remote-input source for the guest's puppet
 tests/
-  smoke.mjs             Headless boot/scene/bot-round/survival/netcode smoke suite
+  smoke.mjs             Headless boot/scene/bot-round/survival/netcode/PWA smoke suite
   mqtt-stub.mjs         Local stub broker for testing room codes offline
 ```

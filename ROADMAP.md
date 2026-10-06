@@ -119,7 +119,8 @@ maintenance debt. Pay it down before adding more surface area.
 
 ## Phase 11 — Ship & reach (release the finished thing)
 
-- [ ] `[S]` itch.io release + installable mobile PWA (offline play, add-to-home-screen)
+- [x] `[S]` Installable mobile PWA (offline play, add-to-home-screen) — build-time manifest, procedural icons and precaching service worker (`scripts/pwa.js`)
+- [ ] `[S]` itch.io release
 - [ ] `[H]` Auto-generate a trailer GIF from a headless bot match for store/README
 - [ ] `[F]` Pre-launch playtest + balance pass
 
