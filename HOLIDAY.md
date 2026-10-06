@@ -1,18 +1,34 @@
 # Holiday queue (6 to 23 October 2026)
 
-Anu is away with a phone. Scheduled cloud agents work this queue one package a run and open a PR; Anu approves from the phone. Merging to `main` deploys to https://anugnane.github.io/wizard-shootout/ through `.github/workflows/deploy.yml`, so a merged package is live within minutes and Anu plays it on the phone.
+Anu is away with a phone. Scheduled cloud agents work this queue one package a run, and from 6 October 14:00 London they merge their own work: Anu has handed the holiday over and nothing waits for approval (see **Merging**). Merging to `main` deploys to https://anugnane.github.io/wizard-shootout/ through `.github/workflows/deploy.yml`, so a merged package is live within minutes and Anu plays it on the phone.
 
 `ROADMAP.md`'s working agreements rule: `npm run build` and `npm test` (the headless smoke suite) pass before every commit, maps pass `validateMap`, no binary assets, tunables in `config.js`.
 
 ## One package a run
 
-1. `git fetch origin`. A package is **done** when its box below is ticked on `main`. It is **in review** when a branch `holiday/<id>` (or `claude/holiday-<id>`) exists on origin and is not merged into `main`; leave it alone. It is **blocked** when a package it depends on is not done.
-2. Take the first package that is neither done, in review nor blocked. If there is none, stop; write one line saying so.
-3. Branch from `origin/main` as `holiday/<id>` (if the push is refused, `claude/holiday-<id>`). Small commits in the repo's style.
-4. Tick the package's box here and in `ROADMAP.md` in the same branch.
-5. Open the PR with the body below. Then stop.
+1. `git fetch origin`. A package is **done** when its box below is ticked on `main`. It is **blocked** when a package it depends on is not done.
+2. **Resume first.** A branch `holiday/<id>` (or `claude/holiday-<id>`) on origin that is not merged into `main` is an unfinished run, most likely cut off by a usage limit. Check it out, read its commits and PR, finish it under **Merging**, and only then consider a new package. Never leave a second unfinished branch behind.
+3. Take the first package that is neither done nor blocked. If there is none, **refill** (below). If the queue is full and nothing is ready, stop; write one line saying so.
+4. Branch from `origin/main` as `holiday/<id>` (if the push is refused, `claude/holiday-<id>`). Small commits in the repo's style.
+5. Tick the package's box here and in `ROADMAP.md` in the same branch.
+6. Open the PR with the body below, then follow **Merging**. Do not start a second package.
 
-A ruling is a decision only Anu can make. Do not block on it: pick a default, state it in the PR, and carry on. If Anu merges without comment, the default stands.
+A ruling is a decision only Anu can make. Do not block on it: pick a default, state it in the PR, and carry on. The default stands; if Anu comments on the PR later, the next run applies the comment as a package.
+
+### Refill
+
+When no package is ready, add up to three new ones, each sized for one run, each traced to an unticked line in `ROADMAP.md` (Phase 11 onwards, or an open ruling there). Prefer what a phone player would notice. Never a binary asset, never a dependency the ROADMAP does not already allow. Commit the refill on `holiday/refill-<date>`, merge it under **Merging**, and stop; the next run takes the first new package.
+
+## Merging
+
+A merge deploys, so the gate is the whole protection.
+
+1. **The gate is green** on the branch's final commit: `npm run build` and `npm test`, pasted into the PR. For a change to `deploy.yml` or the service worker, also serve `dist/` locally (`npx vite preview` or `python3 -m http.server`) and fetch the index, the manifest and the worker with `curl` to show they are served.
+2. **Review before merging.** Reread the whole diff (`git diff origin/main...HEAD`) as a reviewer would, with the Task tool's subagent if it is available: anything the package did not ask for, any test weakened or deleted, any tunable moved out of `config.js`. Fix what it finds; rerun the gate.
+3. **Rebase on `origin/main`** just before merging. If the rebase touched a file, rerun the gate.
+4. **Merge** with the GitHub MCP tool (`merge_pull_request`, method `merge`). If that is unavailable, `git push origin HEAD:main` after the rebase (a fast-forward); GitHub marks the PR merged. Delete the branch. Never force-push; never rewrite `main`.
+5. **After the merge**, wait for the deploy workflow (the GitHub MCP tool can list workflow runs; otherwise two minutes), then `curl -sI https://anugnane.github.io/wizard-shootout/` and the new asset the package added. If the site is broken, open a revert PR of the merge commit and merge that too; say so in the notification.
+6. **Report:** the PR is the record for the phone. Finish with one push notification: the package id, merged, the gate line, and what to try on the phone.
 
 ### PR body
 
