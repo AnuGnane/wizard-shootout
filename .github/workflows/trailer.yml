@@ -1,0 +1,42 @@
+name: Trailer
+
+# Records docs/trailer.gif from a headless bot match and uploads it as an
+# artifact (never committed). Run by hand: Actions -> Trailer -> Run workflow.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trailer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Record trailer GIF
+        timeout-minutes: 5
+        run: npm run trailer
+
+      - name: Upload trailer
+        uses: actions/upload-artifact@v4
+        with:
+          name: trailer-gif
+          path: docs/trailer.gif
+          if-no-files-found: error
