@@ -333,7 +333,8 @@ try {
         const DIR = '/html/1234567/';
         const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
         itchServer = createHttpServer((req, res) => {
-            const path = decodeURIComponent((req.url || '/').split('?')[0]);
+            let path;
+            try { path = decodeURIComponent((req.url || '/').split('?')[0]); } catch { path = ''; }
             if (path === '/') {
                 res.writeHead(200, { 'Content-Type': 'text/html' });
                 return res.end(`<!DOCTYPE html><link rel="icon" href="data:,"><body style="margin:0"><iframe src="${DIR}index.html" width="1024" height="700" allow="autoplay; fullscreen; gamepad"></iframe></body>`);
@@ -353,7 +354,8 @@ try {
         const ctx = await browser.newContext();
         const p3 = await ctx.newPage();
         const bad = [];
-        p3.on('response', (r) => { if (r.status() >= 400) bad.push(`${r.status()} ${new URL(r.url()).pathname}`); });
+        // On the context, so the worker's precache fetches count too.
+        ctx.on('response', (r) => { if (r.status() >= 400) bad.push(`${r.status()} ${new URL(r.url()).pathname}`); });
         p3.on('pageerror', (e) => errors.push('itch pageerror: ' + e.message));
         p3.on('console', (m) => { if (m.type() === 'error') errors.push('itch console.error: ' + m.text()); });
         let booted = false, itchErr = '';
