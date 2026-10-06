@@ -29,8 +29,10 @@ jobs:
       - name: Validate maps
         run: node --input-type=module -e "import { MAP_DEFS, validateMap } from './src/systems/Maps.js'; let bad=0; for (const d of MAP_DEFS){const p=validateMap(d); if(p.length){bad++; console.error(d.name, p);}} if(bad) process.exit(1); console.log(MAP_DEFS.length + ' maps OK');"
 
-      - name: Build (production bundle)
-        run: npm run build
+      - name: Build (production bundle + itch.io bundle)
+        run: |
+          npm run build
+          npm run build:itch
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium

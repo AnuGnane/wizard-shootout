@@ -10,6 +10,7 @@
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
+//      and the itch.io bundle in dist-itch/ boots from a subfolder in an iframe,
 //   7. the trailer's GIF encoder (scripts/gif.js) writes a GIF Chromium decodes.
 //
 // Self-contained: it starts its own dev server via the Vite Node API (so no
@@ -21,7 +22,9 @@
 // (window.__net) is dev-only, and the dev build exercises the same game code.
 // A separate `npm run build` in CI proves the production bundle compiles.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
+import { extname, join, normalize } from 'node:path';
 import { createServer, preview } from 'vite';
 import { chromium } from 'playwright';
 import { buildPalette, indexFrame, encodeGif } from '../scripts/gif.js';
@@ -38,7 +41,7 @@ function check(name, pass, detail) {
     console.log(`${pass ? '  ok' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
 }
 
-let server, previewServer, browser;
+let server, previewServer, itchServer, browser;
 const errors = [];
 
 try {
@@ -318,6 +321,62 @@ try {
             offlineBoot && offlineRound, offlineErr || 'airplane mode OK');
     }
 
+    // 6c. itch.io bundle (`npm run build:itch`, zipped by release.yml): itch
+    // serves an HTML5 game from a random folder and embeds it in an iframe,
+    // so the build must use relative paths only. Served here under such a
+    // folder (anything outside it is a 404) and iframed from a host page;
+    // the game must boot with every request answered. Skipped locally
+    // without dist-itch/, a failure in CI.
+    if (!existsSync('dist-itch/index.html')) {
+        check('itch.io bundle boots from a subfolder in an iframe', !process.env.CI, 'skipped — no dist-itch/ (run `npm run build:itch` first)');
+    } else {
+        const DIR = '/html/1234567/';
+        const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
+        itchServer = createHttpServer((req, res) => {
+            let path;
+            try { path = decodeURIComponent((req.url || '/').split('?')[0]); } catch { path = ''; }
+            if (path === '/') {
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                return res.end(`<!DOCTYPE html><link rel="icon" href="data:,"><body style="margin:0"><iframe src="${DIR}index.html" width="1024" height="700" allow="autoplay; fullscreen; gamepad"></iframe></body>`);
+            }
+            const rel = path.startsWith(DIR) ? normalize(path.slice(DIR.length) || 'index.html') : null;
+            const file = rel && !rel.startsWith('..') ? join('dist-itch', rel) : null;
+            if (!file || !existsSync(file) || !statSync(file).isFile()) {
+                res.writeHead(404);
+                return res.end();
+            }
+            res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream' });
+            res.end(readFileSync(file));
+        });
+        await new Promise((r) => itchServer.listen(0, '127.0.0.1', r));
+        const iurl = `http://127.0.0.1:${itchServer.address().port}/`;
+        const absRefs = readFileSync('dist-itch/index.html', 'utf8').includes('/wizard-shootout/');
+        const ctx = await browser.newContext();
+        const p3 = await ctx.newPage();
+        const bad = [];
+        // On the context, so the worker's precache fetches count too.
+        ctx.on('response', (r) => { if (r.status() >= 400) bad.push(`${r.status()} ${new URL(r.url()).pathname}`); });
+        p3.on('pageerror', (e) => errors.push('itch pageerror: ' + e.message));
+        p3.on('console', (m) => { if (m.type() === 'error') errors.push('itch console.error: ' + m.text()); });
+        let booted = false, itchErr = '';
+        try {
+            await p3.goto(iurl, { waitUntil: 'load' });
+            const frame = p3.frames().find((f) => f.url().includes(DIR));
+            if (!frame) throw new Error('game iframe not found');
+            await frame.waitForFunction(
+                () => window.__game && window.__game.scene && window.__game.scene.isActive('MenuScene'),
+                null, { timeout: 20000 },
+            );
+            booted = true;
+        } catch (e) {
+            itchErr = e.message.split('\n')[0];
+        }
+        await ctx.close();
+        check('itch.io bundle boots from a subfolder in an iframe',
+            booted && !absRefs && bad.length === 0,
+            itchErr || (absRefs ? 'index.html has absolute /wizard-shootout/ paths' : bad.length ? bad.slice(0, 3).join(', ') : `served under ${DIR}`));
+    }
+
     // 7. Trailer GIF encoder: a 3-frame 40x30 animation (moving square, an
     // unchanged frame) must decode in the browser at the right size.
     {
@@ -354,6 +413,7 @@ try {
 } finally {
     if (browser) await browser.close().catch(() => {});
     if (previewServer) await new Promise((r) => previewServer.httpServer.close(r)).catch(() => {});
+    if (itchServer) await new Promise((r) => itchServer.close(r)).catch(() => {});
     if (server) await server.close().catch(() => {});
 }
 
