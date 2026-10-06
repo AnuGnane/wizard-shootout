@@ -7,7 +7,9 @@
 //   3. a 1P bot round actually plays and a kill advances the score/round,
 //   4. the WebRTC transport completes a loopback handshake and delivers a
 //      message host -> guest,
-//   5. nothing logged a console error or threw during any of the above.
+//   5. nothing logged a console error or threw during any of the above,
+//   6. the PWA manifest, icons and service worker are served (dev server), and
+//      the production build in dist/ installs its worker and boots offline.
 //
 // Self-contained: it starts its own dev server via the Vite Node API (so no
 // server needs to be running first, and no browser auto-opens) and tears it
@@ -18,7 +20,8 @@
 // (window.__net) is dev-only, and the dev build exercises the same game code.
 // A separate `npm run build` in CI proves the production bundle compiles.
 
-import { createServer } from 'vite';
+import { existsSync } from 'node:fs';
+import { createServer, preview } from 'vite';
 import { chromium } from 'playwright';
 
 const SCENES = [
@@ -33,7 +36,7 @@ function check(name, pass, detail) {
     console.log(`${pass ? '  ok' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
 }
 
-let server, browser;
+let server, previewServer, browser;
 const errors = [];
 
 try {
@@ -225,6 +228,94 @@ try {
         net.hostOpen && net.guestOpen && net.got,
         net.err || `hostOpen=${net.hostOpen} guestOpen=${net.guestOpen} delivered=${net.got}`);
 
+    // 6a. PWA files are served (dev middleware from scripts/pwa.js), and the
+    // page head links them. PNG dims are read straight from the IHDR chunk.
+    const pwa = await page.evaluate(async () => {
+        const out = {};
+        const m = await fetch('manifest.webmanifest');
+        out.manifestType = m.headers.get('content-type');
+        const man = await m.json();
+        out.name = man.name;
+        out.display = man.display;
+        out.icons = [];
+        for (const i of man.icons) {
+            const b = new Uint8Array(await (await fetch(i.src)).arrayBuffer());
+            const dv = new DataView(b.buffer);
+            const png = b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+            out.icons.push({ sizes: i.sizes, purpose: i.purpose, ok: png && `${dv.getUint32(16)}x${dv.getUint32(20)}` === i.sizes });
+        }
+        const sw = await fetch('sw.js');
+        out.swType = sw.headers.get('content-type');
+        out.swHasFetch = (await sw.text()).includes("addEventListener('fetch'");
+        out.headManifest = !!document.querySelector('link[rel="manifest"]');
+        out.headApple = !!document.querySelector('link[rel="apple-touch-icon"]');
+        return out;
+    });
+    check('PWA: manifest + icons + worker served, head links them',
+        /manifest\+json/.test(pwa.manifestType) && pwa.name === 'Wizard Shootout'
+            && pwa.icons.length >= 3 && pwa.icons.every((i) => i.ok) && pwa.icons.some((i) => i.purpose === 'maskable')
+            && /javascript/.test(pwa.swType) && pwa.swHasFetch && pwa.headManifest && pwa.headApple,
+        `display=${pwa.display} icons=${pwa.icons.map((i) => i.sizes + (i.ok ? '' : '!')).join(',')} sw=${pwa.swHasFetch}`);
+
+    // 6b. Production build: the worker installs, controls the page, and the
+    // game boots and starts a bot round with the network switched off. Needs
+    // `npm run build` first (CI always builds before testing); skipped
+    // locally without dist/, a failure in CI.
+    if (!existsSync('dist/sw.js')) {
+        check('PWA: production build boots offline', !process.env.CI, 'skipped — no dist/ (run `npm run build` first)');
+    } else {
+        previewServer = await preview({
+            preview: { open: false, host: '127.0.0.1', port: 4173, strictPort: false },
+            logLevel: 'warn',
+        });
+        const purl = previewServer.resolvedUrls?.local?.[0];
+        const ctx = await browser.newContext();
+        const p2 = await ctx.newPage();
+        p2.on('pageerror', (e) => errors.push('pwa pageerror: ' + e.message));
+        p2.on('console', (m) => { if (m.type() === 'error') errors.push('pwa console.error: ' + m.text()); });
+        await p2.goto(purl, { waitUntil: 'load' });
+        const sw = await p2.evaluate(async () => {
+            await Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(r, 10000))]);
+            const t0 = Date.now();
+            while (!navigator.serviceWorker.controller && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 100));
+            const keys = await caches.keys();
+            const cached = keys.length ? (await (await caches.open(keys[0])).keys()).length : 0;
+            return { controlled: !!navigator.serviceWorker.controller, caches: keys.length, cached };
+        });
+        await ctx.setOffline(true);
+        let offlineBoot = false, offlineRound = false, offlineErr = '';
+        try {
+            await p2.reload({ waitUntil: 'load' });
+            await p2.waitForFunction(
+                () => window.__game && window.__game.scene && window.__game.scene.isActive('MenuScene'),
+                null, { timeout: 20000 },
+            );
+            offlineBoot = true;
+            await p2.evaluate(() => {
+                const M = window.__match;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            });
+            await p2.waitForFunction(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                return s && window.__game.scene.isActive('GameScene') && s.player1 && s.player2;
+            }, null, { timeout: 8000 });
+            offlineRound = true;
+        } catch (e) {
+            offlineErr = e.message.split('\n')[0];
+        }
+        await ctx.close();
+        check('PWA: production worker controls the page + precaches the bundle',
+            sw.controlled && sw.caches === 1 && sw.cached >= 5,
+            `controlled=${sw.controlled} caches=${sw.caches} cachedFiles=${sw.cached}`);
+        check('PWA: offline reload boots to menu and starts a bot round',
+            offlineBoot && offlineRound, offlineErr || 'airplane mode OK');
+    }
+
     // 5. No errors anywhere
     check('no console errors / page errors', errors.length === 0,
         errors.length ? errors.slice(0, 5).join(' | ') : '');
@@ -232,6 +323,7 @@ try {
     check('suite ran without throwing', false, err.message);
 } finally {
     if (browser) await browser.close().catch(() => {});
+    if (previewServer) await new Promise((r) => previewServer.httpServer.close(r)).catch(() => {});
     if (server) await server.close().catch(() => {});
 }
 
