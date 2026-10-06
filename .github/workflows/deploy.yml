@@ -35,6 +35,18 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The README's trailer GIF, recorded fresh from this build into the site.
+      # Best-effort: a failed recording must never block the deploy.
+      - name: Install Playwright Chromium
+        continue-on-error: true
+        timeout-minutes: 5
+        run: npx playwright install --with-deps chromium
+
+      - name: Record trailer GIF
+        continue-on-error: true
+        timeout-minutes: 5
+        run: npm run trailer -- --out dist/trailer.gif
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

@@ -202,8 +202,12 @@ function networkFirst(req) {
             if (!res.ok) return fallback();
             done = true;
             clearTimeout(timer);
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(INDEX, copy));
+            // Only an HTML page may become the offline start page (opening
+            // trailer.gif in the installed app must not replace it).
+            if ((res.headers.get('content-type') || '').includes('text/html')) {
+                const copy = res.clone();
+                caches.open(CACHE).then((c) => c.put(INDEX, copy));
+            }
             resolve(res);
         }, fallback);
     });

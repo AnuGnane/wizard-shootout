@@ -121,7 +121,7 @@ maintenance debt. Pay it down before adding more surface area.
 
 - [x] `[S]` Installable mobile PWA (offline play, add-to-home-screen) — build-time manifest, procedural icons and precaching service worker (`scripts/pwa.js`)
 - [ ] `[S]` itch.io release
-- [ ] `[H]` Auto-generate a trailer GIF from a headless bot match for store/README
+- [x] `[H]` Auto-generate a trailer GIF from a headless bot match for store/README — `npm run trailer` (`scripts/trailer.mjs` + in-repo GIF encoder `scripts/gif.js`), recorded into the Pages site on every deploy and by the manual Trailer workflow
 - [ ] `[F]` Pre-launch playtest + balance pass
 
 ---

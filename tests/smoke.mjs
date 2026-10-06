@@ -9,7 +9,8 @@
 //      message host -> guest,
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
-//      the production build in dist/ installs its worker and boots offline.
+//      the production build in dist/ installs its worker and boots offline,
+//   7. the trailer's GIF encoder (scripts/gif.js) writes a GIF Chromium decodes.
 //
 // Self-contained: it starts its own dev server via the Vite Node API (so no
 // server needs to be running first, and no browser auto-opens) and tears it
@@ -23,6 +24,7 @@
 import { existsSync } from 'node:fs';
 import { createServer, preview } from 'vite';
 import { chromium } from 'playwright';
+import { buildPalette, indexFrame, encodeGif } from '../scripts/gif.js';
 
 const SCENES = [
     'BootScene', 'MenuScene', 'SettingsScene', 'ControlsScene', 'ClassSelectScene',
@@ -314,6 +316,34 @@ try {
             `controlled=${sw.controlled} caches=${sw.caches} cachedFiles=${sw.cached}`);
         check('PWA: offline reload boots to menu and starts a bot round',
             offlineBoot && offlineRound, offlineErr || 'airplane mode OK');
+    }
+
+    // 7. Trailer GIF encoder: a 3-frame 40x30 animation (moving square, an
+    // unchanged frame) must decode in the browser at the right size.
+    {
+        const W = 40, H = 30;
+        const rgbFrames = [0, 10, 10].map((ox) => {
+            const f = new Uint8Array(W * H * 3).fill(30);
+            for (let y = 8; y < 18; y++) for (let x = ox; x < ox + 10; x++) f.set([255, 120, 0], (y * W + x) * 3);
+            return f;
+        });
+        const pal = buildPalette(rgbFrames);
+        const gif = encodeGif({ width: W, height: H, palette: pal.palette, frames: rgbFrames.map((f) => indexFrame(f, pal)), delays: [10, 10, 10] });
+        const dec = await page.evaluate(async (b64) => {
+            const img = new Image();
+            img.src = 'data:image/gif;base64,' + b64;
+            try { await img.decode(); } catch (e) { return { err: e.message }; }
+            // First frame's pixels: square at x 0-9, background elsewhere.
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3)).join(',');
+            return { w: img.naturalWidth, h: img.naturalHeight, square: px(5, 12), bg: px(30, 25) };
+        }, Buffer.from(gif).toString('base64'));
+        check('trailer GIF encoder output decodes in Chromium (size + pixels)',
+            dec.w === W && dec.h === H && dec.square === '255,120,0' && dec.bg === '30,30,30',
+            dec.err || `${dec.w}x${dec.h} square=${dec.square} bg=${dec.bg}, ${gif.length} bytes`);
     }
 
     // 5. No errors anywhere

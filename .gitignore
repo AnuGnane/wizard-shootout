@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 
+# Trailer (scripts/trailer.mjs) — generated, never committed
+docs/trailer.gif
+
 # IDE
 .idea/
 .vscode/
