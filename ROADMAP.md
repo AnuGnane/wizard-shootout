@@ -120,7 +120,7 @@ maintenance debt. Pay it down before adding more surface area.
 ## Phase 11 — Ship & reach (release the finished thing)
 
 - [x] `[S]` Installable mobile PWA (offline play, add-to-home-screen) — build-time manifest, procedural icons and precaching service worker (`scripts/pwa.js`)
-- [ ] `[S]` itch.io release
+- [x] `[S]` itch.io release — `v*` tags build a relative-path HTML5 bundle (`npm run build:itch`), smoke-test it in a subfolder iframe and attach `wizard-shootout-<tag>-html5.zip` to a GitHub release (`.github/workflows/release.yml`); the itch.io upload itself is by hand (README → Releases)
 - [x] `[H]` Auto-generate a trailer GIF from a headless bot match for store/README — `npm run trailer` (`scripts/trailer.mjs` + in-repo GIF encoder `scripts/gif.js`), recorded into the Pages site on every deploy and by the manual Trailer workflow
 - [ ] `[F]` Pre-launch playtest + balance pass
 

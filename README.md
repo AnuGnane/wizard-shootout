@@ -22,6 +22,7 @@ theming, and new classes nearly free.
 npm install
 npm run dev      # dev server at http://localhost:3000/wizard-shootout/
 npm run build    # production build in dist/
+npm run build:itch  # itch.io HTML5 bundle (relative paths) in dist-itch/
 npm test         # headless smoke suite (see Development)
 npm run trailer  # record docs/trailer.gif from a bot match (needs a build)
 ```
@@ -39,6 +40,23 @@ the app is opened with a connection.
 The manifest, the service worker and the icons are generated at build time by
 `scripts/pwa.js` (the icon is a 16×16 pixel-art wizard drawn and PNG-encoded in
 code), so the repo still holds no binary assets.
+
+## Releases
+
+Each `v*` tag gets a GitHub release with `wizard-shootout-<tag>-html5.zip`
+attached: the game built with relative paths, `index.html` at the zip root,
+ready to upload to itch.io as an HTML5 game. To cut one:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+The **Release** workflow (`.github/workflows/release.yml`) builds, runs the
+smoke suite, zips `dist-itch/` and attaches it. Uploading to itch.io is by
+hand: on the game's itch.io page, **Edit game → Kind of project: HTML →
+Upload files** (the zip), tick **This file will be played in the browser**,
+set the embed size to 1024 × 700 (the game's native size) with **Fullscreen button** and **Mobile
+friendly** (orientation: landscape) on, then **Save**.
 
 ## Modes
 
@@ -273,7 +291,8 @@ persists to `localStorage`.
   Chromium, checks every scene is registered, plays a bot round, runs a
   WebRTC loopback handshake, checks the PWA manifest/icons/worker are served,
   and — against the production build in `dist/` — that the worker installs and
-  the game boots and starts a bot round offline. Asserts zero console errors. It spins up its
+  the game boots and starts a bot round offline, and that the itch.io bundle in
+  `dist-itch/` boots from a subfolder inside an iframe. Asserts zero console errors. It spins up its
   own dev server, so no server needs to be running first. Requires the
   Playwright browser: `npx playwright install chromium`.
 
