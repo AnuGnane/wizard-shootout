@@ -34,6 +34,10 @@ const TRAILER = {
 
 const outArg = process.argv.indexOf('--out');
 const OUT = outArg > 0 ? process.argv[outArg + 1] : 'docs/trailer.gif';
+if (!OUT) {
+    console.error('usage: node scripts/trailer.mjs [--out <file.gif>]');
+    process.exit(1);
+}
 
 if (!existsSync('dist/index.html')) {
     console.error('trailer: no dist/ — run `npm run build` first');

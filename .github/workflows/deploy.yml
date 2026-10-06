@@ -39,6 +39,7 @@ jobs:
       # Best-effort: a failed recording must never block the deploy.
       - name: Install Playwright Chromium
         continue-on-error: true
+        timeout-minutes: 5
         run: npx playwright install --with-deps chromium
 
       - name: Record trailer GIF

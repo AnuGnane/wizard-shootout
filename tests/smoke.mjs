@@ -333,10 +333,17 @@ try {
             const img = new Image();
             img.src = 'data:image/gif;base64,' + b64;
             try { await img.decode(); } catch (e) { return { err: e.message }; }
-            return { w: img.naturalWidth, h: img.naturalHeight };
+            // First frame's pixels: square at x 0-9, background elsewhere.
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3)).join(',');
+            return { w: img.naturalWidth, h: img.naturalHeight, square: px(5, 12), bg: px(30, 25) };
         }, Buffer.from(gif).toString('base64'));
-        check('trailer GIF encoder output decodes in Chromium',
-            dec.w === W && dec.h === H, dec.err || `${dec.w}x${dec.h}, ${gif.length} bytes`);
+        check('trailer GIF encoder output decodes in Chromium (size + pixels)',
+            dec.w === W && dec.h === H && dec.square === '255,120,0' && dec.bg === '30,30,30',
+            dec.err || `${dec.w}x${dec.h} square=${dec.square} bg=${dec.bg}, ${gif.length} bytes`);
     }
 
     // 5. No errors anywhere
