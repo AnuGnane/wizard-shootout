@@ -1,0 +1,61 @@
+name: Release
+
+# Pushing a tag like v1.0.0 builds the game with relative paths (so it runs
+# from any folder, as itch.io serves it), zips dist-itch/ with index.html at
+# the zip root (itch.io's HTML5 bundle layout), and attaches the zip to a
+# GitHub release for that tag. Uploading the zip to itch.io is done by hand.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate maps
+        run: node --input-type=module -e "import { MAP_DEFS, validateMap } from './src/systems/Maps.js'; let bad=0; for (const d of MAP_DEFS){const p=validateMap(d); if(p.length){bad++; console.error(d.name, p);}} if(bad) process.exit(1); console.log(MAP_DEFS.length + ' maps OK');"
+
+      - name: Build (Pages + itch.io bundle)
+        run: |
+          npm run build
+          npm run build:itch
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Same gate as CI; it also boots the itch.io bundle from a subfolder.
+      - name: Smoke test
+        run: npm test
+
+      - name: Zip the HTML5 bundle
+        run: |
+          ZIP="wizard-shootout-${GITHUB_REF_NAME}-html5.zip"
+          (cd dist-itch && zip -r -X "../$ZIP" .)
+          unzip -l "$ZIP"
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+
+      # Re-running the workflow for an existing tag replaces the zip.
+      - name: Attach to a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$ZIP" --title "Wizard Shootout $GITHUB_REF_NAME" --generate-notes
+          fi

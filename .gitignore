@@ -3,6 +3,9 @@ node_modules/
 
 # Build output
 dist/
+# itch.io HTML5 bundle (npm run build:itch) and its release zip
+dist-itch/
+wizard-shootout-*-html5.zip
 
 # Trailer (scripts/trailer.mjs) — generated, never committed
 docs/trailer.gif
