@@ -268,6 +268,7 @@ export class SurvivalDirector {
         });
 
         scene.time.delayedCall(SURVIVAL_CONFIG.runEndDelayMs, () => {
+            scene.leaving = true;
             scene.scene.start('GameOverScene', {
                 isSurvival: true,
                 wavesSurvived: this.wavesCleared,

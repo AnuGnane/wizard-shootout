@@ -199,3 +199,24 @@ export const CONTROLS = {
         ability: 'PERIOD',
     },
 };
+
+// Phase 6e / holiday W-4 — on-screen touch controls (1P mode on a touch
+// device; see systems/TouchControls.js). Sizes are minimums in CSS pixels, so
+// the controls stay thumb-sized however far Phaser's FIT scaling shrinks the
+// 1024x700 canvas on a phone (to ~0.51x on a 640x360 landscape screen). The
+// game-space radius is max(base radius, min CSS size / display scale).
+export const TOUCH_CONFIG = {
+    joystick: { radius: 55, minCss: 110 },   // base circle; the thumb is 0.48 of it
+    fire: { radius: 42, minCss: 68 },
+    small: { radius: 30, minCss: 52 },       // ORB + PWR (44pt Apple / 48dp Material, plus slack)
+    pause: { radius: 16, minCss: 44, x: 300, y: 30 }, // top bar, between P1's health and the score; minCss sizes the hit area only
+    marginCss: 12,       // gap from the canvas edge
+    gapCss: 10,          // gap between neighbouring buttons
+    deadZone: 0.22,      // fraction of the joystick radius before any direction registers
+    // A touch in the left part of the canvas (below the top bar) drops the
+    // joystick under the thumb instead of making the thumb find a fixed spot.
+    floatZone: { maxX: 0.5, minY: 80 }, // minY clears the pause button's hit area on a phone
+    // Portrait on a phone: the page shows a rotate prompt (index.html mirrors
+    // this query in CSS) and a running round pauses.
+    rotateQuery: '(orientation: portrait) and (pointer: coarse) and (max-width: 599px)',
+};

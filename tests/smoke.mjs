@@ -7,6 +7,9 @@
 //   3. a 1P bot round actually plays and a kill advances the score/round,
 //   4. the WebRTC transport completes a loopback handshake and delivers a
 //      message host -> guest,
+//   3d. on a phone-sized touch viewport the on-screen controls are
+//      thumb-sized, inside the safe area, and the joystick, pause button and
+//      rotate prompt work (holiday W-4),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -202,6 +205,139 @@ try {
     check('survival: clearing wave 1 advances to wave 2 and heals heroes',
         surv.wave === 2 && surv.kills === 3 && surv.wave2Total === 4 && surv.hpAfter > surv.hpBefore,
         `wave=${surv.wave} kills=${surv.kills} wave2Total=${surv.wave2Total} hp=${surv.hpBefore}->${surv.hpAfter}`);
+
+    // 3d. Phone play (holiday W-4): 1P on an iPhone-13-sized landscape touch
+    // viewport with notch/home-indicator safe areas emulated. Real CDP touch
+    // events drive the on-screen controls: they're at least thumb-sized in
+    // CSS pixels, the canvas stays inside the safe area, the joystick floats
+    // to the thumb with a radial dead zone, the pause button pauses, and
+    // turning to portrait shows the rotate prompt and pauses the round.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        const INSETS = { top: 0, right: 47, bottom: 21, left: 47 };
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: INSETS });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await phone.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+        });
+        await phone.waitForFunction(() => window.__game.scene.getScene('GameScene')?.touchControls, null, { timeout: 8000 });
+
+        // Sizes and positions in CSS pixels, from the live canvas rect.
+        const layout = () => phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const tc = s.touchControls;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const css = (x, y) => ({ x: c.left + x * k, y: c.top + y * k });
+            const btn = (b) => ({ ...css(b.x, b.y), d: b.radius * 2 * k });
+            return {
+                canvas: { left: c.left, top: c.top, right: c.right, bottom: c.bottom },
+                vw: window.innerWidth, vh: window.innerHeight,
+                joy: { ...css(tc.joy.x, tc.joy.y), d: tc.joy.radius * 2 * k, r: tc.joy.radius * k },
+                fire: btn(tc.buttons.shoot), orb: btn(tc.buttons.runeShoot), pwr: btn(tc.buttons.ability),
+                pause: { ...css(tc.pauseBtn.x, tc.pauseBtn.y), d: tc.pauseBtn.hit * 2 * k },
+            };
+        });
+        const L = await layout();
+        const minD = Math.min(L.orb.d, L.pwr.d);
+        check('phone: touch controls are thumb-sized (CSS px)',
+            minD >= 51.5 && L.fire.d >= 67.5 && L.joy.d >= 109.5 && L.pause.d >= 43.5, // TOUCH_CONFIG minCss, less rounding
+            `joystick ${Math.round(L.joy.d)}, FIRE ${Math.round(L.fire.d)}, ORB/PWR ${Math.round(minD)}, pause hit ${Math.round(L.pause.d)} at 844x390`);
+        check('phone: canvas stays inside the safe area (notch + home indicator)',
+            L.canvas.left >= INSETS.left - 0.5 && L.vw - L.canvas.right >= INSETS.right - 0.5 &&
+            L.vh - L.canvas.bottom >= INSETS.bottom - 0.5 && L.canvas.top >= INSETS.top - 0.5,
+            `canvas ${Math.round(L.canvas.left)},${Math.round(L.canvas.top)} → ${Math.round(L.canvas.right)},${Math.round(L.canvas.bottom)} in ${L.vw}x${L.vh}`);
+
+        // Touch the left half well away from the joystick's resting spot: the
+        // base jumps under the thumb. A nudge inside the dead zone moves
+        // nothing; a push right moves right only.
+        const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', {
+            type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }],
+        });
+        const state = () => phone.evaluate(() => {
+            const tc = window.__game.scene.getScene('GameScene').touchControls;
+            const st = tc.getState();
+            return { dirs: ['up', 'down', 'left', 'right'].filter((k) => st[k]).join('+') || 'none', x: tc.joy.x, y: tc.joy.y };
+        });
+        const sx = L.canvas.left + (L.canvas.right - L.canvas.left) * 0.3;
+        const sy = L.canvas.top + (L.canvas.bottom - L.canvas.top) * 0.45;
+        await touch('touchStart', sx, sy);
+        await phone.waitForTimeout(50);
+        const floated = await state();
+        await touch('touchMove', sx + L.joy.r * 0.1, sy);
+        await phone.waitForTimeout(50);
+        const nudge = await state();
+        await touch('touchMove', sx + L.joy.r * 0.8, sy + L.joy.r * 0.1);
+        await phone.waitForTimeout(50);
+        const push = await state();
+        await touch('touchMove', sx + L.joy.r * 0.6, sy + L.joy.r * 0.6);
+        await phone.waitForTimeout(50);
+        const diag = await state();
+        await touch('touchEnd');
+        await phone.waitForTimeout(50);
+        const released = await state();
+        const home = await layout();
+        const movedTo = (s) => Math.abs(L.canvas.left + s.x * ((L.canvas.right - L.canvas.left) / 1024) - sx) < 2;
+        check('phone: joystick floats to the thumb, dead zone, 8-way, releases home',
+            movedTo(floated) && nudge.dirs === 'none' && push.dirs === 'right' && diag.dirs === 'down+right' &&
+            released.dirs === 'none' && Math.abs(home.joy.x - L.joy.x) < 1 && Math.abs(home.joy.y - L.joy.y) < 1,
+            `floated=${movedTo(floated)} nudge=${nudge.dirs} push=${push.dirs} diag=${diag.dirs} released=${released.dirs}`);
+
+        // FIRE held by a second finger while the first drives the joystick.
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy, id: 1 }] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: sx - L.joy.r * 0.8, y: sy, id: 1 }] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx - L.joy.r * 0.8, y: sy, id: 1 }, { x: L.fire.x, y: L.fire.y, id: 2 }] });
+        await phone.waitForTimeout(50);
+        const both = await phone.evaluate(() => window.__game.scene.getScene('GameScene').touchControls.getState());
+        await touch('touchEnd');
+        await phone.waitForTimeout(50);
+        check('phone: joystick + FIRE work as two fingers at once',
+            both.left && !both.right && both.shoot, `left=${both.left} shoot=${both.shoot}`);
+
+        // Pause button (no ESC key on a phone).
+        await touch('touchStart', L.pause.x, L.pause.y);
+        await touch('touchEnd');
+        await phone.waitForFunction(() => window.__game.scene.isPaused('GameScene') && window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 }).catch(() => {});
+        const paused = await phone.evaluate(() => ({
+            game: window.__game.scene.isPaused('GameScene'),
+            menu: window.__game.scene.isActive('PauseScene'),
+        }));
+        check('phone: pause button opens the pause menu', paused.game && paused.menu,
+            `GameScene paused=${paused.game} PauseScene=${paused.menu}`);
+
+        // Resume, then turn the phone upright: rotate prompt + paused round.
+        await phone.evaluate(() => {
+            window.__game.scene.stop('PauseScene');
+            window.__game.scene.resume('GameScene');
+        });
+        await phone.waitForFunction(() => window.__game.scene.isActive('GameScene'), null, { timeout: 5000 }).catch(() => {});
+        await phone.setViewportSize({ width: 390, height: 844 });
+        await phone.waitForFunction(() => getComputedStyle(document.getElementById('rotate-prompt')).display === 'flex' && window.__game.scene.isPaused('GameScene'), null, { timeout: 5000 }).catch(() => {});
+        const upright = await phone.evaluate(() => ({
+            prompt: getComputedStyle(document.getElementById('rotate-prompt')).display,
+            paused: window.__game.scene.isPaused('GameScene'),
+        }));
+        await phone.setViewportSize({ width: 844, height: 390 });
+        await phone.waitForFunction(() => getComputedStyle(document.getElementById('rotate-prompt')).display === 'none', null, { timeout: 5000 }).catch(() => {});
+        const sideways = await phone.evaluate(() => getComputedStyle(document.getElementById('rotate-prompt')).display);
+        check('phone: portrait shows the rotate prompt and pauses the round',
+            upright.prompt === 'flex' && upright.paused && sideways === 'none',
+            `portrait prompt=${upright.prompt} paused=${upright.paused}; landscape prompt=${sideways}`);
+        await ctx.close();
+    }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
