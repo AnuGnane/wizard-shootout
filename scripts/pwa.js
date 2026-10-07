@@ -151,7 +151,9 @@ export function buildManifest() {
         scope: './',
         display: 'fullscreen',
         display_override: ['fullscreen', 'standalone'],
-        orientation: 'any',
+        // Installed on Android the app opens locked to landscape; iOS ignores
+        // this, so index.html also shows a rotate prompt in portrait.
+        orientation: 'landscape',
         background_color: APP.background,
         theme_color: APP.theme,
         icons: ICONS.filter((i) => i.purpose).map((i) => ({
