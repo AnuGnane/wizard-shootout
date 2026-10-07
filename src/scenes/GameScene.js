@@ -217,11 +217,14 @@ export class GameScene extends Phaser.Scene {
         // timers, input processing) so the ESC listener below can't re-fire
         // while PauseScene is up; the isPaused() guard is a second layer of
         // safety in case a queued event slips through.
-        this.input.keyboard.on('keydown-ESC', () => {
-            if (this.scene.isPaused()) return;
-            this.scene.launch('PauseScene');
-            this.scene.pause();
-        });
+        this.input.keyboard.on('keydown-ESC', () => this.openPause());
+    }
+
+    // ESC, and on a phone the touch pause button or turning to portrait.
+    openPause() {
+        if (this.scene.isPaused() || !this.scene.isActive()) return;
+        this.scene.launch('PauseScene');
+        this.scene.pause();
     }
 
     // Build the roster from seatTypes (the single source of truth). Every
@@ -274,7 +277,7 @@ export class GameScene extends Phaser.Scene {
                 // on-screen joystick + fire buttons, OR'd into the same
                 // composite as keyboard/gamepad.
                 if (seat === 1 && touchCapable && MATCH_STATE.mode === '1p') {
-                    this.touchControls = new TouchControls(this);
+                    this.touchControls = new TouchControls(this, { onPause: () => this.openPause() });
                     sources.push(this.touchControls);
                 }
                 inputSource = sources.length > 1 ? new CompositeInput(...sources) : sources[0];
