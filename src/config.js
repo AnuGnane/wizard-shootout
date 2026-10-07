@@ -215,7 +215,7 @@ export const TOUCH_CONFIG = {
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers
     // A touch in the left part of the canvas (below the top bar) drops the
     // joystick under the thumb instead of making the thumb find a fixed spot.
-    floatZone: { maxX: 0.5, minY: 64 },
+    floatZone: { maxX: 0.5, minY: 80 }, // minY clears the pause button's hit area on a phone
     // Portrait on a phone: the page shows a rotate prompt (index.html mirrors
     // this query in CSS) and a running round pauses.
     rotateQuery: '(orientation: portrait) and (pointer: coarse) and (max-width: 599px)',

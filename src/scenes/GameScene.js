@@ -217,12 +217,22 @@ export class GameScene extends Phaser.Scene {
         // timers, input processing) so the ESC listener below can't re-fire
         // while PauseScene is up; the isPaused() guard is a second layer of
         // safety in case a queued event slips through.
+        // create() runs fresh on every restart: no transition or pause pending.
+        this.leaving = false;
+        this._pauseQueued = false;
         this.input.keyboard.on('keydown-ESC', () => this.openPause());
     }
 
     // ESC, and on a phone the touch pause button or turning to portrait.
+    // Scene ops are queued until the next step and touch/matchMedia events
+    // arrive between steps, so isPaused()/isActive() can't see a round-end
+    // start/restart queued this frame (`leaving`, set by RoundFlow and
+    // SurvivalDirector) or a pause already queued (`_pauseQueued`).
     openPause() {
+        if (this.leaving || this._pauseQueued) return;
         if (this.scene.isPaused() || !this.scene.isActive()) return;
+        this._pauseQueued = true;
+        this.events.once('resume', () => { this._pauseQueued = false; });
         this.scene.launch('PauseScene');
         this.scene.pause();
     }

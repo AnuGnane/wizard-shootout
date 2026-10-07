@@ -310,7 +310,7 @@ try {
         // Pause button (no ESC key on a phone).
         await touch('touchStart', L.pause.x, L.pause.y);
         await touch('touchEnd');
-        await phone.waitForTimeout(200);
+        await phone.waitForFunction(() => window.__game.scene.isPaused('GameScene') && window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 }).catch(() => {});
         const paused = await phone.evaluate(() => ({
             game: window.__game.scene.isPaused('GameScene'),
             menu: window.__game.scene.isActive('PauseScene'),
@@ -323,15 +323,15 @@ try {
             window.__game.scene.stop('PauseScene');
             window.__game.scene.resume('GameScene');
         });
-        await phone.waitForTimeout(100);
+        await phone.waitForFunction(() => window.__game.scene.isActive('GameScene'), null, { timeout: 5000 }).catch(() => {});
         await phone.setViewportSize({ width: 390, height: 844 });
-        await phone.waitForTimeout(300);
+        await phone.waitForFunction(() => getComputedStyle(document.getElementById('rotate-prompt')).display === 'flex' && window.__game.scene.isPaused('GameScene'), null, { timeout: 5000 }).catch(() => {});
         const upright = await phone.evaluate(() => ({
             prompt: getComputedStyle(document.getElementById('rotate-prompt')).display,
             paused: window.__game.scene.isPaused('GameScene'),
         }));
         await phone.setViewportSize({ width: 844, height: 390 });
-        await phone.waitForTimeout(300);
+        await phone.waitForFunction(() => getComputedStyle(document.getElementById('rotate-prompt')).display === 'none', null, { timeout: 5000 }).catch(() => {});
         const sideways = await phone.evaluate(() => getComputedStyle(document.getElementById('rotate-prompt')).display);
         check('phone: portrait shows the rotate prompt and pauses the round',
             upright.prompt === 'flex' && upright.paused && sideways === 'none',

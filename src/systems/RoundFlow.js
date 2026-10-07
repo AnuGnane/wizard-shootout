@@ -384,6 +384,7 @@ export class RoundFlow {
                     // above, which already skipped every per-round hook).
                     recordDailyResult(youWon, MATCH_STATE.round);
 
+                    scene.leaving = true;
                     scene.scene.start('GameOverScene', {
                         winner,
                         scores: { ...MATCH_STATE.scores },
@@ -401,6 +402,7 @@ export class RoundFlow {
                     recordMatch(youWon, MATCH_STATE.classes[1], flawless);
                     const newlyUnlocked = checkAchievements();
 
+                    scene.leaving = true;
                     scene.scene.start('GameOverScene', {
                         winner,
                         scores: { ...MATCH_STATE.scores },
@@ -418,6 +420,7 @@ export class RoundFlow {
                         conn.send({ t: 'restart', round: MATCH_STATE.round });
                     }
                 }
+                scene.leaving = true;
                 scene.scene.restart();
             }
         });
