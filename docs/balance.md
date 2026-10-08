@@ -29,7 +29,7 @@ Changes (`src/systems/Classes.js`):
 
 - Arcanist: normal-shot cooldown multiplier 0.72 → 0.93
 - Pyromancer: Flame Burst cooldown 10s → 8s, spark damage 8 → 14
-- Cryomancer: Frost Ring cooldown 10s → 6s, slow 45% for 2.5s → 60% for 3.5s
+- Cryomancer: Frost Ring cooldown 10s → 6s, slowed foes move at 45% speed for 2.5s → 60% speed for 3.5s (a milder slow that lasts longer)
 - Stonecaller: Breach cooldown 12s → 9s; passive adds a 0.9 normal-shot cooldown multiplier (Breach alone did not move its win rate: with Breach switched off it stayed at 31%, so it needed a stat)
 - Stormcaller: Zap Dash cooldown 9s → 11s, stun 0.9s → 0.65s
 - Warden: Reflect Ward cooldown 10s → 12s

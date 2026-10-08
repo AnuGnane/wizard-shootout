@@ -53,7 +53,7 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 | Pyromancer  | fire      | **Flame Burst** — 8-way nova of short-range burning sparks  | 8s  | immune to burn; fire orb = 4 shots |
 | Cryomancer  | ice       | **Frost Ring** — frost nearby tiles, slow nearby enemies    | 6s  | immune to slow                   |
 | Stonecaller | earth     | **Breach** — shatter the wall tile you're facing (not border) | 9s  | conjured walls last longer; normal-shot cooldown x0.9 |
-| Stormcaller | lightning | **Zap Dash** — fast dash forward, stuns anyone touched      | 11s | shorter orb-shot cooldown        |
+| Stormcaller | lightning | **Zap Dash** — fast dash forward, stuns anyone touched      | 11s | shorter orb-shot cooldown (x0.7) |
 | Warden      | shield    | **Reflect Ward** — bubble reflects enemy projectiles      | 12s | shield orb = 2 charges           |
 | Trickster   | triple    | **Scatter Dash** — short dash, fires a spread backward    | 7s  | triple orb = 3 uses              |
 
