@@ -123,6 +123,7 @@ maintenance debt. Pay it down before adding more surface area.
 - [x] `[S]` itch.io release — `v*` tags build a relative-path HTML5 bundle (`npm run build:itch`), smoke-test it in a subfolder iframe and attach `wizard-shootout-<tag>-html5.zip` to a GitHub release (`.github/workflows/release.yml`); the itch.io upload itself is by hand (README → Releases)
 - [x] `[H]` Auto-generate a trailer GIF from a headless bot match for store/README — `npm run trailer` (`scripts/trailer.mjs` + in-repo GIF encoder `scripts/gif.js`), recorded into the Pages site on every deploy and by the manual Trailer workflow
 - [x] `[S]` Phone play polish (holiday W-4) — touch controls sized by CSS-pixel minimums (`TOUCH_CONFIG`), floating joystick with a radial dead zone and 8 equal sectors, touch pause button, safe-area insets (`viewport-fit=cover`), landscape lock in the installed app plus a rotate prompt that pauses the round
+- [x] `[S]` Touch-only menu pass (holiday W-5) — every menu screen and the Daily path enterable and leavable by tap alone on an 844x390 phone: a top-left `[ BACK ]` on ClassSelect, MapSelect and the survival SOLO/DUO picker, and every way out's hit area grown to `TOUCH_CONFIG.menuMinCss` (44 CSS px) without overlapping a neighbour (`src/systems/TouchMenu.js`)
 - [ ] `[F]` Pre-launch playtest + balance pass
 
 ---
