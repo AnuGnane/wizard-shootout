@@ -8,6 +8,7 @@ import { MenuNav } from '../systems/MenuNav.js';
 import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 // Phase 9a — Map Editor. A pointer-driven grid editor for custom battle maps:
 // paint walls/floor, move the two spawns, cycle the theme, name it, save it to
@@ -203,6 +204,7 @@ export class MapEditorScene extends Phaser.Scene {
         }
 
         [this.saveBtn, this.loadBtn, this.deleteBtn, this.testBtn, this.nameBtn, this.backBtn] = buttons;
+        ensureTapTarget(this, this.backBtn);
         this.menuNav.refresh();
     }
 

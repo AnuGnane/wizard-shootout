@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { ELEMENT_COLORS } from '../config.js';
 import { STATS, ACHIEVEMENTS } from '../systems/Stats.js';
 import { audio } from '../systems/AudioSystem.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 const ELEMENT_KEYS = ['arcane', 'fire', 'ice', 'earth', 'lightning'];
 
@@ -94,6 +95,7 @@ export class StatsScene extends Phaser.Scene {
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
         backBtn.on('pointerdown', () => this.goBack());
+        ensureTapTarget(this, backBtn);
 
         this.input.keyboard.once('keydown-ESC', () => this.goBack());
     }

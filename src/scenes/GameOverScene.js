@@ -7,6 +7,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { MenuNav } from '../systems/MenuNav.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 export class GameOverScene extends Phaser.Scene {
     constructor() {
@@ -97,6 +98,7 @@ export class GameOverScene extends Phaser.Scene {
         menuBtn.on('pointerover', () => menuBtn.setStyle({ fill: '#ffffff' }));
         menuBtn.on('pointerout', () => menuBtn.setStyle({ fill: '#888888' }));
         menuBtn.on('pointerdown', goToMenu);
+        ensureTapTarget(this, menuBtn);
         this.menuNav.add(menuBtn, goToMenu);
 
         // Keyboard shortcut. SPACE (rematch) is suppressed in net mode; ESC

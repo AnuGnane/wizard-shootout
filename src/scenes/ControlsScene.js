@@ -6,6 +6,7 @@ import {
     findBinding, keyLabel, keyNameFromCode,
 } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 const ACTION_LABELS = {
     up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT',
@@ -90,6 +91,7 @@ export class ControlsScene extends Phaser.Scene {
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
         backBtn.on('pointerdown', doBack);
+        ensureTapTarget(this, backBtn);
         this.menuNav.add(backBtn, doBack, { row: BINDABLE_ACTIONS.length, col: 1 });
 
         this.refreshAllBadges();

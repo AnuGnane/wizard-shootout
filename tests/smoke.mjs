@@ -10,6 +10,8 @@
 //   3d. on a phone-sized touch viewport the on-screen controls are
 //      thumb-sized, inside the safe area, and the joystick, pause button and
 //      rotate prompt work (holiday W-4),
+//   3e. on that phone, every menu screen and the Daily path are entered and
+//      left by touch alone, through thumb-sized exits (holiday W-5),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -336,6 +338,175 @@ try {
         check('phone: portrait shows the rotate prompt and pauses the round',
             upright.prompt === 'flex' && upright.paused && sideways === 'none',
             `portrait prompt=${upright.prompt} paused=${upright.paused}; landscape prompt=${sideways}`);
+        await ctx.close();
+    }
+
+    // 3e. Touch-only menu pass (holiday W-5): on the same 844x390 landscape
+    // phone, every menu screen is entered and left, and the Daily path is
+    // played into GameOver and back, by tapping alone (CDP touch events, no
+    // keyboard). Every way out of a screen is at least TOUCH_CONFIG.menuMinCss
+    // CSS px each way and its grown hit area overlaps no other control.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('menu-walk pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('menu-walk console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, right: 47, bottom: 21, left: 47 } });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+
+        // CSS centre of the live interactive Text labelled `label` in `scene`,
+        // plus its hit-area size in CSS px and whether that hit area overlaps
+        // any other interactive object's in the same scene.
+        const find = (scene, label) => phone.evaluate(([scene, label]) => {
+            const s = window.__game.scene.getScene(scene);
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const rect = (o) => {
+                const h = o.input.hitArea;
+                const m = o.getWorldTransformMatrix();
+                const sx = Math.hypot(m.a, m.b), sy = Math.hypot(m.c, m.d);
+                const x0 = m.tx + (h.x - o.displayOriginX) * sx, y0 = m.ty + (h.y - o.displayOriginY) * sy;
+                return { x0, y0, x1: x0 + h.width * sx, y1: y0 + h.height * sy };
+            };
+            const live = s.children.list.filter((o) => o.input && o.input.enabled && o.visible && o.active);
+            const btn = live.find((o) => o.type === 'Text' && o.text === label);
+            if (!btn) return null;
+            const r = rect(btn);
+            const overlaps = live.filter((o) => o !== btn && o.input.hitArea && o.input.hitArea.width !== undefined)
+                .map((o) => ({ o, q: rect(o) }))
+                .filter(({ q }) => q.x0 < r.x1 && r.x0 < q.x1 && q.y0 < r.y1 && r.y0 < q.y1)
+                .map(({ o }) => o.text || o.type);
+            return {
+                x: c.left + ((r.x0 + r.x1) / 2) * k, y: c.top + ((r.y0 + r.y1) / 2) * k,
+                w: (r.x1 - r.x0) * k, h: (r.y1 - r.y0) * k, overlaps,
+            };
+        }, [scene, label]);
+        const tapAt = async (x, y) => {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        };
+        const reached = (test) => phone.waitForFunction(test, null, { timeout: 5000 }).then(() => true, () => false);
+        const isActive = (key) => reached(new Function(`return window.__game.scene.isActive('${key}')`));
+
+        const visited = [];
+        const failed = [];
+        const small = [];
+        // Tap `label` on `from` and expect `to` active. `exit` marks a way out
+        // of a screen, which must be thumb-sized and clear of its neighbours.
+        const tap = async (from, label, to, exit = false) => {
+            if (!(await isActive(from))) { failed.push(`${from} not active before ${label}`); return false; }
+            await phone.waitForTimeout(150); // the scene's first frame has laid out
+            const b = await find(from, label);
+            if (!b) { failed.push(`${from}: no ${label}`); return false; }
+            if (exit && (Math.min(b.w, b.h) < 43.5 || b.overlaps.length)) {
+                small.push(`${from} ${label} ${Math.round(b.w)}x${Math.round(b.h)}${b.overlaps.length ? ' overlaps ' + b.overlaps.join('/') : ''}`);
+            }
+            await tapAt(b.x, b.y);
+            if (!(await isActive(to))) { failed.push(`${from} ${label} -> ${to}`); return false; }
+            visited.push(to === 'MenuScene' ? `${from}↩` : to);
+            return true;
+        };
+        // Tap the centre of the first card-like rectangle, for screens whose
+        // choices are cards rather than labels.
+        const tapCard = async (scene, to) => {
+            await phone.waitForTimeout(150);
+            const p = await phone.evaluate((scene) => {
+                const s = window.__game.scene.getScene(scene);
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const all = [];
+                const walk = (list) => list.forEach((o) => { if (o.list) walk(o.list); else all.push(o); });
+                walk(s.children.list);
+                const card = all.find((o) => o.type === 'Rectangle' && o.input && o.input.enabled && o.width >= 100);
+                if (!card) return null;
+                const b = card.getBounds();
+                return { x: c.left + b.centerX * k, y: c.top + b.centerY * k };
+            }, scene);
+            if (!p) { failed.push(`${scene}: no card`); return false; }
+            await tapAt(p.x, p.y);
+            if (!(await isActive(to))) { failed.push(`${scene} card -> ${to}`); return false; }
+            visited.push(to);
+            return true;
+        };
+
+        const M = 'MenuScene';
+        await tap(M, '[ SETTINGS ]', 'SettingsScene');
+        await tap('SettingsScene', '[ CONTROLS ]', 'ControlsScene');
+        await tap('ControlsScene', '[ BACK ]', 'SettingsScene', true);
+        await tap('SettingsScene', '[ BACK ]', M, true);
+        await tap(M, '[ STATS ]', 'StatsScene');
+        await tap('StatsScene', '[ BACK ]', M, true);
+        await tap(M, '[ WARDROBE ]', 'WardrobeScene');
+        await tap('WardrobeScene', '[ BACK ]', M, true);
+        await tap(M, '[ ONLINE 1v1 ]', 'OnlineScene');
+        await tap('OnlineScene', '[ BACK ]', M, true);
+        await tap(M, '[ MAP EDITOR ]', 'MapEditorScene');
+        // The editor opens on its size picker; cancel it, then leave.
+        await tap('MapEditorScene', '[ CANCEL ]', 'MapEditorScene');
+        if (!(await reached(() => !window.__game.scene.getScene('MapEditorScene').modal))) failed.push('MapEditor size picker CANCEL');
+        await tap('MapEditorScene', '[ BACK ]', M, true);
+        for (const mode of ['[ 2 PLAYERS ]', '[ PARTY  3-4 P ]']) {
+            await tap(M, mode, 'ClassSelectScene');
+            await tap('ClassSelectScene', '[ BACK ]', M, true);
+        }
+        // Survival: the SOLO/DUO picker, then the class screen after it.
+        await tap(M, '[ SURVIVAL ]', 'ClassSelectScene');
+        await tap('ClassSelectScene', '[ BACK ]', M, true);
+        await tap(M, '[ SURVIVAL ]', 'ClassSelectScene');
+        await tap('ClassSelectScene', '[ SOLO ]', 'ClassSelectScene');
+        if (!(await reached(() => window.__game.scene.getScene('ClassSelectScene').duo === false))) failed.push('survival SOLO -> class screen');
+        await tap('ClassSelectScene', '[ BACK ]', M, true);
+        // 1P: class card -> map select -> back; then again into a round,
+        // pause it with the touch pause button, quit to the menu.
+        await tap(M, '[ 1 PLAYER  vs BOT ]', 'ClassSelectScene');
+        await tapCard('ClassSelectScene', 'MapSelectScene');
+        await tap('MapSelectScene', '[ BACK ]', M, true);
+        await tap(M, '[ 1 PLAYER  vs BOT ]', 'ClassSelectScene');
+        await tapCard('ClassSelectScene', 'MapSelectScene');
+        await tapCard('MapSelectScene', 'GameScene');
+        const pauseBtn = async () => {
+            await reached(() => window.__game.scene.getScene('GameScene')?.touchControls?.pauseBtn);
+            return phone.evaluate(() => {
+                const tc = window.__game.scene.getScene('GameScene').touchControls;
+                if (!tc) return { x: -1, y: -1 };
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                return { x: c.left + tc.pauseBtn.x * k, y: c.top + tc.pauseBtn.y * k };
+            });
+        };
+        let p = await pauseBtn();
+        await tapAt(p.x, p.y);
+        if (await isActive('PauseScene')) visited.push('PauseScene'); else failed.push('1P pause button -> PauseScene');
+        await tap('PauseScene', '[ QUIT TO MENU ]', M, true);
+        // Daily: into the round, pause and resume by tap, then play it out to
+        // GameOver (the one non-tap step: the match is decided in code) and
+        // tap back to the menu.
+        await tap(M, '[ DAILY ]', 'GameScene');
+        const daily = await phone.evaluate(() => window.__match.isDailyChallenge);
+        p = await pauseBtn();
+        await tapAt(p.x, p.y);
+        if (await isActive('PauseScene')) visited.push('PauseScene'); else failed.push('Daily pause button -> PauseScene');
+        await tap('PauseScene', '[ RESUME ]', 'GameScene', true);
+        const resumed = await reached(() => !window.__game.scene.isPaused('GameScene') && !window.__game.scene.isActive('PauseScene'));
+        await phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            window.__match.scores[1] = window.__match.targetScore - 1;
+            s.player2.lastHitBy = { by: 1, element: 'arcane' };
+            s.player2.takeDamage(10000);
+        });
+        if (await reached(() => window.__game.scene.isActive('GameOverScene'))) visited.push('GameOverScene');
+        else failed.push('Daily win -> GameOverScene');
+        await tap('GameOverScene', '[ MAIN MENU ]', M, true);
+        const dailyEnded = await phone.evaluate(() => !window.__match.isDailyChallenge);
+
+        check('phone: every menu screen entered and left by tap alone (844x390)',
+            failed.length === 0 && daily && resumed && dailyEnded,
+            failed.length ? 'failed: ' + failed.join('; ')
+                : `daily=${daily} resumed=${resumed} dailyEnded=${dailyEnded}; ${visited.length} taps: ${visited.join(' ')}`);
+        check(`phone: every way out is at least ${44} CSS px and clear of its neighbours`,
+            small.length === 0, small.length ? small.join('; ') : 'all exits checked');
         await ctx.close();
     }
 
