@@ -37,21 +37,25 @@ const BALANCE = {
     workers: Math.max(1, Math.min(4, cpus().length)),
 };
 
-function arg(name, fallback) {
+function arg(name, fallback, min) {
     const i = process.argv.indexOf(`--${name}`);
     if (i < 0) return fallback;
     const v = Number(process.argv[i + 1]);
-    if (!Number.isFinite(v) || v < 1) {
-        console.error(`balance: --${name} needs a positive number`);
+    if (!Number.isInteger(v) || v < min) {
+        console.error(`balance: --${name} needs a whole number >= ${min}`);
         process.exit(1);
     }
-    return Math.floor(v);
+    return v;
 }
-const ROUNDS = arg('rounds', BALANCE.roundsPerPair);
-const SEED = arg('seed', BALANCE.seed);
-const WORKERS = arg('workers', BALANCE.workers);
+const ROUNDS = arg('rounds', BALANCE.roundsPerPair, 1);
+const SEED = arg('seed', BALANCE.seed, -(2 ** 31));
+const WORKERS = arg('workers', BALANCE.workers, 1);
 const outArg = process.argv.indexOf('--out');
 const OUT = outArg > 0 ? process.argv[outArg + 1] : 'docs/balance.md';
+if (!OUT || OUT.startsWith('--')) {
+    console.error('balance: --out needs a file path');
+    process.exit(1);
+}
 
 if (!existsSync('dist/index.html')) {
     console.error('balance: no dist/ — run `npm run build` first');
@@ -154,6 +158,7 @@ function playRound(page, job) {
 
 const pct = (n, d) => (d ? `${(100 * n / d).toFixed(0)}%` : '–');
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
+const avgSecs = (rs, avg) => (rs.length ? secs(avg(rs)) : '–');
 
 function report({ classes, names, mapNames, results, wallMs }) {
     const by = (f) => results.filter(f);
@@ -180,7 +185,7 @@ function report({ classes, names, mapNames, results, wallMs }) {
 
     lines.push('## Per class');
     lines.push('');
-    lines.push('| Class | Win rate | Wins | Losses | Draws | Avg round |');
+    lines.push('| Class | Win rate | Wins | Losses | Draws + timeouts | Avg round |');
     lines.push('|---|---:|---:|---:|---:|---:|');
     const overall = classes.map((c) => {
         const rs = by((r) => r.a === c || r.b === c);
@@ -211,12 +216,12 @@ function report({ classes, names, mapNames, results, wallMs }) {
 
     lines.push('## Per map');
     lines.push('');
-    lines.push('| Map | Rounds | Seat 1 win rate | Draws | Avg round |');
+    lines.push('| Map | Rounds | Seat 1 win rate | Draws + timeouts | Avg round |');
     lines.push('|---|---:|---:|---:|---:|');
     BALANCE.maps.forEach((m, i) => {
         const rs = by((r) => r.map === m);
         const d = decided(rs);
-        lines.push(`| ${mapNames[i]} | ${rs.length} | ${pct(d.filter((r) => r.winner === 1).length, d.length)} | ${rs.length - d.length} | ${secs(avg(rs))} |`);
+        lines.push(`| ${mapNames[i]} | ${rs.length} | ${pct(d.filter((r) => r.winner === 1).length, d.length)} | ${rs.length - d.length} | ${avgSecs(rs, avg)} |`);
     });
     lines.push('');
     return lines.join('\n');
