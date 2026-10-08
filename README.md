@@ -25,6 +25,7 @@ npm run build    # production build in dist/
 npm run build:itch  # itch.io HTML5 bundle (relative paths) in dist-itch/
 npm test         # headless smoke suite (see Development)
 npm run trailer  # record docs/trailer.gif from a bot match (needs a build)
+npm run balance  # bot-vs-bot win rates per class into docs/balance.md (needs a build)
 ```
 
 ## Install it (play offline)
@@ -304,6 +305,15 @@ persists to `localStorage`.
   `--out <path>` to write elsewhere). The GIF encoder is in-repo
   (`scripts/gif.js`); the output is gitignored, never committed.
 
+- `npm run balance` — plays Hard bot vs Hard bot for every ordered class pair
+  on three built-in maps from the build in `dist/` and writes per-class win
+  rates, a matchup matrix and round lengths to [`docs/balance.md`](docs/balance.md)
+  (committed). It steps the game itself at a fixed 60 Hz with no rendering
+  across parallel headless browsers and seeds `Math.random`, so 8,400 rounds
+  take about two minutes and a run is reproducible (`--rounds`, `--seed`,
+  `--workers`, `--out`). Not part of `npm test`; the **Balance** workflow
+  (`.github/workflows/balance.yml`) runs it by hand and uploads the report.
+
 CI (`.github/workflows/ci.yml`) runs map validation, the production build,
 and the smoke suite on every push and PR. Pushes to `main` additionally build
 and deploy to GitHub Pages (`.github/workflows/deploy.yml`), recording a fresh
@@ -345,6 +355,7 @@ class per spawn.
 scripts/
   pwa.js                Vite plugin: manifest, procedural PNG icons, service worker
   trailer.mjs           Records the trailer GIF from a headless bot match
+  balance.mjs           Self-play balance harness (docs/balance.md)
   gif.js                Dependency-free animated GIF encoder
 src/
   main.js               Phaser game bootstrap (+ service worker registration)
