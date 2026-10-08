@@ -11,6 +11,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../systems/NetSignal.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 // Online 1v1 lobby. Stage 1 built the transport + code-exchange UI; stage 2a
 // wires the successful connection straight into a live match: the HOST picks
@@ -131,6 +132,7 @@ export class OnlineScene extends Phaser.Scene {
             audio.uiClick();
             this.scene.start('MenuScene');
         }, '20px');
+        ensureTapTarget(this, this.backBtn);
 
         // Status line, updated across the flow.
         this.statusText = this.add.text(width / 2, 196, 'Choose HOST or JOIN to begin.', {

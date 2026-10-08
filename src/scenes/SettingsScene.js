@@ -4,6 +4,7 @@ import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { MenuNav } from '../systems/MenuNav.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 // Runtime settings that can be modified
 export const RUNTIME_SETTINGS = {
@@ -144,8 +145,10 @@ export class SettingsScene extends Phaser.Scene {
 
         // Buttons. Three across the bottom row now that CONTROLS sits between
         // SAVE and BACK - shifted outward (was ±120) so the wider middle
-        // label still clears both neighbors.
-        const saveBtn = this.add.text(width / 2 - 180, height - 50, '[ SAVE ]', {
+        // label still clears both neighbors. Holiday W-5: ±190 (was ±180, where
+        // the labels touched) and 4px lower, so BACK's thumb-sized hit area
+        // clears CONTROLS and the last toggle above.
+        const saveBtn = this.add.text(width / 2 - 190, height - 46, '[ SAVE ]', {
             font: '24px monospace',
             fill: '#ffffff',
             backgroundColor: '#336633',
@@ -165,7 +168,7 @@ export class SettingsScene extends Phaser.Scene {
         // Phase 8 — CONTROLS opens the key-rebinding scene (ControlsScene).
         // Unsaved slider/toggle edits here are held in this.settings and NOT
         // applied until SAVE, same as always - this button just navigates.
-        const controlsBtn = this.add.text(width / 2, height - 50, '[ CONTROLS ]', {
+        const controlsBtn = this.add.text(width / 2, height - 46, '[ CONTROLS ]', {
             font: '24px monospace',
             fill: '#ffffff',
             backgroundColor: '#2a4d66',
@@ -181,7 +184,7 @@ export class SettingsScene extends Phaser.Scene {
         controlsBtn.on('pointerdown', doControls);
         this.menuNav.add(controlsBtn, doControls);
 
-        const backBtn = this.add.text(width / 2 + 180, height - 50, '[ BACK ]', {
+        const backBtn = this.add.text(width / 2 + 190, height - 46, '[ BACK ]', {
             font: '24px monospace',
             fill: '#ffffff',
             backgroundColor: '#333355',
@@ -192,6 +195,7 @@ export class SettingsScene extends Phaser.Scene {
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
         backBtn.on('pointerdown', doBack);
+        ensureTapTarget(this, backBtn);
         this.menuNav.add(backBtn, doBack);
     }
 

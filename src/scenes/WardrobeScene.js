@@ -8,6 +8,7 @@ import {
 } from '../systems/Cosmetics.js';
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 import { STATS } from '../systems/Stats.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 // Phase 6c — the Wardrobe: preview + equip the seat-1 (blue team) cosmetics.
 // Two rows of swatches (robe base + staff material); unlocked ones are
@@ -75,6 +76,7 @@ export class WardrobeScene extends Phaser.Scene {
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
         backBtn.on('pointerdown', () => this.goBack());
+        ensureTapTarget(this, backBtn);
 
         this.input.keyboard.once('keydown-ESC', () => this.goBack());
 

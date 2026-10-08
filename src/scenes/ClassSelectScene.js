@@ -8,6 +8,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
 import { MenuNav } from '../systems/MenuNav.js';
+import { addBackButton } from '../systems/TouchMenu.js';
 
 // Phase 9c: card width is derived from the class count (rather than a flat
 // number) so the row keeps fitting inside the 1024px canvas as classes are
@@ -61,10 +62,8 @@ export class ClassSelectScene extends Phaser.Scene {
         // it knows how many humans are picking.
         if (this.mode === 'survival' && this.duo === null) {
             this.createSurvivalSizePicker(width, height);
-            this.input.keyboard.on('keydown-ESC', () => {
-                audio.uiClick();
-                this.scene.start('MenuScene');
-            });
+            this.input.keyboard.on('keydown-ESC', () => this.goBack());
+            addBackButton(this, () => this.goBack());
             return;
         }
 
@@ -102,10 +101,14 @@ export class ClassSelectScene extends Phaser.Scene {
             this.createStandardSetup(width, height);
         }
 
-        this.input.keyboard.on('keydown-ESC', () => {
-            audio.uiClick();
-            this.scene.start('MenuScene');
-        });
+        this.input.keyboard.on('keydown-ESC', () => this.goBack());
+        // A phone has no ESC (holiday W-5).
+        addBackButton(this, () => this.goBack());
+    }
+
+    goBack() {
+        audio.uiClick();
+        this.scene.start('MenuScene');
     }
 
     createCard(pos, index) {
@@ -193,10 +196,7 @@ export class ClassSelectScene extends Phaser.Scene {
         // Focus nav over the two choices, same helper (and therefore the same
         // arrows/ENTER + pad d-pad/A behaviour) every other menu screen uses.
         this.sizeNav = new MenuNav(this, {
-            onBack: () => {
-                audio.uiClick();
-                this.scene.start('MenuScene');
-            },
+            onBack: () => this.goBack(),
         });
 
         const choose = (duo) => {

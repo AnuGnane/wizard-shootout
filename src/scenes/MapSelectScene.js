@@ -7,6 +7,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { THEMES } from '../systems/Themes.js';
 import { MenuNav } from '../systems/MenuNav.js';
+import { addBackButton } from '../systems/TouchMenu.js';
 
 const CARD_W = 225;
 const CARD_H = 155;
@@ -115,6 +116,9 @@ export class MapSelectScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         this.input.keyboard.on('keydown-R', () => this.startMatch(null));
+
+        // A phone has no ESC (holiday W-5).
+        addBackButton(this, () => this.goBack());
     }
 
     update() {

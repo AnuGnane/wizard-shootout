@@ -210,6 +210,10 @@ export const TOUCH_CONFIG = {
     fire: { radius: 42, minCss: 68 },
     small: { radius: 30, minCss: 52 },       // ORB + PWR (44pt Apple / 48dp Material, plus slack)
     pause: { radius: 16, minCss: 44, x: 300, y: 30 }, // top bar, between P1's health and the score; minCss sizes the hit area only
+    // Menu screens (holiday W-5): the smallest tap target, in CSS px, for the
+    // controls that leave a screen. Grows the hit area only, never the label.
+    menuMinCss: 44,
+    menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers

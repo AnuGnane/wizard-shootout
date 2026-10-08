@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { audio } from '../systems/AudioSystem.js';
 import { MenuNav } from '../systems/MenuNav.js';
+import { ensureTapTarget } from '../systems/TouchMenu.js';
 
 // Launched (not started) on top of a paused GameScene, so the arena stays
 // visible behind the dark overlay. See MenuScene.makeButton for the button
@@ -27,9 +28,11 @@ export class PauseScene extends Phaser.Scene {
         // listeners racing to stop/resume the same scenes).
         this.menuNav = new MenuNav(this, { onBack: () => this.resumeGame(), depth: 110 });
 
-        this.makeButton(width / 2, height / 2 - 40, '[ RESUME ]', '#336633', '#66ff66', () => this.resumeGame());
+        // RESUME and QUIT are the ways out; their hit areas grow to a thumb
+        // (holiday W-5) without reaching RESTART between them.
+        ensureTapTarget(this, this.makeButton(width / 2, height / 2 - 40, '[ RESUME ]', '#336633', '#66ff66', () => this.resumeGame()));
         this.makeButton(width / 2, height / 2 + 30, '[ RESTART ROUND ]', '#333355', '#5599ff', () => this.restartRound());
-        this.makeButton(width / 2, height / 2 + 100, '[ QUIT TO MENU ]', '#663333', '#ff6666', () => this.quitToMenu());
+        ensureTapTarget(this, this.makeButton(width / 2, height / 2 + 100, '[ QUIT TO MENU ]', '#663333', '#ff6666', () => this.quitToMenu()));
     }
 
     update() {
