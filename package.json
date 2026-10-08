@@ -9,7 +9,8 @@
     "build:itch": "vite build --base ./ --outDir dist-itch",
     "preview": "vite preview",
     "test": "node tests/smoke.mjs",
-    "trailer": "node scripts/trailer.mjs"
+    "trailer": "node scripts/trailer.mjs",
+    "balance": "node scripts/balance.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"

@@ -216,6 +216,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
         // Update status effects
         this.updateStatusEffects(time, delta);
+        // A burn tick can be the killing blow; die() has already torn down
+        // the indicator and bubbles, so stop here.
+        if (!this.isAlive) return;
 
         // Update movement
         this.handleMovement();
