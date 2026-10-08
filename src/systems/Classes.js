@@ -1,5 +1,5 @@
 // Wizard class data: the always-available signature ability plus a small
-// passive stat tweak. Every tunable an ability needs lives under that
+// passive stat tweak (`passiveStats`, read by Player). Every tunable an ability needs lives under that
 // class's `signature` object so GameScene stays free of magic numbers.
 // See ROADMAP.md Phase 3 for the design table this mirrors.
 
@@ -20,6 +20,7 @@ export const WIZARD_CLASSES = {
             clearOpponent: 28,    // landing must be this far from the foe
         },
         passive: 'Faster normal shots',
+        passiveStats: { normalCooldownMultiplier: 0.93 },
     },
     pyromancer: {
         name: 'Pyromancer',
@@ -27,12 +28,12 @@ export const WIZARD_CLASSES = {
         color: 0xe86830,
         signature: {
             label: 'Flame Burst',
-            cooldown: 10000,
+            cooldown: 8000,
             description: '8-way burning nova',
             sparkCount: 8,
             // Config override handed to each spark Projectile (bypasses the
             // per-player cap and the normal damage table).
-            spark: { damage: 8, speed: 260, maxBounces: 0, lifetime: 380, color: 0xff6600, size: 6 },
+            spark: { damage: 14, speed: 260, maxBounces: 0, lifetime: 380, color: 0xff6600, size: 6 },
         },
         passive: 'Burn immune · fire orb x4',
     },
@@ -42,7 +43,7 @@ export const WIZARD_CLASSES = {
         color: 0x58c8e8,
         signature: {
             label: 'Frost Ring',
-            cooldown: 10000,
+            cooldown: 6000,
             description: 'Frost + slow nearby foes',
             ringColor: 0x66ffff,
             ringRadius: 95,
@@ -50,8 +51,8 @@ export const WIZARD_CLASSES = {
             frostRadius: 90,      // tiles/foes within this range are affected
             overlayColor: 0xbbffff,
             overlayFadeMs: 3000,
-            slowPercent: 0.45,
-            slowMs: 2500,
+            slowPercent: 0.6,
+            slowMs: 3500,
         },
         passive: 'Slow immune',
     },
@@ -61,7 +62,7 @@ export const WIZARD_CLASSES = {
         color: 0x7a9a4a,
         signature: {
             label: 'Breach',
-            cooldown: 12000,
+            cooldown: 9000,
             description: 'Shatter the wall ahead',
             // Breach: scan for a wall between `stepStart` and `stepEnd`.
             stepStart: 20,
@@ -70,7 +71,8 @@ export const WIZARD_CLASSES = {
             // Passive: this class's conjured earth walls last x longer.
             wallDurationMultiplier: 1.5,
         },
-        passive: 'Sturdier conjured walls',
+        passive: 'Sturdy walls · fast shots',
+        passiveStats: { normalCooldownMultiplier: 0.9 },
     },
     stormcaller: {
         name: 'Stormcaller',
@@ -78,17 +80,18 @@ export const WIZARD_CLASSES = {
         color: 0xe8d84a,
         signature: {
             label: 'Zap Dash',
-            cooldown: 9000,
+            cooldown: 11000,
             description: 'Dash forward, stun on touch',
             dashMs: 170,
             dashSpeed: 900,
             dashHitRange: 28,
-            dashStunMs: 900,
+            dashStunMs: 650,
             dashDamage: 5,
             afterimageEveryMs: 30,
             afterimageFadeMs: 150,
         },
         passive: 'Faster orb shots',
+        passiveStats: { runeCooldownMultiplier: 0.7 },
     },
     // Phase 9c: Warden reuses the SHIELD orb element (own-element empowerment
     // = bigger shield charges, mirroring Pyromancer's fire-orb=4-shots deal).
@@ -98,7 +101,7 @@ export const WIZARD_CLASSES = {
         color: 0x5f7d94, // steely blue-grey — distinct from every robe/team color
         signature: {
             label: 'Reflect Ward',
-            cooldown: 10000,
+            cooldown: 12000,
             description: 'Bubble reflects incoming shots',
             durationMs: 1200,  // how long the bubble stays up
             radius: 40,        // an enemy projectile's CENTER must enter this to reflect
@@ -119,7 +122,7 @@ export const WIZARD_CLASSES = {
         color: 0xd6399e, // magenta — distinct from the pastel triple-orb pink and every team color
         signature: {
             label: 'Scatter Dash',
-            cooldown: 9000,
+            cooldown: 7000,
             description: 'Dash back, fire a spread',
             dashMs: 102,          // 60% of Stormcaller's 170ms at the same dashSpeed = 60% of its distance
             dashSpeed: 900,
@@ -127,8 +130,8 @@ export const WIZARD_CLASSES = {
             afterimageFadeMs: 150,
             spreadAngle: 0.28,    // radians between pellets — matches the Triple orb's own spread
             // Config override for the 3 backward pellets (mirrors Pyromancer's
-            // spark override): same shape as the Triple orb's pellet, weaker.
-            backPellet: { damage: 12, speed: 350, maxBounces: Infinity, lifetime: 5000, color: 0xff88dd, size: 7 },
+            // spark override): same shape and damage as the Triple orb's pellet.
+            backPellet: { damage: 15, speed: 350, maxBounces: Infinity, lifetime: 5000, color: 0xff88dd, size: 7 },
         },
         passive: 'Triple orb = 3 uses',
     },

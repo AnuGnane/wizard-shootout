@@ -85,10 +85,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
         this.normalCooldown = NORMAL_SHOT_CONFIG.cooldown;
         this.runeCooldown = 800; // Slightly faster for rune shots
 
-        // Simple stat-tweak passives (Stonecaller's is Phase 3b — it affects
-        // conjured-wall lifetime, which lives in GameScene, not here).
-        if (this.classKey === 'arcanist') this.normalCooldown *= 0.72;
-        if (this.classKey === 'stormcaller') this.runeCooldown *= 0.7;
+        // Simple stat-tweak passives, read from class data (`passiveStats`).
+        // Stonecaller's sturdier conjured walls live in GameScene, not here.
+        const stats = this.classDef.passiveStats || {};
+        if (stats.normalCooldownMultiplier) this.normalCooldown *= stats.normalCooldownMultiplier;
+        if (stats.runeCooldownMultiplier) this.runeCooldown *= stats.runeCooldownMultiplier;
 
         // Signature ability cooldown, mirrored per-instance from class data
         // (rather than read live off classDef.signature.cooldown) so the Low

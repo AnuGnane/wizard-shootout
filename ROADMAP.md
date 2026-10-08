@@ -49,15 +49,15 @@ empowered. Orb spawn rate drops slightly since everyone always has a spell.
 
 | Class       | Element   | Signature (E / .)                                          | CD  | Passive                          |
 | ----------- | --------- | ---------------------------------------------------------- | --- | -------------------------------- |
-| Arcanist    | arcane    | **Blink** — teleport through one wall in facing direction   | 8s  | faster normal-shot cooldown      |
-| Pyromancer  | fire      | **Flame Burst** — 8-way nova of short-range burning sparks  | 10s | immune to burn; fire orb = 4 shots |
-| Cryomancer  | ice       | **Frost Ring** — frost nearby tiles, slow nearby enemies    | 10s | immune to slow                   |
-| Stonecaller | earth     | **Breach** — shatter the wall tile you're facing (not border) | 12s | conjured walls last longer       |
-| Stormcaller | lightning | **Zap Dash** — fast dash forward, stuns anyone touched      | 9s  | shorter orb-shot cooldown        |
-| Warden      | shield    | **Reflect Ward** — bubble reflects enemy projectiles      | 10s | shield orb = 2 charges           |
-| Trickster   | triple    | **Scatter Dash** — short dash, fires a spread backward    | 9s  | triple orb = 3 uses              |
+| Arcanist    | arcane    | **Blink** — teleport through one wall in facing direction   | 8s  | faster normal-shot cooldown (x0.93) |
+| Pyromancer  | fire      | **Flame Burst** — 8-way nova of short-range burning sparks  | 8s  | immune to burn; fire orb = 4 shots |
+| Cryomancer  | ice       | **Frost Ring** — frost nearby tiles, slow nearby enemies    | 6s  | immune to slow                   |
+| Stonecaller | earth     | **Breach** — shatter the wall tile you're facing (not border) | 9s  | conjured walls last longer; normal-shot cooldown x0.9 |
+| Stormcaller | lightning | **Zap Dash** — fast dash forward, stuns anyone touched      | 11s | shorter orb-shot cooldown (x0.7) |
+| Warden      | shield    | **Reflect Ward** — bubble reflects enemy projectiles      | 12s | shield orb = 2 charges           |
+| Trickster   | triple    | **Scatter Dash** — short dash, fires a spread backward    | 7s  | triple orb = 3 uses              |
 
-- [ ] `[F]` Finalize class stats/cooldowns (balance pass on the table above)
+- [x] `[F]` Finalize class stats/cooldowns (balance pass on the table above) — holiday W-7 from the self-play harness: every class 44 to 54 percent overall (band 42 to 58), before/after in `docs/balance.md`
 - [x] `[S]` Class data module + class-select scene (both players pick; bot picks randomly in 1P)
 - [x] `[S]` Class-colored sprites: robe = class color, hat band/health bar = team color (procedural palettes)
 - [x] `[O]` Signature abilities implementation (Blink wall traversal, Breach map mutation, dash + hit detection, novas)
@@ -125,6 +125,7 @@ maintenance debt. Pay it down before adding more surface area.
 - [x] `[S]` Phone play polish (holiday W-4) — touch controls sized by CSS-pixel minimums (`TOUCH_CONFIG`), floating joystick with a radial dead zone and 8 equal sectors, touch pause button, safe-area insets (`viewport-fit=cover`), landscape lock in the installed app plus a rotate prompt that pauses the round
 - [x] `[S]` Touch-only menu pass (holiday W-5) — every menu screen and the Daily path enterable and leavable by tap alone on an 844x390 phone: a top-left `[ BACK ]` on ClassSelect, MapSelect and the survival SOLO/DUO picker, and every way out's hit area grown to `TOUCH_CONFIG.menuMinCss` (44 CSS px) without overlapping a neighbour (`src/systems/TouchMenu.js`)
 - [x] `[S]` Self-play balance harness (holiday W-6) — `npm run balance` (`scripts/balance.mjs`): Hard bot vs Hard bot over every ordered class pair on three built-in maps, stepped at a fixed 60 Hz without rendering across parallel headless browsers, seeded and reproducible; report in `docs/balance.md`, manual **Balance** workflow
+- [x] `[S]` Self-play balance pass (holiday W-7) — class numbers in `src/systems/Classes.js` tuned until every class's Hard-bot win rate is inside 42 to 58 percent (was 28 to 76); old and new side by side in `docs/balance.md`; human playtest still open below
 - [ ] `[F]` Pre-launch playtest + balance pass
 
 ---

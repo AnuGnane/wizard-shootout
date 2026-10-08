@@ -89,7 +89,7 @@ element's orb is empowered. In 1P the bot picks a class at random.
 | Arcanist    | arcane    | **Blink** — teleport through one wall you're facing         | faster normal-shot cooldown        |
 | Pyromancer  | fire      | **Flame Burst** — 8-way nova of short-range burning sparks  | immune to burn; fire orb = 4 shots |
 | Cryomancer  | ice       | **Frost Ring** — frost nearby tiles and slow nearby enemies | immune to slow                     |
-| Stonecaller | earth     | **Breach** — shatter the wall tile you're facing            | conjured walls last longer         |
+| Stonecaller | earth     | **Breach** — shatter the wall tile you're facing            | sturdier walls; faster normal shot |
 | Stormcaller | lightning | **Zap Dash** — fast dash forward that stuns anyone touched  | shorter orb-shot cooldown          |
 | Warden      | shield    | **Reflect Ward** — bubble reflects enemy projectiles        | shield orb = 2 charges             |
 | Trickster   | triple    | **Scatter Dash** — short dash, fires a triple spread backward | triple orb = 3 uses              |
