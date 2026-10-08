@@ -1,5 +1,5 @@
 // Wizard class data: the always-available signature ability plus a small
-// passive stat tweak. Every tunable an ability needs lives under that
+// passive stat tweak (`passiveStats`, read by Player). Every tunable an ability needs lives under that
 // class's `signature` object so GameScene stays free of magic numbers.
 // See ROADMAP.md Phase 3 for the design table this mirrors.
 
@@ -20,6 +20,7 @@ export const WIZARD_CLASSES = {
             clearOpponent: 28,    // landing must be this far from the foe
         },
         passive: 'Faster normal shots',
+        passiveStats: { normalCooldownMultiplier: 0.72 },
     },
     pyromancer: {
         name: 'Pyromancer',
@@ -89,6 +90,7 @@ export const WIZARD_CLASSES = {
             afterimageFadeMs: 150,
         },
         passive: 'Faster orb shots',
+        passiveStats: { runeCooldownMultiplier: 0.7 },
     },
     // Phase 9c: Warden reuses the SHIELD orb element (own-element empowerment
     // = bigger shield charges, mirroring Pyromancer's fire-orb=4-shots deal).
