@@ -35,7 +35,6 @@ export function ensureTapTarget(scene, obj) {
     apply();
     scene.scale.on('resize', apply);
     scene.events.once('shutdown', () => scene.scale.off('resize', apply));
-    obj.tapTargetMinCss = TOUCH_CONFIG.menuMinCss;
     return obj;
 }
 
@@ -48,7 +47,6 @@ export function addBackButton(scene, onBack) {
         backgroundColor: '#333355',
         padding: { x: 12, y: 8 },
     }).setOrigin(0.5).setDepth(30).setInteractive({ useHandCursor: true });
-    btn.name = 'touchBack';
     btn.on('pointerover', () => btn.setStyle({ fill: '#5599ff' }));
     btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' }));
     btn.on('pointerdown', () => onBack());

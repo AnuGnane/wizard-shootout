@@ -456,7 +456,7 @@ try {
         await tap('ClassSelectScene', '[ BACK ]', M, true);
         await tap(M, '[ SURVIVAL ]', 'ClassSelectScene');
         await tap('ClassSelectScene', '[ SOLO ]', 'ClassSelectScene');
-        await reached(() => window.__game.scene.getScene('ClassSelectScene').duo === false);
+        if (!(await reached(() => window.__game.scene.getScene('ClassSelectScene').duo === false))) failed.push('survival SOLO -> class screen');
         await tap('ClassSelectScene', '[ BACK ]', M, true);
         // 1P: class card -> map select -> back; then again into a round,
         // pause it with the touch pause button, quit to the menu.
@@ -503,7 +503,8 @@ try {
 
         check('phone: every menu screen entered and left by tap alone (844x390)',
             failed.length === 0 && daily && resumed && dailyEnded,
-            failed.length ? 'failed: ' + failed.join('; ') : `${visited.length} taps: ${visited.join(' ')}`);
+            failed.length ? 'failed: ' + failed.join('; ')
+                : `daily=${daily} resumed=${resumed} dailyEnded=${dailyEnded}; ${visited.length} taps: ${visited.join(' ')}`);
         check(`phone: every way out is at least ${44} CSS px and clear of its neighbours`,
             small.length === 0, small.length ? small.join('; ') : 'all exits checked');
         await ctx.close();
