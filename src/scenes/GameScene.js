@@ -1250,14 +1250,21 @@ export class GameScene extends Phaser.Scene {
                 font: '11px monospace',
                 fill: '#666688',
             }).setOrigin(0, 0.5).setDepth(11);
-            // Holiday W-8: on a phone the FIRE button owns the bottom-right
-            // corner, so the run clock moves to the middle of the bar, clear
-            // of the joystick and the buttons.
-            const clockX = this.touchControls ? GAME_CONFIG.width / 2 : GAME_CONFIG.width - 14;
+            // Holiday W-8: on a phone FIRE and ORB own the bottom-right
+            // corner, so the run clock ends just left of ORB instead, clear
+            // of the buttons and as far from the key hint as it can be.
+            // (The gap is the one TouchControls leaves between ORB and FIRE.)
+            const btns = this.touchControls && this.touchControls.buttons;
+            let clockX = GAME_CONFIG.width - 14;
+            if (btns) {
+                const orb = btns.runeShoot;
+                const gap = (btns.shoot.x - btns.shoot.radius) - (orb.x + orb.radius);
+                clockX = orb.x - orb.radius - gap;
+            }
             this.roundText = this.add.text(clockX, GAME_CONFIG.height - 15, '', {
                 font: '12px monospace',
                 fill: '#8888aa',
-            }).setOrigin(this.touchControls ? 0.5 : 1, 0.5).setDepth(11);
+            }).setOrigin(1, 0.5).setDepth(11);
         } else if (MATCH_STATE.playerCount <= 2) {
             // Shoot/orb-shot/ability read the live rebindable bindings (see
             // systems/KeyBindings.js) so a rebind shows up here immediately;

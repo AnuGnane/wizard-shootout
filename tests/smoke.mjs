@@ -594,6 +594,9 @@ try {
                     if (b.left < q.x1 && q.x0 < b.right && b.top < q.y1 && q.y0 < b.bottom) hits.push(`${tn}/${cn}`);
                 }
             }
+            // The run clock also stays clear of the key hint beside it.
+            const hint = s.children.list.find((o) => o.type === 'Text' && o !== s.roundText && o.y === s.roundText.y);
+            if (hint && hint.getBounds().right >= s.roundText.getBounds().left) hits.push('clock/hint');
             return { hits, n: Object.values(texts).filter((t) => t.text).length };
         }) : { hits: ['no touch controls'], n: 0 };
 
@@ -646,7 +649,7 @@ try {
             hasTouch && !failed.some((f) => !f.includes('pause') && !f.includes('PauseScene')),
             `touchControls=${hasTouch}${failed.length ? '; failed: ' + failed.join('; ') : ''}`);
         check('phone survival: HUD texts clear of the touch controls (844x390)',
-            hasTouch && hud.hits.length === 0, hud.hits.length ? 'overlap: ' + hud.hits.join(', ') : `${hud.n} texts vs joystick, FIRE, ORB, PWR, pause`);
+            hasTouch && hud.n >= 3 && hud.hits.length === 0, hud.hits.length ? 'overlap: ' + hud.hits.join(', ') : `${hud.n} texts vs joystick, FIRE, ORB, PWR, pause; clock clear of the key hint`);
         check('phone survival: joystick drives the wizard',
             dirs === 'right' && moved > 10, `input=${dirs} moved=${Math.round(moved)}px`);
         check('phone survival: touch pause -> QUIT TO MENU',
