@@ -126,6 +126,7 @@ maintenance debt. Pay it down before adding more surface area.
 - [x] `[S]` Touch-only menu pass (holiday W-5) — every menu screen and the Daily path enterable and leavable by tap alone on an 844x390 phone: a top-left `[ BACK ]` on ClassSelect, MapSelect and the survival SOLO/DUO picker, and every way out's hit area grown to `TOUCH_CONFIG.menuMinCss` (44 CSS px) without overlapping a neighbour (`src/systems/TouchMenu.js`)
 - [x] `[S]` Self-play balance harness (holiday W-6) — `npm run balance` (`scripts/balance.mjs`): Hard bot vs Hard bot over every ordered class pair on three built-in maps, stepped at a fixed 60 Hz without rendering across parallel headless browsers, seeded and reproducible; report in `docs/balance.md`, manual **Balance** workflow
 - [x] `[S]` Self-play balance pass (holiday W-7) — class numbers in `src/systems/Classes.js` tuned until every class's Hard-bot win rate is inside 42 to 58 percent (was 28 to 76); old and new side by side in `docs/balance.md`; human playtest still open below
+- [x] `[S]` Survival on a phone (holiday W-8) — seat 1 on a touch device gets the joystick, fire buttons and touch pause in survival SOLO and DUO (a DUO seat 2 stays keyboard/gamepad); the run clock moves to the middle of the bottom bar on touch so no survival HUD text sits under a control
 - [ ] `[F]` Pre-launch playtest + balance pass
 
 ---

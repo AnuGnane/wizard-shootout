@@ -12,6 +12,8 @@
 //      rotate prompt work (holiday W-4),
 //   3e. on that phone, every menu screen and the Daily path are entered and
 //      left by touch alone, through thumb-sized exits (holiday W-5),
+//   3f. on that phone, survival is entered by tap, played with the
+//      on-screen controls clear of its HUD, and left by touch pause (W-8),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -507,6 +509,149 @@ try {
                 : `daily=${daily} resumed=${resumed} dailyEnded=${dailyEnded}; ${visited.length} taps: ${visited.join(' ')}`);
         check(`phone: every way out is at least ${44} CSS px and clear of its neighbours`,
             small.length === 0, small.length ? small.join('; ') : 'all exits checked');
+        await ctx.close();
+    }
+
+    // 3f. Survival on a phone (holiday W-8): on the same 844x390 landscape
+    // phone, SURVIVAL -> SOLO -> a class -> a map by tap alone; seat 1 has
+    // the on-screen controls, none of them covers the survival HUD texts,
+    // the joystick moves the wizard, and touch pause -> QUIT TO MENU leaves.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('survival-phone pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('survival-phone console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, right: 47, bottom: 21, left: 47 } });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+
+        const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', {
+            type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }],
+        });
+        const tapAt = async (x, y) => { await touch('touchStart', x, y); await touch('touchEnd'); };
+        const reached = (test) => phone.waitForFunction(test, null, { timeout: 5000 }).then(() => true, () => false);
+        const isActive = (key) => reached(new Function(`return window.__game.scene.isActive('${key}')`));
+        const failed = [];
+        // CSS centre of the interactive Text `label`, or of the first card-
+        // like rectangle when `label` is null.
+        const target = (scene, label) => phone.evaluate(([scene, label]) => {
+            const s = window.__game.scene.getScene(scene);
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const all = [];
+            const walk = (list) => list.forEach((o) => { if (o.list) walk(o.list); else all.push(o); });
+            walk(s.children.list);
+            const live = all.filter((o) => o.input && o.input.enabled && o.visible && o.active);
+            const o = label === null
+                ? live.find((o) => o.type === 'Rectangle' && o.width >= 100)
+                : live.find((o) => o.type === 'Text' && o.text === label);
+            if (!o) return null;
+            const b = o.getBounds();
+            return { x: c.left + b.centerX * k, y: c.top + b.centerY * k };
+        }, [scene, label]);
+        const tap = async (from, label, to) => {
+            if (!(await isActive(from))) { failed.push(`${from} not active before ${label || 'card'}`); return; }
+            await phone.waitForTimeout(150);
+            const p = await target(from, label);
+            if (!p) { failed.push(`${from}: no ${label || 'card'}`); return; }
+            await tapAt(p.x, p.y);
+            if (!(await isActive(to))) failed.push(`${from} ${label || 'card'} -> ${to}`);
+        };
+
+        await tap('MenuScene', '[ SURVIVAL ]', 'ClassSelectScene');
+        await tap('ClassSelectScene', '[ SOLO ]', 'ClassSelectScene');
+        if (!(await reached(() => window.__game.scene.getScene('ClassSelectScene').duo === false))) failed.push('SOLO -> class screen');
+        await tap('ClassSelectScene', null, 'MapSelectScene');
+        await tap('MapSelectScene', null, 'GameScene');
+        const hasTouch = await reached(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s?.isSurvival && s.touchControls && s.player1?.inputSource && s.survivalWaveText;
+        });
+
+        // Bounding boxes in game px: every survival HUD text against the
+        // joystick at rest, FIRE/ORB/PWR and the pause button's hit area.
+        const hud = hasTouch ? await phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const tc = s.touchControls;
+            const box = (x, y, r) => ({ x0: x - r, y0: y - r, x1: x + r, y1: y + r });
+            const controls = {
+                joystick: box(tc.joy.homeX, tc.joy.homeY, tc.joy.radius),
+                FIRE: box(tc.buttons.shoot.x, tc.buttons.shoot.y, tc.buttons.shoot.radius),
+                ORB: box(tc.buttons.runeShoot.x, tc.buttons.runeShoot.y, tc.buttons.runeShoot.radius),
+                PWR: box(tc.buttons.ability.x, tc.buttons.ability.y, tc.buttons.ability.radius),
+                pause: box(tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.hit),
+            };
+            const texts = {
+                wave: s.survivalWaveText, slain: s.survivalKillsText, clock: s.roundText,
+                ...Object.fromEntries(s.survivalPanels.flatMap((p, i) => [[`hero${i + 1}`, p.nameText], [`hero${i + 1}elem`, p.elemText]])),
+            };
+            const hits = [];
+            for (const [tn, t] of Object.entries(texts)) {
+                if (!t.text) continue;
+                const b = t.getBounds();
+                for (const [cn, q] of Object.entries(controls)) {
+                    if (b.left < q.x1 && q.x0 < b.right && b.top < q.y1 && q.y0 < b.bottom) hits.push(`${tn}/${cn}`);
+                }
+            }
+            return { hits, n: Object.values(texts).filter((t) => t.text).length };
+        }) : { hits: ['no touch controls'], n: 0 };
+
+        // Drive the joystick: hold a push right, then down, and the wizard
+        // moves (a wall can stop one direction, not both).
+        let moved = 0;
+        let dirs = '';
+        if (hasTouch) {
+            const c = await phone.evaluate(() => {
+                const r = window.__game.canvas.getBoundingClientRect();
+                const s = window.__game.scene.getScene('GameScene');
+                return { left: r.left, top: r.top, w: r.width, h: r.height, k: r.width / 1024, jr: s.touchControls.joy.radius };
+            });
+            const pos = () => phone.evaluate(() => {
+                const p = window.__game.scene.getScene('GameScene').player1;
+                return { x: p.x, y: p.y };
+            });
+            const sx = c.left + c.w * 0.3;
+            const sy = c.top + c.h * 0.45;
+            const r = c.jr * c.k;
+            const start = await pos();
+            await touch('touchStart', sx, sy);
+            await touch('touchMove', sx + r * 0.8, sy);
+            await phone.waitForTimeout(400);
+            dirs = await phone.evaluate(() => {
+                const st = window.__game.scene.getScene('GameScene').player1.inputSource.getState();
+                return ['up', 'down', 'left', 'right'].filter((k) => st[k]).join('+') || 'none';
+            });
+            await touch('touchMove', sx, sy + r * 0.8);
+            await phone.waitForTimeout(400);
+            await touch('touchEnd');
+            const end = await pos();
+            moved = Math.hypot(end.x - start.x, end.y - start.y);
+        }
+
+        // Leave by touch pause -> QUIT TO MENU.
+        const pb = hasTouch ? await phone.evaluate(() => {
+            const tc = window.__game.scene.getScene('GameScene').touchControls;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            return { x: c.left + tc.pauseBtn.x * k, y: c.top + tc.pauseBtn.y * k };
+        }) : null;
+        if (pb) {
+            await tapAt(pb.x, pb.y);
+            if (!(await isActive('PauseScene'))) failed.push('survival pause button -> PauseScene');
+            else await tap('PauseScene', '[ QUIT TO MENU ]', 'MenuScene');
+        }
+
+        check('phone survival: SURVIVAL -> SOLO -> class -> map by tap, with touch controls',
+            hasTouch && !failed.some((f) => !f.includes('pause') && !f.includes('PauseScene')),
+            `touchControls=${hasTouch}${failed.length ? '; failed: ' + failed.join('; ') : ''}`);
+        check('phone survival: HUD texts clear of the touch controls (844x390)',
+            hasTouch && hud.hits.length === 0, hud.hits.length ? 'overlap: ' + hud.hits.join(', ') : `${hud.n} texts vs joystick, FIRE, ORB, PWR, pause`);
+        check('phone survival: joystick drives the wizard',
+            dirs === 'right' && moved > 10, `input=${dirs} moved=${Math.round(moved)}px`);
+        check('phone survival: touch pause -> QUIT TO MENU',
+            !!pb && !failed.some((f) => f.includes('pause') || f.includes('PauseScene')),
+            failed.filter((f) => f.includes('pause') || f.includes('PauseScene')).join('; ') || 'back on MenuScene');
         await ctx.close();
     }
 

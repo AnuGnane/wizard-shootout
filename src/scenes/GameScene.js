@@ -264,8 +264,9 @@ export class GameScene extends Phaser.Scene {
         this.aiControllers = [];
 
         // Touch-capable device, checked once per round. On-screen controls
-        // are only ever offered to seat 1 in 1P mode (see below) — desktop,
-        // 2P and party all stay byte-identical to today regardless of this.
+        // are only ever offered to seat 1 in 1P and survival (see below) —
+        // desktop, 2P and party all stay byte-identical to today regardless
+        // of this.
         const touchCapable = this.sys.game.device.input.touch ||
             ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
@@ -285,8 +286,9 @@ export class GameScene extends Phaser.Scene {
                 sources.push(new GamepadInput(this, seat - 1));
                 // Phase 6e: seat 1 in 1P mode on a touch device also gets an
                 // on-screen joystick + fire buttons, OR'd into the same
-                // composite as keyboard/gamepad.
-                if (seat === 1 && touchCapable && MATCH_STATE.mode === '1p') {
+                // composite as keyboard/gamepad. Holiday W-8: survival too,
+                // SOLO and DUO alike (a DUO seat 2 stays keyboard/gamepad).
+                if (seat === 1 && touchCapable && (MATCH_STATE.mode === '1p' || this.isSurvival)) {
                     this.touchControls = new TouchControls(this, { onPause: () => this.openPause() });
                     sources.push(this.touchControls);
                 }
@@ -1248,10 +1250,14 @@ export class GameScene extends Phaser.Scene {
                 font: '11px monospace',
                 fill: '#666688',
             }).setOrigin(0, 0.5).setDepth(11);
-            this.roundText = this.add.text(GAME_CONFIG.width - 14, GAME_CONFIG.height - 15, '', {
+            // Holiday W-8: on a phone the FIRE button owns the bottom-right
+            // corner, so the run clock moves to the middle of the bar, clear
+            // of the joystick and the buttons.
+            const clockX = this.touchControls ? GAME_CONFIG.width / 2 : GAME_CONFIG.width - 14;
+            this.roundText = this.add.text(clockX, GAME_CONFIG.height - 15, '', {
                 font: '12px monospace',
                 fill: '#8888aa',
-            }).setOrigin(1, 0.5).setDepth(11);
+            }).setOrigin(this.touchControls ? 0.5 : 1, 0.5).setDepth(11);
         } else if (MATCH_STATE.playerCount <= 2) {
             // Shoot/orb-shot/ability read the live rebindable bindings (see
             // systems/KeyBindings.js) so a rebind shows up here immediately;
