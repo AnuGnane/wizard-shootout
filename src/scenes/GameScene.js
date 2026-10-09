@@ -264,8 +264,9 @@ export class GameScene extends Phaser.Scene {
         this.aiControllers = [];
 
         // Touch-capable device, checked once per round. On-screen controls
-        // are only ever offered to seat 1 in 1P mode (see below) — desktop,
-        // 2P and party all stay byte-identical to today regardless of this.
+        // are only ever offered to seat 1 in 1P and survival (see below) —
+        // desktop, 2P and party all stay byte-identical to today regardless
+        // of this.
         const touchCapable = this.sys.game.device.input.touch ||
             ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 
@@ -285,8 +286,9 @@ export class GameScene extends Phaser.Scene {
                 sources.push(new GamepadInput(this, seat - 1));
                 // Phase 6e: seat 1 in 1P mode on a touch device also gets an
                 // on-screen joystick + fire buttons, OR'd into the same
-                // composite as keyboard/gamepad.
-                if (seat === 1 && touchCapable && MATCH_STATE.mode === '1p') {
+                // composite as keyboard/gamepad. Holiday W-8: survival too,
+                // SOLO and DUO alike (a DUO seat 2 stays keyboard/gamepad).
+                if (seat === 1 && touchCapable && (MATCH_STATE.mode === '1p' || this.isSurvival)) {
                     this.touchControls = new TouchControls(this, { onPause: () => this.openPause() });
                     sources.push(this.touchControls);
                 }
@@ -1248,7 +1250,18 @@ export class GameScene extends Phaser.Scene {
                 font: '11px monospace',
                 fill: '#666688',
             }).setOrigin(0, 0.5).setDepth(11);
-            this.roundText = this.add.text(GAME_CONFIG.width - 14, GAME_CONFIG.height - 15, '', {
+            // Holiday W-8: on a phone FIRE and ORB own the bottom-right
+            // corner, so the run clock ends just left of ORB instead, clear
+            // of the buttons and as far from the key hint as it can be.
+            // (The gap is the one TouchControls leaves between ORB and FIRE.)
+            const btns = this.touchControls && this.touchControls.buttons;
+            let clockX = GAME_CONFIG.width - 14;
+            if (btns) {
+                const orb = btns.runeShoot;
+                const gap = (btns.shoot.x - btns.shoot.radius) - (orb.x + orb.radius);
+                clockX = orb.x - orb.radius - gap;
+            }
+            this.roundText = this.add.text(clockX, GAME_CONFIG.height - 15, '', {
                 font: '12px monospace',
                 fill: '#8888aa',
             }).setOrigin(1, 0.5).setDepth(11);
