@@ -6,9 +6,11 @@
 // landscape phone, 0.46 on a 568x320 one). ensureTapTarget() grows an
 // interactive object's hit area towards TOUCH_CONFIG.menuMinCss CSS pixels
 // each way, capped so it never reaches a neighbour (holiday W-10), leaving
-// the label exactly as drawn, and keeps it right as the canvas rescales. addBackButton() is the top-left [ BACK ] for screens that only
-// had ESC. Neither registers with MenuNav, so keyboard and gamepad focus
-// order stay as they were.
+// the label exactly as drawn, and keeps it right as the canvas rescales.
+// addBackButton() is the top-left [ BACK ] for screens that only had ESC.
+// Neither registers with MenuNav, so keyboard and gamepad focus order stay
+// as they were. The cap sees the screen as built by its first frame; a
+// control added later (OnlineScene's lobby cards) does not move it.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 
