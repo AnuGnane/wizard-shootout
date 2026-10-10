@@ -10,8 +10,9 @@
 //   3d. on a phone-sized touch viewport the on-screen controls are
 //      thumb-sized, inside the safe area, and the joystick, pause button and
 //      rotate prompt work (holiday W-4),
-//   3e. on that phone, every menu screen and the Daily path are entered and
-//      left by touch alone, through thumb-sized exits (holiday W-5),
+//   3e. on that phone and on a 568x320 one, every menu screen and the Daily
+//      path are entered and left by touch alone, through exits that are
+//      thumb-sized where they fit and never overlap (holiday W-5, W-10),
 //   3f. on that phone, survival is entered by tap, played with the
 //      on-screen controls clear of its HUD, and left by touch pause (W-8),
 //   3g. on that phone, an online match (NetSession stubbed as a connected
@@ -351,19 +352,29 @@ try {
     // played into GameOver and back, by tapping alone (CDP touch events, no
     // keyboard). Every way out of a screen is at least TOUCH_CONFIG.menuMinCss
     // CSS px each way and its grown hit area overlaps no other control.
-    {
-        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+    // Holiday W-10 walks it again on a 568x320 phone (iPhone SE class): there
+    // the hit areas are capped by their neighbours, so overlap still fails
+    // but an exit under 44 px is named in the report instead. On touch the
+    // footers name the on-screen BACK instead of ESC.
+    for (const vp of [
+        { width: 844, height: 390, insets: { top: 0, right: 47, bottom: 21, left: 47 }, strict: true },
+        { width: 568, height: 320, insets: { top: 0, right: 0, bottom: 0, left: 0 }, strict: false },
+    ]) {
+        const size = `${vp.width}x${vp.height}`;
+        const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
         const phone = await ctx.newPage();
-        phone.on('pageerror', (e) => errors.push('menu-walk pageerror: ' + e.message));
-        phone.on('console', (m) => { if (m.type() === 'error') errors.push('menu-walk console.error: ' + m.text()); });
+        phone.on('pageerror', (e) => errors.push(`menu-walk ${size} pageerror: ` + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push(`menu-walk ${size} console.error: ` + m.text()); });
         const cdp = await ctx.newCDPSession(phone);
-        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, right: 47, bottom: 21, left: 47 } });
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: vp.insets });
         await phone.goto(url, { waitUntil: 'networkidle' });
         await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
 
         // CSS centre of the live interactive Text labelled `label` in `scene`,
         // plus its hit-area size in CSS px and whether that hit area overlaps
-        // any other interactive object's in the same scene.
+        // any other interactive object's in the same scene (a backdrop that
+        // covers the button whole, a modal shade, and what lies under it do
+        // not count: taps cannot reach them).
         const find = (scene, label) => phone.evaluate(([scene, label]) => {
             const s = window.__game.scene.getScene(scene);
             const c = window.__game.canvas.getBoundingClientRect();
@@ -379,8 +390,11 @@ try {
             const btn = live.find((o) => o.type === 'Text' && o.text === label);
             if (!btn) return null;
             const r = rect(btn);
-            const overlaps = live.filter((o) => o !== btn && o.input.hitArea && o.input.hitArea.width !== undefined)
-                .map((o) => ({ o, q: rect(o) }))
+            const inside = (q) => q.x0 <= r.x0 && q.y0 <= r.y0 && q.x1 >= r.x1 && q.y1 >= r.y1;
+            const others = live.filter((o) => o !== btn && o.input.hitArea && o.input.hitArea.width !== undefined)
+                .map((o) => ({ o, q: rect(o) }));
+            const floor = Math.max(-Infinity, ...others.filter(({ q }) => inside(q)).map(({ o }) => o.depth));
+            const overlaps = others.filter(({ o, q }) => !inside(q) && o.depth >= floor)
                 .filter(({ q }) => q.x0 < r.x1 && r.x0 < q.x1 && q.y0 < r.y1 && r.y0 < q.y1)
                 .map(({ o }) => o.text || o.type);
             return {
@@ -398,6 +412,16 @@ try {
         const visited = [];
         const failed = [];
         const small = [];
+        const capped = [];
+        // The footer hints of ClassSelect, MapSelect and MapEditor, as
+        // [scene, text], for the ones that talk about leaving.
+        const footers = [];
+        const footerOf = (scene) => phone.evaluate((scene) => {
+            if (!['ClassSelectScene', 'MapSelectScene', 'MapEditorScene'].includes(scene)) return [];
+            return window.__game.scene.getScene(scene).children.list
+                .filter((o) => o.type === 'Text' && !o.input && /ESC|BACK/.test(o.text))
+                .map((o) => [scene, o.text]);
+        }, scene);
         // Tap `label` on `from` and expect `to` active. `exit` marks a way out
         // of a screen, which must be thumb-sized and clear of its neighbours.
         const tap = async (from, label, to, exit = false) => {
@@ -405,9 +429,12 @@ try {
             await phone.waitForTimeout(150); // the scene's first frame has laid out
             const b = await find(from, label);
             if (!b) { failed.push(`${from}: no ${label}`); return false; }
-            if (exit && (Math.min(b.w, b.h) < 43.5 || b.overlaps.length)) {
-                small.push(`${from} ${label} ${Math.round(b.w)}x${Math.round(b.h)}${b.overlaps.length ? ' overlaps ' + b.overlaps.join('/') : ''}`);
+            if (exit && b.overlaps.length) {
+                small.push(`${from} ${label} ${Math.round(b.w)}x${Math.round(b.h)} overlaps ${b.overlaps.join('/')}`);
+            } else if (exit && Math.min(b.w, b.h) < 43.5) {
+                (vp.strict ? small : capped).push(`${from} ${label} ${Math.round(b.w)}x${Math.round(b.h)}`);
             }
+            footers.push(...(await footerOf(from)));
             await tapAt(b.x, b.y);
             if (!(await isActive(to))) { failed.push(`${from} ${label} -> ${to}`); return false; }
             visited.push(to === 'MenuScene' ? `${from}↩` : to);
@@ -449,7 +476,7 @@ try {
         await tap('OnlineScene', '[ BACK ]', M, true);
         await tap(M, '[ MAP EDITOR ]', 'MapEditorScene');
         // The editor opens on its size picker; cancel it, then leave.
-        await tap('MapEditorScene', '[ CANCEL ]', 'MapEditorScene');
+        await tap('MapEditorScene', '[ CANCEL ]', 'MapEditorScene', true);
         if (!(await reached(() => !window.__game.scene.getScene('MapEditorScene').modal))) failed.push('MapEditor size picker CANCEL');
         await tap('MapEditorScene', '[ BACK ]', M, true);
         for (const mode of ['[ 2 PLAYERS ]', '[ PARTY  3-4 P ]']) {
@@ -467,6 +494,7 @@ try {
         // pause it with the touch pause button, quit to the menu.
         await tap(M, '[ 1 PLAYER  vs BOT ]', 'ClassSelectScene');
         await tapCard('ClassSelectScene', 'MapSelectScene');
+        footers.push(...(await footerOf('MapSelectScene')));
         await tap('MapSelectScene', '[ BACK ]', M, true);
         await tap(M, '[ 1 PLAYER  vs BOT ]', 'ClassSelectScene');
         await tapCard('ClassSelectScene', 'MapSelectScene');
@@ -506,13 +534,45 @@ try {
         await tap('GameOverScene', '[ MAIN MENU ]', M, true);
         const dailyEnded = await phone.evaluate(() => !window.__match.isDailyChallenge);
 
-        check('phone: every menu screen entered and left by tap alone (844x390)',
+        check(`phone: every menu screen entered and left by tap alone (${size})`,
             failed.length === 0 && daily && resumed && dailyEnded,
             failed.length ? 'failed: ' + failed.join('; ')
                 : `daily=${daily} resumed=${resumed} dailyEnded=${dailyEnded}; ${visited.length} taps: ${visited.join(' ')}`);
-        check(`phone: every way out is at least ${44} CSS px and clear of its neighbours`,
-            small.length === 0, small.length ? small.join('; ') : 'all exits checked');
+        check(vp.strict ? `phone: every way out is at least ${44} CSS px and clear of its neighbours (${size})`
+            : `phone: every way out is clear of its neighbours, 44 CSS px where it fits (${size})`,
+            small.length === 0, small.length ? small.join('; ')
+                : capped.length ? 'capped by a neighbour: ' + capped.join('; ') : 'all exits checked');
+        // Touch footers name the on-screen BACK, never ESC.
+        const seen = new Map(footers);
+        const wrongFoot = footers.filter(([, t]) => /ESC/.test(t))
+            .concat(['ClassSelectScene', 'MapSelectScene'].filter((sc) => !/BACK - top left/.test(seen.get(sc) || '')).map((sc) => [sc, 'no BACK - top left']))
+            .concat(/tap \[ BACK \]/.test(seen.get('MapEditorScene') || '') ? [] : [['MapEditorScene', 'no tap [ BACK ]']]);
+        check(`phone: footers point at the on-screen BACK, not ESC (${size})`, wrongFoot.length === 0,
+            wrongFoot.length ? wrongFoot.map((f) => f.join(': ')).join('; ') : [...seen].map((f) => f.join(': ')).join(' | '));
         await ctx.close();
+    }
+
+    // On a desktop the footers still read "ESC - back" (holiday W-10).
+    {
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('desktop footer pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const texts = [];
+        for (const [key, data] of [['ClassSelectScene', { mode: '1p' }], ['MapSelectScene', { mode: '1p' }], ['MapEditorScene', {}]]) {
+            await desk.evaluate(([key, data]) => {
+                const g = window.__game;
+                for (const s of g.scene.getScenes(true)) g.scene.stop(s.scene.key);
+                g.scene.start(key, data);
+            }, [key, data]);
+            await desk.waitForFunction((key) => window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await desk.waitForTimeout(100);
+            texts.push(...await desk.evaluate((key) => window.__game.scene.getScene(key).children.list
+                .filter((o) => o.type === 'Text' && /ESC - back/.test(o.text)).map(() => key), key));
+        }
+        check('desktop: footers still read "ESC - back"',
+            ['ClassSelectScene', 'MapSelectScene', 'MapEditorScene'].every((k) => texts.includes(k)), texts.join(', '));
+        await desk.close();
     }
 
     // 3f. Survival on a phone (holiday W-8): on the same 844x390 landscape

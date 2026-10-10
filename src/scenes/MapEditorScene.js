@@ -8,7 +8,7 @@ import { MenuNav } from '../systems/MenuNav.js';
 import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { backHint, ensureTapTarget } from '../systems/TouchMenu.js';
 
 // Phase 9a — Map Editor. A pointer-driven grid editor for custom battle maps:
 // paint walls/floor, move the two spawns, cycle the theme, name it, save it to
@@ -105,8 +105,9 @@ export class MapEditorScene extends Phaser.Scene {
             fill: '#66ff66',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, height - 24,
-            'Click + drag to paint  ·  border tiles are locked  ·  arrows/ENTER move the buttons  ·  ESC - back', {
+        this.add.text(width / 2, height - 24, backHint(this,
+            'Click + drag to paint  ·  border tiles are locked  ·  arrows/ENTER move the buttons  ·  ESC - back',
+            'Drag to paint  ·  border tiles are locked  ·  tap [ BACK ] to leave'), {
             font: '12px monospace',
             fill: '#666688',
         }).setOrigin(0.5);
@@ -631,6 +632,8 @@ export class MapEditorScene extends Phaser.Scene {
         cancel.on('pointerdown', doCancel);
         nav.add(cancel, doCancel);
         objects.push(cancel);
+        // The way out of every modal is thumb-sized too (holiday W-10).
+        ensureTapTarget(this, cancel);
 
         this.modal = { objects, nav };
     }
