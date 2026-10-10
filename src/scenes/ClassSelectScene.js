@@ -8,7 +8,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { addBackButton } from '../systems/TouchMenu.js';
+import { addBackButton, backHint } from '../systems/TouchMenu.js';
 
 // Phase 9c: card width is derived from the class count (rather than a flat
 // number) so the row keeps fitting inside the 1024px canvas as classes are
@@ -209,7 +209,7 @@ export class ClassSelectScene extends Phaser.Scene {
         this.makeSizeButton(width / 2 - 150, 340, '[ SOLO ]', '1 wizard', () => choose(false));
         this.makeSizeButton(width / 2 + 150, 340, '[ DUO ]', '2 wizards, co-op', () => choose(true));
 
-        this.add.text(width / 2, height - 25, 'ESC - back', {
+        this.add.text(width / 2, height - 25, backHint(this, 'ESC - back', 'BACK - top left'), {
             font: '14px monospace',
             fill: '#666688',
         }).setOrigin(0.5);
@@ -291,7 +291,7 @@ export class ClassSelectScene extends Phaser.Scene {
             }).setOrigin(0.5);
         }
 
-        this.add.text(width / 2, height - 25, 'ESC - back', {
+        this.add.text(width / 2, height - 25, backHint(this, 'ESC - back', 'BACK - top left'), {
             font: '14px monospace',
             fill: '#666688',
         }).setOrigin(0.5);
@@ -516,7 +516,7 @@ export class ClassSelectScene extends Phaser.Scene {
             fill: '#ffcc44',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, height - 16, 'ESC - back', {
+        this.add.text(width / 2, height - 16, backHint(this, 'ESC - back', 'BACK - top left'), {
             font: '13px monospace',
             fill: '#666688',
         }).setOrigin(0.5);

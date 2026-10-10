@@ -7,7 +7,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { THEMES } from '../systems/Themes.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { addBackButton } from '../systems/TouchMenu.js';
+import { addBackButton, backHint } from '../systems/TouchMenu.js';
 
 const CARD_W = 225;
 const CARD_H = 155;
@@ -110,7 +110,8 @@ export class MapSelectScene extends Phaser.Scene {
         this.menuNav.refresh();
 
         // Footer / shortcuts
-        this.add.text(width / 2, height - 25, 'Click a map | R - random | ESC - back', {
+        this.add.text(width / 2, height - 25, backHint(this,
+            'Click a map | R - random | ESC - back', 'Tap a map | BACK - top left'), {
             font: '14px monospace',
             fill: '#666688',
         }).setOrigin(0.5);
