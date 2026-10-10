@@ -142,8 +142,19 @@ export class NetGameSync {
         scene.players = [];
         scene.aiControllers = [];
 
+        // Holiday W-9: on a touch device the local seat (the host's seat 1,
+        // the guest's own controls) also gets the joystick, fire buttons and
+        // touch pause, OR'd in exactly as in the '1p' branch of
+        // createPlayers. The guest sends the same input object either way,
+        // and touch pause is the same local openPause() as ESC.
+        const localSources = () => {
+            const sources = [new KeyboardInput(scene, 1), new GamepadInput(scene, 0)];
+            if (scene.isTouchCapable()) sources.push(scene.addTouchControls());
+            return new CompositeInput(...sources);
+        };
+
         if (scene.netRole === 'host') {
-            const localInput = new CompositeInput(new KeyboardInput(scene, 1), new GamepadInput(scene, 0));
+            const localInput = localSources();
             const p1 = new Player(scene, spawns[0].x, spawns[0].y, 1, localInput);
 
             this.netInput = new NetInput();
@@ -165,7 +176,7 @@ export class NetGameSync {
 
             // The guest's OWN controls for its wizard (seat 2 in the sim). Read
             // each frame and sent up to the host; not attached to any Player.
-            this.localNetInput = new CompositeInput(new KeyboardInput(scene, 1), new GamepadInput(scene, 0));
+            this.localNetInput = localSources();
         }
 
         scene.player1 = scene.players[0] || null;

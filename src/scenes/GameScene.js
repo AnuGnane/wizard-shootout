@@ -237,6 +237,19 @@ export class GameScene extends Phaser.Scene {
         this.scene.pause();
     }
 
+    isTouchCapable() {
+        return this.sys.game.device.input.touch ||
+            ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    }
+
+    // The on-screen joystick, fire buttons and pause for the one local seat
+    // that gets them. createPlayers() destroys the previous round's instance
+    // first and the shutdown handler in create() destroys the last one.
+    addTouchControls() {
+        this.touchControls = new TouchControls(this, { onPause: () => this.openPause() });
+        return this.touchControls;
+    }
+
     // Build the roster from seatTypes (the single source of truth). Every
     // active seat becomes a Player; bots additionally get an AIController. The
     // input wiring below reproduces 1P/2P exactly (seat 1 = kb1+pad0, seat 2 =
@@ -264,11 +277,10 @@ export class GameScene extends Phaser.Scene {
         this.aiControllers = [];
 
         // Touch-capable device, checked once per round. On-screen controls
-        // are only ever offered to seat 1 in 1P and survival (see below) —
-        // desktop, 2P and party all stay byte-identical to today regardless
-        // of this.
-        const touchCapable = this.sys.game.device.input.touch ||
-            ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        // are only ever offered to seat 1 in 1P and survival (see below) and
+        // to the local seat online (NetGameSync) — desktop, 2P and party all
+        // stay byte-identical to today regardless of this.
+        const touchCapable = this.isTouchCapable();
 
         activeSeats.forEach((seat, i) => {
             const spawn = spawns[i];
@@ -289,8 +301,7 @@ export class GameScene extends Phaser.Scene {
                 // composite as keyboard/gamepad. Holiday W-8: survival too,
                 // SOLO and DUO alike (a DUO seat 2 stays keyboard/gamepad).
                 if (seat === 1 && touchCapable && (MATCH_STATE.mode === '1p' || this.isSurvival)) {
-                    this.touchControls = new TouchControls(this, { onPause: () => this.openPause() });
-                    sources.push(this.touchControls);
+                    sources.push(this.addTouchControls());
                 }
                 inputSource = sources.length > 1 ? new CompositeInput(...sources) : sources[0];
             }
