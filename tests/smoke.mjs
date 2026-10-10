@@ -14,6 +14,9 @@
 //      left by touch alone, through thumb-sized exits (holiday W-5),
 //   3f. on that phone, survival is entered by tap, played with the
 //      on-screen controls clear of its HUD, and left by touch pause (W-8),
+//   3g. on that phone, an online match (NetSession stubbed as a connected
+//      guest, then host) gives the local seat the on-screen controls and
+//      the joystick reaches the input sent up / seat 1 (W-9),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -656,6 +659,130 @@ try {
             !!pb && !failed.some((f) => f.includes('pause') || f.includes('PauseScene')),
             failed.filter((f) => f.includes('pause') || f.includes('PauseScene')).join('; ') || 'back on MenuScene');
         await ctx.close();
+    }
+
+    // 3g. Online on a phone (holiday W-9): one page, no real peer. NetSession
+    // is stubbed with a connection that is always open and records what is
+    // sent, and GameScene starts as a net guest, then as a net host, the way
+    // OnlineScene._startNetMatch leaves MATCH_STATE. The local seat gets the
+    // on-screen controls and a joystick drag reaches the guest's own input
+    // (and the 'input' message it sends up) or the host's seat 1. A desktop
+    // (no touch) guest gets none, as before.
+    {
+        const startNet = (pg, role) => pg.evaluate((role) => {
+            const { NetSession } = window.__net;
+            window.__netSent = [];
+            NetSession.connection = {
+                isOpen: () => true,
+                send: (m) => window.__netSent.push(m),
+                close: () => {},
+            };
+            NetSession.role = role;
+            NetSession.connected = true;
+            const M = window.__match;
+            M.online = true; M.isDailyChallenge = false;
+            M.mode = '2p';
+            M.seatTypes = { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            const g = window.__game.scene;
+            for (const k of ['GameScene', 'PauseScene']) if (g.isActive(k) || g.isPaused(k)) g.stop(k);
+            g.getScene('MenuScene').scene.start('GameScene');
+        }, role);
+        const stopNet = (pg) => pg.evaluate(() => {
+            const { NetSession } = window.__net;
+            NetSession.connection = null; NetSession.role = null; NetSession.connected = false;
+            window.__match.online = false;
+            window.__game.scene.getScene('GameScene').scene.start('MenuScene');
+        });
+        const netReady = (pg, role) => pg.waitForFunction((role) => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s && window.__game.scene.isActive('GameScene') && s.netRole === role && s.player1 && s.player2;
+        }, role, { timeout: 8000 }).then(() => true, () => false);
+
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('online-phone pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('online-phone console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene') && window.__net, null, { timeout: 20000 });
+        const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', {
+            type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }],
+        });
+
+        for (const role of ['guest', 'host']) {
+            await startNet(phone, role);
+            const ready = await netReady(phone, role);
+            const has = ready && await phone.evaluate((role) => {
+                const s = window.__game.scene.getScene('GameScene');
+                const tc = s.touchControls;
+                const input = role === 'guest' ? s.netSync.localNetInput : s.player1.inputSource;
+                return !!(tc && tc.pauseBtn && input && input.sources && input.sources.includes(tc));
+            }, role);
+            let dirs = 'none';
+            let sent = false;
+            let moved = 0;
+            if (has) {
+                const c = await phone.evaluate(() => {
+                    const r = window.__game.canvas.getBoundingClientRect();
+                    const s = window.__game.scene.getScene('GameScene');
+                    return { left: r.left, top: r.top, w: r.width, h: r.height, k: r.width / 1024, jr: s.touchControls.joy.radius };
+                });
+                const pos = () => phone.evaluate(() => {
+                    const p = window.__game.scene.getScene('GameScene').player1;
+                    return { x: p.x, y: p.y };
+                });
+                const sx = c.left + c.w * 0.3;
+                const sy = c.top + c.h * 0.45;
+                const start = await pos();
+                await phone.evaluate(() => { window.__netSent.length = 0; });
+                await touch('touchStart', sx, sy);
+                await touch('touchMove', sx + c.jr * c.k * 0.8, sy);
+                await phone.waitForTimeout(400);
+                const st = await phone.evaluate((role) => {
+                    const s = window.__game.scene.getScene('GameScene');
+                    const input = role === 'guest' ? s.netSync.localNetInput : s.player1.inputSource;
+                    const st = input.getState();
+                    return {
+                        dirs: ['up', 'down', 'left', 'right'].filter((k) => st[k]).join('+') || 'none',
+                        sent: window.__netSent.some((m) => m.t === 'input' && m.right && !m.left && !m.up && !m.down),
+                    };
+                }, role);
+                await touch('touchEnd');
+                dirs = st.dirs;
+                sent = st.sent;
+                const end = await pos();
+                moved = Math.hypot(end.x - start.x, end.y - start.y);
+            }
+            check(`phone online ${role}: local seat has touch controls`,
+                has, ready ? `touchControls in ${role === 'guest' ? 'localNetInput' : "seat 1's input"}=${has}` : `GameScene never started as ${role}`);
+            if (role === 'guest') {
+                check('phone online guest: joystick drag reaches the input sent up',
+                    dirs === 'right' && sent, `localNetInput=${dirs} sent input right=${sent}`);
+            } else {
+                check('phone online host: joystick drag drives seat 1',
+                    dirs === 'right' && moved > 10, `input=${dirs} moved=${Math.round(moved)}px`);
+            }
+            await stopNet(phone);
+            await phone.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 }).catch(() => {});
+        }
+        await ctx.close();
+
+        // Desktop: the same guest start on the main (no touch) page builds
+        // no touch controls, so keyboard/gamepad online is unchanged.
+        await startNet(page, 'guest');
+        const deskReady = await netReady(page, 'guest');
+        const deskTouch = deskReady && await page.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return { tc: !!s.touchControls, n: s.netSync.localNetInput.sources.length };
+        });
+        check('desktop online guest: no touch controls, keyboard + gamepad only',
+            deskReady && !deskTouch.tc && deskTouch.n === 2, deskReady ? `touchControls=${deskTouch.tc} sources=${deskTouch.n}` : 'GameScene never started as guest');
+        await stopNet(page);
+        await page.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 }).catch(() => {});
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)

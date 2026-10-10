@@ -127,6 +127,7 @@ maintenance debt. Pay it down before adding more surface area.
 - [x] `[S]` Self-play balance harness (holiday W-6) — `npm run balance` (`scripts/balance.mjs`): Hard bot vs Hard bot over every ordered class pair on three built-in maps, stepped at a fixed 60 Hz without rendering across parallel headless browsers, seeded and reproducible; report in `docs/balance.md`, manual **Balance** workflow
 - [x] `[S]` Self-play balance pass (holiday W-7) — class numbers in `src/systems/Classes.js` tuned until every class's Hard-bot win rate is inside 42 to 58 percent (was 28 to 76); old and new side by side in `docs/balance.md`; human playtest still open below
 - [x] `[S]` Survival on a phone (holiday W-8) — seat 1 on a touch device gets the joystick, fire buttons and touch pause in survival SOLO and DUO (a DUO seat 2 stays keyboard/gamepad); on touch the run clock ends just left of ORB, so the wave, score, clock and hero texts sit clear of every control
+- [x] `[S]` Online on a phone (holiday W-9) — on a touch device the local seat of a net match (the host's seat 1, the guest's own controls sent up) gets the joystick, fire buttons and touch pause, OR'd into its keyboard + gamepad input as in 1P; no wire-format change, and touch pause is the same local pause as ESC
 - [ ] `[F]` Pre-launch playtest + balance pass
 
 ---
