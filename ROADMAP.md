@@ -129,6 +129,7 @@ maintenance debt. Pay it down before adding more surface area.
 - [x] `[S]` Survival on a phone (holiday W-8) — seat 1 on a touch device gets the joystick, fire buttons and touch pause in survival SOLO and DUO (a DUO seat 2 stays keyboard/gamepad); on touch the run clock ends just left of ORB, so the wave, score, clock and hero texts sit clear of every control
 - [x] `[S]` Online on a phone (holiday W-9) — on a touch device the local seat of a net match (the host's seat 1, the guest's own controls sent up) gets the joystick, fire buttons and touch pause, OR'd into its keyboard + gamepad input as in 1P; no wire-format change, and touch pause is the same local pause as ESC
 - [x] `[S]` Small-phone menu fit (holiday W-10) — the grown menu hit areas (`src/systems/TouchMenu.js`) are capped by their neighbours and grow towards the free side, so none overlap at 568x320 (iPhone SE class) as well as 844x390, and every way out still reaches 44 CSS px at both; the map editor's modal `[ CANCEL ]` is grown too; on touch the footers say "BACK - top left" (ClassSelect, MapSelect) and "tap [ BACK ]" (MapEditor) instead of "ESC - back"
+- [x] `[S]` Pause when backgrounded (holiday W-11) — `GameScene` opens the pause menu when the page goes hidden (app switch, notification shade, lock screen, desktop tab switch) through Phaser's `HIDDEN` event and the existing `openPause()` guards, in every local mode and as a local pause online; coming back shows PAUSED until RESUME
 - [ ] `[F]` Pre-launch playtest + balance pass
 
 ---

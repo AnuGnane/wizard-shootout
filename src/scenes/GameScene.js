@@ -221,9 +221,21 @@ export class GameScene extends Phaser.Scene {
         this.leaving = false;
         this._pauseQueued = false;
         this.input.keyboard.on('keydown-ESC', () => this.openPause());
+
+        // Holiday W-11: the page going hidden (app switch, notification shade,
+        // lock screen, desktop tab switch) pauses the round, so coming back
+        // lands on PAUSED instead of live action. Phaser only freezes its loop
+        // while hidden; the queued pause runs when the loop resumes. The
+        // listener lives on the game-wide emitter, so it goes on shutdown
+        // (every restart and every quit) or rounds would stack copies.
+        this.game.events.on(Phaser.Core.Events.HIDDEN, this.openPause, this);
+        this.events.once('shutdown', () => {
+            this.game.events.off(Phaser.Core.Events.HIDDEN, this.openPause, this);
+        });
     }
 
-    // ESC, and on a phone the touch pause button or turning to portrait.
+    // ESC, on a phone the touch pause button or turning to portrait, and the
+    // page going hidden.
     // Scene ops are queued until the next step and touch/matchMedia events
     // arrive between steps, so isPaused()/isActive() can't see a round-end
     // start/restart queued this frame (`leaving`, set by RoundFlow and
