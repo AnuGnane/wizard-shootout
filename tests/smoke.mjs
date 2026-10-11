@@ -845,6 +845,99 @@ try {
         await page.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 }).catch(() => {});
     }
 
+    // 3h. Pause when the phone looks away (holiday W-11): on an 844x390
+    // landscape touch viewport, a 1P bot round is running when the page goes
+    // hidden (faked: document.hidden / visibilityState plus a
+    // visibilitychange event, as an app switch or the lock screen fires) and
+    // comes back. The round is waiting on PAUSED, frozen; a second hidden /
+    // visible pair while paused opens no second PauseScene; RESUME by tap
+    // brings the round back.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-hidden pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-hidden console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await phone.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+        });
+        const reached = (test) => phone.waitForFunction(test, null, { timeout: 5000 }).then(() => true, () => false);
+        const touchReady = await reached(() => window.__game.scene.getScene('GameScene')?.touchControls);
+        await phone.waitForTimeout(1500); // the round banner is gone; the bot is on the move
+        const setHidden = (hidden) => phone.evaluate((hidden) => {
+            Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+            Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+            document.dispatchEvent(new Event('visibilitychange'));
+        }, hidden);
+        const lookAway = async () => {
+            await setHidden(true);
+            await phone.waitForTimeout(300);
+            await setHidden(false);
+        };
+        const pausedNow = () => window.__game.scene.isPaused('GameScene') && window.__game.scene.isActive('PauseScene');
+        const where = () => phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return [s.player1, s.player2].map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+        });
+        // Whether anything moved while the round ran, so "frozen" below means
+        // something (logged; a bot may legitimately stand still).
+        const live0 = await where();
+        await phone.waitForTimeout(300);
+        const liveMoved = (await where()) !== live0;
+        const wasRunning = await phone.evaluate(() => window.__game.scene.isActive('GameScene') && !window.__game.scene.isPaused('GameScene'));
+        await lookAway();
+        const paused = await reached(pausedNow);
+        const before = await where();
+        await phone.waitForTimeout(500);
+        const after = await where();
+        check('phone: page hidden mid-round comes back paused, round frozen',
+            touchReady && wasRunning && paused && before === after,
+            `touchControls=${touchReady} running=${wasRunning} (moving=${liveMoved}) paused=${paused} wizards ${before} -> ${after} over 500 ms`);
+
+        // Again while paused: the guard holds, PauseScene is not restarted.
+        await phone.evaluate(() => {
+            window.__pauseStarts = 0;
+            window.__game.scene.getScene('PauseScene').sys.events.on('start', () => { window.__pauseStarts++; });
+        });
+        await lookAway();
+        await phone.waitForTimeout(300);
+        const again = await phone.evaluate(() => ({
+            starts: window.__pauseStarts,
+            paused: window.__game.scene.isPaused('GameScene') && window.__game.scene.isActive('PauseScene'),
+        }));
+        check('phone: hidden again while paused opens no second pause',
+            again.starts === 0 && again.paused, `PauseScene starts=${again.starts} still paused=${again.paused}`);
+
+        // RESUME by tap.
+        const resume = await phone.evaluate(() => {
+            const s = window.__game.scene.getScene('PauseScene');
+            const b = s.children.list.find((o) => o.type === 'Text' && o.text === '[ RESUME ]');
+            if (!b) return null;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const r = b.getBounds();
+            return { x: c.left + r.centerX * k, y: c.top + r.centerY * k };
+        });
+        if (resume) {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: resume.x, y: resume.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        }
+        const back = await reached(() => window.__game.scene.isActive('GameScene') && !window.__game.scene.isPaused('GameScene') && !window.__game.scene.isActive('PauseScene'));
+        check('phone: RESUME by tap after looking away brings the round back', !!resume && back,
+            resume ? `round running=${back}` : 'no [ RESUME ] on PauseScene');
+        await ctx.close();
+    }
+
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
         if (!window.__net || !window.__net.NetConnection) return { err: 'window.__net missing' };

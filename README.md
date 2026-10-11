@@ -111,7 +111,9 @@ and cast. On **touch devices**, 1P mode shows a virtual joystick plus FIRE /
 ORB / SIGNATURE buttons and a pause button. The joystick drops under your
 thumb wherever you touch the left half of the screen; the buttons keep a
 thumb-sized minimum however small the phone. Hold the phone sideways — upright,
-the game asks you to turn it and pauses a running round.
+the game asks you to turn it and pauses a running round. Switching away mid-round (another
+app, the lock screen, another browser tab) pauses it too, so you come back to
+the pause menu, not live action.
 
 Shots fire in the direction you're facing (your last movement direction) and
 bounce off walls — your own shot can hit you after its first bounce.
