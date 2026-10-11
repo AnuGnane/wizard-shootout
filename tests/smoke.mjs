@@ -872,7 +872,7 @@ try {
             window.__game.scene.getScene('MenuScene').scene.start('GameScene');
         });
         const reached = (test) => phone.waitForFunction(test, null, { timeout: 5000 }).then(() => true, () => false);
-        await reached(() => window.__game.scene.getScene('GameScene')?.touchControls);
+        const touchReady = await reached(() => window.__game.scene.getScene('GameScene')?.touchControls);
         await phone.waitForTimeout(1500); // the round banner is gone; the bot is on the move
         const setHidden = (hidden) => phone.evaluate((hidden) => {
             Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -885,19 +885,24 @@ try {
             await setHidden(false);
         };
         const pausedNow = () => window.__game.scene.isPaused('GameScene') && window.__game.scene.isActive('PauseScene');
-        const wasRunning = await phone.evaluate(() => window.__game.scene.isActive('GameScene') && !window.__game.scene.isPaused('GameScene'));
-        await lookAway();
-        const paused = await reached(pausedNow);
         const where = () => phone.evaluate(() => {
             const s = window.__game.scene.getScene('GameScene');
             return [s.player1, s.player2].map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
         });
+        // Whether anything moved while the round ran, so "frozen" below means
+        // something (logged; a bot may legitimately stand still).
+        const live0 = await where();
+        await phone.waitForTimeout(300);
+        const liveMoved = (await where()) !== live0;
+        const wasRunning = await phone.evaluate(() => window.__game.scene.isActive('GameScene') && !window.__game.scene.isPaused('GameScene'));
+        await lookAway();
+        const paused = await reached(pausedNow);
         const before = await where();
         await phone.waitForTimeout(500);
         const after = await where();
         check('phone: page hidden mid-round comes back paused, round frozen',
-            wasRunning && paused && before === after,
-            `running=${wasRunning} paused=${paused} wizards ${before} -> ${after} over 500 ms`);
+            touchReady && wasRunning && paused && before === after,
+            `touchControls=${touchReady} running=${wasRunning} (moving=${liveMoved}) paused=${paused} wizards ${before} -> ${after} over 500 ms`);
 
         // Again while paused: the guard holds, PauseScene is not restarted.
         await phone.evaluate(() => {
