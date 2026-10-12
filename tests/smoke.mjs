@@ -938,6 +938,116 @@ try {
         await ctx.close();
     }
 
+    // 3i. Sound on a phone (holiday W-12): on an 844x390 touch viewport, one
+    // tap on an empty part of the menu starts the AudioContext; in a round
+    // the context goes 'interrupted' (as iOS leaves it after a call or an app
+    // switch), the page goes hidden and comes back, and one tap on the pause
+    // screen starts it again. The phone rule is emulated in the page: this
+    // headless Chromium starts Web Audio without any gesture whatever
+    // --autoplay-policy says (measured), and counts a CDP touchStart as one,
+    // so the context here only starts or resumes inside a release (touchend,
+    // a touch pointerup, keydown, a mouse press), as Chrome on a phone does.
+    {
+        const strict = await chromium.launch({ executablePath, args: ['--no-sandbox', '--autoplay-policy=user-gesture-required'] });
+        try {
+            const ctx = await strict.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+            await ctx.addInitScript(() => {
+                let gesture = false;
+                const grant = () => { gesture = true; setTimeout(() => { gesture = false; }, 0); };
+                window.addEventListener('touchend', grant, true);
+                window.addEventListener('keydown', grant, true);
+                window.addEventListener('mousedown', grant, true);
+                window.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') grant(); }, true);
+                const Real = window.AudioContext;
+                window.AudioContext = class PhoneAudioContext extends Real {
+                    constructor(...a) {
+                        super(...a);
+                        this._state = gesture ? 'running' : 'suspended';
+                        if (!gesture) super.suspend();
+                    }
+                    get state() { return this._state; }
+                    resume() {
+                        if (!gesture) return Promise.resolve();
+                        this._state = 'running';
+                        return super.resume();
+                    }
+                    suspend() { this._state = 'suspended'; return super.suspend(); }
+                    interrupt() { this._state = 'interrupted'; return super.suspend(); }
+                };
+                window.webkitAudioContext = window.AudioContext;
+            });
+            const phone = await ctx.newPage();
+            phone.on('pageerror', (e) => errors.push('phone-sound pageerror: ' + e.message));
+            phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-sound console.error: ' + m.text()); });
+            const cdp = await ctx.newCDPSession(phone);
+            await phone.goto(url, { waitUntil: 'networkidle' });
+            await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await phone.waitForTimeout(300);
+            const tapAt = async (p) => {
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] });
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            };
+            const running = () => phone.waitForFunction(() => window.__audio.ctx?.state === 'running', null, { timeout: 3000 })
+                .then(() => true, () => false);
+            const state = () => phone.evaluate(() => window.__audio.ctx?.state ?? 'none');
+            // CSS point of a spot in `scene` that no interactive object's hit
+            // area covers (a full-screen backdrop aside), or of the Text
+            // labelled `label`.
+            const spot = (scene, label) => phone.evaluate(([scene, label]) => {
+                const s = window.__game.scene.getScene(scene);
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const css = (x, y) => ({ x: c.left + x * k, y: c.top + y * k });
+                const live = s.children.list.filter((o) => o.input && o.input.enabled && o.visible);
+                if (label) {
+                    const b = live.find((o) => o.type === 'Text' && o.text === label);
+                    return b ? css(b.getBounds().centerX, b.getBounds().centerY) : null;
+                }
+                const boxes = live.map((o) => o.getBounds()).filter((r) => r.width < 1000 || r.height < 690);
+                for (let y = 680; y > 20; y -= 40) {
+                    for (let x = 40; x < 1000; x += 40) {
+                        if (!boxes.some((r) => r.contains(x, y))) return css(x, y);
+                    }
+                }
+                return null;
+            }, [scene, label]);
+
+            const empty = await spot('MenuScene');
+            const before = await state();
+            if (empty) await tapAt(empty);
+            const first = !!empty && await running();
+            check('phone sound: one tap on the menu starts the AudioContext', first,
+                empty ? `${before} -> ${await state()}` : 'no empty spot on MenuScene');
+
+            const daily = await spot('MenuScene', '[ DAILY ]');
+            if (daily) await tapAt(daily);
+            const inRound = await phone.waitForFunction(() => window.__game.scene.isActive('GameScene'), null, { timeout: 5000 })
+                .then(() => true, () => false);
+            await phone.waitForTimeout(1000);
+            await phone.evaluate(() => window.__audio.ctx?.interrupt());
+            const setHidden = (hidden) => phone.evaluate((hidden) => {
+                Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+                Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+                document.dispatchEvent(new Event('visibilitychange'));
+            }, hidden);
+            await setHidden(true);
+            await phone.waitForTimeout(300);
+            await setHidden(false);
+            const paused = await phone.waitForFunction(() => window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 })
+                .then(() => true, () => false);
+            await phone.waitForTimeout(300);
+            const away = await state();
+            const pauseSpot = paused ? await spot('PauseScene') : null;
+            if (pauseSpot) await tapAt(pauseSpot);
+            const again = !!pauseSpot && away !== 'running' && await running();
+            check('phone sound: after an app switch one tap brings the sound back', inRound && paused && again,
+                `DAILY round=${inRound} paused=${paused} ${away} -> ${await state()} after one tap on the pause screen`);
+            await ctx.close();
+        } finally {
+            await strict.close();
+        }
+    }
+
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
         if (!window.__net || !window.__net.NetConnection) return { err: 'window.__net missing' };

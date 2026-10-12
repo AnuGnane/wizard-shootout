@@ -38,6 +38,19 @@ class AudioSystem {
         this._nextNoteTime = 0;         // ctx.currentTime of the next unscheduled beat
         this._musicChordIndex = 0;
         this._musicBeatInChord = 0;
+
+        // Phones: Phaser reports a touch's pointerdown from touchstart, which
+        // Chrome does not count as a user gesture (only the release is one),
+        // and iOS leaves the context 'interrupted' after a call or an app
+        // switch. So any release anywhere on the page (re)starts the context
+        // whenever it is not running. On window, so it fires whichever scene
+        // the tap lands on (PauseScene after the page was hidden included).
+        if (typeof window !== 'undefined') {
+            const wake = () => { if (!this.ctx || this.ctx.state !== 'running') this.unlock(); };
+            for (const type of ['pointerup', 'touchend', 'keydown']) {
+                window.addEventListener(type, wake, { capture: true, passive: true });
+            }
+        }
     }
 
     unlock() {
@@ -53,8 +66,11 @@ class AudioSystem {
             this.musicGain.gain.value = 0;
             this.musicGain.connect(this.master);
         }
-        if (this.ctx.state === 'suspended') {
-            this.ctx.resume();
+        // 'suspended' before the first gesture, 'interrupted' on iOS after a
+        // call or an app switch. resume() rejects or waits without a gesture;
+        // the next release tries again.
+        if (this.ctx.state !== 'running' && this.ctx.state !== 'closed') {
+            Promise.resolve(this.ctx.resume()).catch(() => {});
         }
         // startMusic() may have been called before the context existed (the
         // intent is remembered via _musicOn); now that ctx/musicGain are
