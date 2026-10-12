@@ -18,6 +18,9 @@
 //   3g. on that phone, an online match (NetSession stubbed as a connected
 //      guest, then host) gives the local seat the on-screen controls and
 //      the joystick reaches the input sent up / seat 1 (W-9),
+//   3j. on that phone the in-round HUD (1P and survival) reads at
+//      TOUCH_CONFIG.hudMinCss and is clear of itself and the controls;
+//      568x320 is reported (W-13),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -39,6 +42,7 @@ import { extname, join, normalize } from 'node:path';
 import { createServer, preview } from 'vite';
 import { chromium } from 'playwright';
 import { buildPalette, indexFrame, encodeGif } from '../scripts/gif.js';
+import { TOUCH_CONFIG } from '../src/config.js';
 
 const SCENES = [
     'BootScene', 'MenuScene', 'SettingsScene', 'ControlsScene', 'ClassSelectScene',
@@ -1046,6 +1050,103 @@ try {
         } finally {
             await strict.close();
         }
+    }
+
+    // 3j. Legible HUD on a phone (holiday W-13): a 1P bot round and a
+    // SURVIVAL SOLO round on a touch context. At 844x390 every HUD text is at
+    // least TOUCH_CONFIG.hudMinCss CSS px tall (font px x scaleY x CSS px per
+    // game px) and no two HUD texts, and no HUD text and touch control,
+    // intersect; at 568x320 the sizes and any overlap are only logged.
+    for (const vp of [{ width: 844, height: 390, assert: true }, { width: 568, height: 320, assert: false }]) {
+        const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        const tag = `hud-phone ${vp.width}x${vp.height}`;
+        phone.on('pageerror', (e) => errors.push(`${tag} pageerror: ` + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push(`${tag} console.error: ` + m.text()); });
+        if (vp.assert) {
+            const cdp = await ctx.newCDPSession(phone);
+            await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, right: 47, bottom: 21, left: 47 } });
+        }
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+
+        for (const mode of ['1p', 'survival']) {
+            await phone.evaluate((mode) => {
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = mode;
+                M.seatTypes = mode === '1p'
+                    ? { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' }
+                    : { 1: 'human', 2: 'off', 3: 'bot', 4: 'bot' };
+                M.playerCount = mode === '1p' ? 2 : 3;
+                // The longest class name, so the widest labels are measured.
+                M.classes = { 1: 'stonecaller', 2: 'stonecaller', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                const g = window.__game.scene;
+                const from = g.isActive('GameScene') ? 'GameScene' : 'MenuScene';
+                g.getScene(from).scene.start('GameScene');
+            }, mode);
+            const ready = await phone.waitForFunction((mode) => {
+                const s = window.__game.scene.getScene('GameScene');
+                return s && window.__game.scene.isActive('GameScene') && s.touchControls && s.touchHud &&
+                    (mode === '1p' ? !s.isSurvival && s.player2 : s.isSurvival && s.survivalWaveText);
+            }, mode, { timeout: 8000 }).then(() => true, () => false);
+            if (!ready) {
+                check(`${tag} ${mode}: HUD texts legible and clear`, !vp.assert, 'touch HUD never came up');
+                continue;
+            }
+            // Hold the widest orb readout, then let a frame write it.
+            await phone.evaluate(() => {
+                const p = window.__game.scene.getScene('GameScene').player1;
+                p.heldRune = 'lightning'; p.runeShots = 10;
+            });
+            await phone.waitForTimeout(250);
+            const hud = await phone.evaluate((minCss) => {
+                const s = window.__game.scene.getScene('GameScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const tc = s.touchControls;
+                const box = (x, y, r) => ({ left: x - r, top: y - r, right: x + r, bottom: y + r });
+                const controls = {
+                    joystick: box(tc.joy.homeX, tc.joy.homeY, tc.joy.radius),
+                    FIRE: box(tc.buttons.shoot.x, tc.buttons.shoot.y, tc.buttons.shoot.radius),
+                    ORB: box(tc.buttons.runeShoot.x, tc.buttons.runeShoot.y, tc.buttons.runeShoot.radius),
+                    PWR: box(tc.buttons.ability.x, tc.buttons.ability.y, tc.buttons.ability.radius),
+                    pause: box(tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.hit),
+                };
+                const hits = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+                const texts = Object.entries(s.touchHud.texts()).filter(([, t]) => t.visible && t.text);
+                const sizes = texts.map(([n, t]) => [n, parseFloat(t.style.fontSize) * t.scaleY * k]);
+                const small = sizes.filter(([, css]) => css < minCss).map(([n, css]) => `${n} ${css.toFixed(1)}`);
+                const overlaps = [];
+                const bounds = texts.map(([n, t]) => [n, t.getBounds()]);
+                bounds.forEach(([n, b], i) => {
+                    bounds.slice(i + 1).forEach(([m, c]) => { if (hits(b, c)) overlaps.push(`${n}/${m}`); });
+                    for (const [cn, q] of Object.entries(controls)) if (hits(b, q)) overlaps.push(`${n}/${cn}`);
+                });
+                // No key-name hint on a phone.
+                const hint = s.children.list.some((o) => o.type === 'Text' && /WASD/.test(o.text));
+                const min = Math.min(...sizes.map(([, css]) => css));
+                return {
+                    n: texts.length, small, overlaps, hint, min,
+                    sizes: sizes.map(([n, css]) => `${n}=${css.toFixed(1)}`).join(' '),
+                    labels: texts.filter(([n]) => /name|hero\d$|elem|rune/.test(n)).map(([n, t]) => `${n}="${t.text}"`).join(' '),
+                };
+            }, TOUCH_CONFIG.hudMinCss);
+            const detail = `${hud.n} texts, min ${hud.min.toFixed(1)} CSS px` +
+                (hud.small.length ? `; under: ${hud.small.join(', ')}` : '') +
+                (hud.overlaps.length ? `; overlap: ${hud.overlaps.join(', ')}` : '') +
+                (hud.hint ? '; key hint shown' : '');
+            if (vp.assert) {
+                check(`${tag} ${mode}: HUD texts legible and clear`,
+                    hud.n >= (mode === '1p' ? 7 : 5) && !hud.small.length && !hud.overlaps.length && !hud.hint, detail);
+            } else {
+                console.log(`  ..  ${tag} ${mode} (report only): ${detail}`);
+            }
+            console.log(`        ${hud.sizes}`);
+            console.log(`        ${hud.labels}`);
+        }
+        await ctx.close();
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)

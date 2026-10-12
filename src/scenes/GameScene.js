@@ -5,6 +5,7 @@ import { getTeamColors } from '../systems/TeamColors.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { TouchControls } from '../systems/TouchControls.js';
+import { TouchHud, SURVIVAL_ELEM_FORMATS } from '../systems/TouchHud.js';
 import { Projectile } from '../entities/Projectile.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
@@ -130,6 +131,10 @@ export class GameScene extends Phaser.Scene {
             if (this.touchControls) {
                 this.touchControls.destroy();
                 this.touchControls = null;
+            }
+            if (this.touchHud) {
+                this.touchHud.destroy();
+                this.touchHud = null;
             }
         });
 
@@ -1245,6 +1250,13 @@ export class GameScene extends Phaser.Scene {
         this.add.rectangle(GAME_CONFIG.width / 2, 59, GAME_CONFIG.width, 2, 0x5a5a9a).setDepth(10);
 
         this.roundTimer = 0;
+        // Holiday W-13: the phone HUD layout (built below) and what it sets.
+        if (this.touchHud) this.touchHud.destroy();
+        this.touchHud = null;
+        this.hudPipY = 20;
+        this.hudBarFillW = 148;
+        // On a phone the key-name hint is noise; the controls are on screen.
+        const showKeyHint = !this.touchControls;
 
         // playerCount <= 2 keeps today's HUD EXACTLY; party mode uses compact
         // per-seat panels across the top bar. Phase 9b's survival HUD is
@@ -1269,10 +1281,12 @@ export class GameScene extends Phaser.Scene {
             const hint = duo
                 ? `P1: WASD + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  ·  P2: Arrows + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  ·  M mute`
                 : `WASD move · ${keyLabel(b1.shoot)} shoot · ${keyLabel(b1.runeShoot)} orb shot · ${keyLabel(b1.ability)} ability · M mute`;
-            this.add.text(14, GAME_CONFIG.height - 15, hint, {
-                font: '11px monospace',
-                fill: '#666688',
-            }).setOrigin(0, 0.5).setDepth(11);
+            if (showKeyHint) {
+                this.add.text(14, GAME_CONFIG.height - 15, hint, {
+                    font: '11px monospace',
+                    fill: '#666688',
+                }).setOrigin(0, 0.5).setDepth(11);
+            }
             // Holiday W-8: on a phone FIRE and ORB own the bottom-right
             // corner, so the run clock ends just left of ORB instead, clear
             // of the buttons and as far from the key hint as it can be.
@@ -1301,10 +1315,12 @@ export class GameScene extends Phaser.Scene {
                 const b2 = getBindings(2);
                 hint = `P1: WASD + ${keyLabel(b1.shoot)}/${keyLabel(b1.runeShoot)}/${keyLabel(b1.ability)}  |  P2: Arrows + ${keyLabel(b2.shoot)}/${keyLabel(b2.runeShoot)}/${keyLabel(b2.ability)}  |  Grab orbs for powers  |  M mute`;
             }
-            this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
-                font: '11px monospace',
-                fill: '#666688',
-            }).setOrigin(0.5).setDepth(11);
+            if (showKeyHint) {
+                this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 15, hint, {
+                    font: '11px monospace',
+                    fill: '#666688',
+                }).setOrigin(0.5).setDepth(11);
+            }
         } else {
             this.add.text(14, GAME_CONFIG.height - 15, 'P1 WASD · P2 Arrows · P3/P4 pads · M mute', {
                 font: '11px monospace',
@@ -1318,6 +1334,10 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.updateScoreText();
+
+        // Holiday W-13: wherever seat 1 has touch controls, grow the HUD to a
+        // legible CSS size and lay it out around them (2P/party never do).
+        if (this.touchControls) this.touchHud = new TouchHud(this);
     }
 
     // Today's two-player HUD, verbatim. Only reached when playerCount <= 2.
@@ -1337,9 +1357,13 @@ export class GameScene extends Phaser.Scene {
         const p2Name = MATCH_STATE.mode === '1p'
             ? `BOT ${p2ClassName} · ${RUNTIME_SETTINGS.aiDifficulty.toUpperCase()}`
             : p2ClassName;
+        // Shorter forms the phone HUD (TouchHud) falls back to when tight.
+        this.p2NameCandidates = MATCH_STATE.mode === '1p'
+            ? [p2Name, `BOT ${p2ClassName}`, p2ClassName]
+            : [p2Name];
 
         // --- Player 1 (left) ---
-        this.add.text(20, 8, p1ClassName, {
+        this.p1NameText = this.add.text(20, 8, p1ClassName, {
             font: 'bold 14px monospace',
             fill: p1ColorStr,
         }).setDepth(11);
@@ -1360,7 +1384,7 @@ export class GameScene extends Phaser.Scene {
         this.p1ShieldIcon = this.add.image(150, 51, 'rune_shield').setDepth(11).setScale(0.6).setVisible(false);
 
         // --- Player 2 (right) ---
-        this.add.text(GAME_CONFIG.width - 20, 8, p2Name, {
+        this.p2NameText = this.add.text(GAME_CONFIG.width - 20, 8, p2Name, {
             font: 'bold 14px monospace',
             fill: p2ColorStr,
         }).setOrigin(1, 0).setDepth(11);
@@ -1386,7 +1410,7 @@ export class GameScene extends Phaser.Scene {
         this.usePips = MATCH_STATE.targetScore <= 7;
         if (this.usePips) {
             this.scorePips = this.add.graphics().setDepth(11);
-            this.add.text(GAME_CONFIG.width / 2, 20, '-', {
+            this.scoreDash = this.add.text(GAME_CONFIG.width / 2, 20, '-', {
                 font: 'bold 16px monospace',
                 fill: '#ffffff',
             }).setOrigin(0.5).setDepth(11);
@@ -1479,7 +1503,8 @@ export class GameScene extends Phaser.Scene {
                 fill: '#8888aa',
             }).setOrigin(0.5, 0).setDepth(11);
 
-            this.survivalPanels.push({ player, cx, color, barW, bg, fill, nameText, elemText });
+            const nameCandidates = [`${TEAM_NAMES[seat - 1]} · ${className}`, className];
+            this.survivalPanels.push({ player, cx, color, barW, bg, fill, nameText, elemText, nameCandidates });
         });
 
         this.survivalWaveText = this.add.text(GAME_CONFIG.width / 2, 6, '', {
@@ -1500,14 +1525,10 @@ export class GameScene extends Phaser.Scene {
             panel.fill.width = (panel.barW - 2) * pct;
             panel.fill.fillColor = pct <= 0.25 ? 0xff3333 : panel.color;
 
-            let txt = `${Math.ceil(p.health)} HP`;
-            if (p.heldRune) {
-                const name = p.heldRune.charAt(0).toUpperCase() + p.heldRune.slice(1);
-                txt += `  ·  ${name} x${p.runeShots}`;
-            } else if (p.shieldCharges > 0) {
-                txt += '  ·  Shield';
-            }
-            panel.elemText.setText(txt);
+            // Level 0 is the desktop text; the phone HUD may pick a shorter one.
+            const format = SURVIVAL_ELEM_FORMATS[this.touchHud ? this.touchHud.survivalElemLevel : 0];
+            const name = p.heldRune ? p.heldRune.charAt(0).toUpperCase() + p.heldRune.slice(1) : null;
+            panel.elemText.setText(format(Math.ceil(p.health), name, p.runeShots, p.shieldCharges > 0));
 
             const alpha = p.isAlive ? 1 : 0.4;
             panel.nameText.setAlpha(alpha);
@@ -1564,7 +1585,7 @@ export class GameScene extends Phaser.Scene {
         const spacing = 16;
         const gap = 12; // distance from center to the pip nearest it
         const centerX = GAME_CONFIG.width / 2;
-        const y = 20;
+        const y = this.hudPipY;
 
         const drawSide = (sign, score, color) => {
             for (let i = 0; i < target; i++) {
@@ -1598,8 +1619,8 @@ export class GameScene extends Phaser.Scene {
         // Health bars
         const p1Pct = Math.max(0, this.player1.health / this.player1.maxHealth);
         const p2Pct = Math.max(0, this.player2.health / this.player2.maxHealth);
-        this.p1HealthBarFill.width = 148 * p1Pct;
-        this.p2HealthBarFill.width = 148 * p2Pct;
+        this.p1HealthBarFill.width = this.hudBarFillW * p1Pct;
+        this.p2HealthBarFill.width = this.hudBarFillW * p2Pct;
         this.p1HealthText.setText(`${Math.ceil(this.player1.health)}`);
         this.p2HealthText.setText(`${Math.ceil(this.player2.health)}`);
         this.p1HealthBarFill.fillColor = p1Pct <= 0.25 ? 0xff3333 : this.p1TeamColor;
@@ -1638,7 +1659,8 @@ export class GameScene extends Phaser.Scene {
             icon.setTexture(`rune_${player.heldRune}`);
             icon.setVisible(true);
             const name = player.heldRune.charAt(0).toUpperCase() + player.heldRune.slice(1);
-            text.setText(`${name} x${player.runeShots}`);
+            // On the phone HUD the icon (and the colour) name the orb.
+            text.setText(this.touchHud ? `x${player.runeShots}` : `${name} x${player.runeShots}`);
             const color = ELEMENT_COLORS[player.heldRune];
             text.setColor('#' + color.toString(16).padStart(6, '0'));
         } else {
