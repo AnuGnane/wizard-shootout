@@ -1358,6 +1358,7 @@ export class GameScene extends Phaser.Scene {
             ? `BOT ${p2ClassName} · ${RUNTIME_SETTINGS.aiDifficulty.toUpperCase()}`
             : p2ClassName;
         // Shorter forms the phone HUD (TouchHud) falls back to when tight.
+        this.p1NameCandidates = [p1ClassName, p1ClassName.slice(0, 5)];
         this.p2NameCandidates = MATCH_STATE.mode === '1p'
             ? [p2Name, `BOT ${p2ClassName}`, p2ClassName]
             : [p2Name];

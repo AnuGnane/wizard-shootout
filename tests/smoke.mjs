@@ -1070,19 +1070,20 @@ try {
         await phone.goto(url, { waitUntil: 'networkidle' });
         await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
 
-        for (const mode of ['1p', 'survival']) {
+        // 568x320 also reports a long match, whose score is a number, not pips.
+        for (const mode of vp.assert ? ['1p', 'survival'] : ['1p', 'survival', '1p-long']) {
             await phone.evaluate((mode) => {
                 const M = window.__match;
                 M.online = false; M.isDailyChallenge = false;
-                M.mode = mode;
-                M.seatTypes = mode === '1p'
+                M.mode = mode === '1p-long' ? '1p' : mode;
+                M.seatTypes = mode !== 'survival'
                     ? { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' }
                     : { 1: 'human', 2: 'off', 3: 'bot', 4: 'bot' };
-                M.playerCount = mode === '1p' ? 2 : 3;
+                M.playerCount = mode !== 'survival' ? 2 : 3;
                 // The longest class name, so the widest labels are measured.
                 M.classes = { 1: 'stonecaller', 2: 'stonecaller', 3: 'arcanist', 4: 'arcanist' };
                 M.mapIndex = 0; M.round = 1;
-                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = mode === '1p-long' ? 10 : 5;
                 const g = window.__game.scene;
                 const from = g.isActive('GameScene') ? 'GameScene' : 'MenuScene';
                 g.getScene(from).scene.start('GameScene');
@@ -1090,7 +1091,7 @@ try {
             const ready = await phone.waitForFunction((mode) => {
                 const s = window.__game.scene.getScene('GameScene');
                 return s && window.__game.scene.isActive('GameScene') && s.touchControls && s.touchHud &&
-                    (mode === '1p' ? !s.isSurvival && s.player2 : s.isSurvival && s.survivalWaveText);
+                    (mode !== 'survival' ? !s.isSurvival && s.player2 : s.isSurvival && s.survivalWaveText);
             }, mode, { timeout: 8000 }).then(() => true, () => false);
             if (!ready) {
                 check(`${tag} ${mode}: HUD texts legible and clear`, !vp.assert, 'touch HUD never came up');
@@ -1124,6 +1125,8 @@ try {
                     bounds.slice(i + 1).forEach(([m, c]) => { if (hits(b, c)) overlaps.push(`${n}/${m}`); });
                     for (const [cn, q] of Object.entries(controls)) if (hits(b, q)) overlaps.push(`${n}/${cn}`);
                 });
+                // The top-bar texts stay inside the 60 px bar.
+                bounds.forEach(([n, b]) => { if (b.top < 100 && b.bottom > 60) overlaps.push(`${n}/below bar`); });
                 // No key-name hint on a phone.
                 const hint = s.children.list.some((o) => o.type === 'Text' && /WASD/.test(o.text));
                 const min = Math.min(...sizes.map(([, css]) => css));

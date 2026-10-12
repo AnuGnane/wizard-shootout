@@ -21,7 +21,6 @@ const WORST = {
     health: '999',
     rune: 'x10',
     round: 'ROUND 99  •  99:59',
-    clock: 'SURVIVED 99:59  •  99 LEFT',
     kills: 'HORDE SLAIN 999',
 };
 
@@ -86,6 +85,9 @@ export class TouchHud {
         const minPx = Math.ceil(TOUCH_CONFIG.hudMinCss / k);
         for (const t of Object.values(this.texts())) {
             if (t._hudBasePx === undefined) t._hudBasePx = parseFloat(t.style.fontSize) || 12;
+            // The 28 px numeric score (targets over 7) would push row B out
+            // of the top bar; on a phone it goes to the pips' dash size.
+            if (t === s.scoreText) t._hudBasePx = Math.min(t._hudBasePx, 16);
             t.setFontSize(`${Math.max(t._hudBasePx, minPx)}px`);
         }
         if (s.isSurvival) this._layoutSurvival();
@@ -105,8 +107,10 @@ export class TouchHud {
     _rows(rowA, rowB) {
         const hA = Math.max(...rowA.map((t) => this._measure(t, '0').h));
         const hB = Math.max(...rowB.map((t) => this._measure(t, '0').h));
-        const yA = Math.max(18, 2 + hA / 2);
-        return { yA, yB: yA + hA / 2 + 2 + hB / 2, hB };
+        // Row A sits as on desktop (centre y 18) unless row B would then
+        // spill out of the bar; it rises as far as the top edge allows.
+        const yA = Math.max(1 + hA / 2, Math.min(18, 59 - hB - 1 - hA / 2));
+        return { yA, yB: yA + hA / 2 + 1 + hB / 2, hB };
     }
 
     // The first label that fits in `maxW`, or the shortest one.
@@ -158,6 +162,8 @@ export class TouchHud {
         const iconW = 16 * iconScale;
 
         // Player 1, left.
+        const p1Name = s.p1NameCandidates || [s.p1NameText.text];
+        this._fit(s.p1NameText, p1Name, this._pauseLeft() - edge - healthW - gap);
         s.p1NameText.setOrigin(0, 0.5).setPosition(edge, yA);
         s.p1HealthText.setOrigin(0, 0.5).setPosition(s.p1NameText.getBounds().right + gap, yA);
         s.hudBarFillW = barW - 2;
