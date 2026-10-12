@@ -214,6 +214,15 @@ export const TOUCH_CONFIG = {
     // controls that leave a screen. Grows the hit area only, never the label.
     menuMinCss: 44,
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
+    // In-round HUD on a phone (holiday W-13): the smallest HUD text, in CSS
+    // px, in the modes that get touch controls; labels shorten before any
+    // text goes below it. hudGap (game px) between HUD neighbours, hudBarW
+    // the health bar's game-px width in that layout (survival's may shrink
+    // to hudBarMinW to make room for its readout).
+    hudMinCss: 10,
+    hudGap: 8,
+    hudBarW: 120,
+    hudBarMinW: 60,
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers
