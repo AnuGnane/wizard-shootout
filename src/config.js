@@ -230,6 +230,9 @@ export const TOUCH_CONFIG = {
     haptics: {
         hit: 40,
         hitMinGapMs: 250,
+        // An Online guest only sees health in host snapshots, where a burn
+        // tick is a 1 hp drop; a smaller drop than this does not buzz.
+        guestMinDrop: 4,
         death: [120, 60, 240],
         win: [50, 60, 50, 60, 160],
     },

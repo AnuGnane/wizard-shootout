@@ -10,7 +10,7 @@
 // called, so a local match is byte-identical to one without this module.
 
 import Phaser from 'phaser';
-import { GAME_CONFIG, ELEMENT_TYPES } from '../config.js';
+import { GAME_CONFIG, ELEMENT_TYPES, TOUCH_CONFIG } from '../config.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from './GamepadInput.js';
 import { ARENA } from './Maps.js';
@@ -240,10 +240,11 @@ export class NetGameSync {
             // Stage 2b: guest-side hit SFX. A snapshot hp below the puppet's
             // current health means the host landed damage this interval; play
             // the hit sound once, before we overwrite the puppet's health.
-            // Holiday W-14: the guest's own wizard buzzes from the same drop.
+            // Holiday W-14: the guest's own wizard buzzes from the same drop
+            // (not from a burn tick's, see TOUCH_CONFIG.haptics.guestMinDrop).
             if (typeof ps.hp === 'number' && ps.hp < player.health) {
                 audio.hit();
-                this.scene.buzz('hit', ps.n);
+                if (player.health - ps.hp >= TOUCH_CONFIG.haptics.guestMinDrop) this.scene.buzz('hit', ps.n);
             }
 
             player.x = Phaser.Math.Linear(player.x, ps.x, 0.3);
