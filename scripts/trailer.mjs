@@ -37,7 +37,7 @@ const TRAILER = {
     difficulty: 'hard',
     // Holiday W-17: desktop stills at these seconds into the capture, and one
     // phone still this long into a 1P round on a touch viewport.
-    stills: { atSeconds: [3, 6, 9], phone: { width: 844, height: 390, waitMs: 3000 } },
+    stills: { atSeconds: [3, 6, 9], phone: { width: 844, height: 390, waitMs: 3000, difficulty: 'easy' } },
 };
 
 const outArg = process.argv.indexOf('--out');
@@ -181,17 +181,11 @@ try {
     const frames = [], times = [];
     const t0 = Date.now();
     mkdirSync(dirname(OUT), { recursive: true });
-    const stillsAt = [...TRAILER.stills.atSeconds];
+    const stillsAt = [...TRAILER.stills.atSeconds]; // seconds into the capture clock
     // Until the capture clock passes the trailer length (cap: 3x real time).
     while (!(times.length && times[times.length - 1] - times[0] >= TRAILER.seconds * 1000)
         && Date.now() - t0 < TRAILER.seconds * 3000) {
         await page.waitForTimeout(1000);
-        if (stillsAt.length && Date.now() - t0 >= stillsAt[0] * 1000) {
-            const path = stillPath(stills.length + 1);
-            await page.screenshot({ path });
-            stills.push(path);
-            stillsAt.shift();
-        }
         const batch = await page.evaluate(() => {
             const T = window.__trailer;
             let n = 0;
@@ -199,8 +193,17 @@ try {
             return T.frames.splice(0, n);
         });
         for (const f of batch) {
-            frames.push(decodePNG(Buffer.from(f.png, 'base64')));
+            const png = Buffer.from(f.png, 'base64');
+            frames.push(decodePNG(png));
             times.push(f.t);
+            // Desktop stills are captured frames themselves (a screenshot
+            // here would stall the match the GIF is recording).
+            if (stillsAt.length && f.t - times[0] >= stillsAt[0] * 1000) {
+                const path = stillPath(stills.length + 1);
+                writeFileSync(path, png);
+                stills.push(path);
+                stillsAt.shift();
+            }
         }
     }
     if (errors.length) throw new Error('page errors during capture: ' + errors.slice(0, 3).join(' | '));
@@ -250,7 +253,7 @@ try {
     await phone.evaluate((t) => {
         window.__settings.soundEnabled = false;
         window.__settings.musicEnabled = false;
-        window.__settings.aiDifficulty = t.difficulty;
+        window.__settings.aiDifficulty = t.stills.phone.difficulty; // seat 1 stands idle: keep it alive
         const M = window.__match;
         M.online = false; M.isDailyChallenge = false;
         M.mode = '1p';
@@ -268,6 +271,7 @@ try {
     stills.push(phonePath);
     await phoneCtx.close();
     if (errors.length) throw new Error('page errors during stills: ' + errors.slice(0, 3).join(' | '));
+    if (stills.length !== TRAILER.stills.atSeconds.length + 1) throw new Error(`only ${stills.length} stills written`);
     console.log(`trailer stills: ${stills.join(', ')}`);
 } catch (err) {
     console.error('trailer failed:', err.message);

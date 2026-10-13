@@ -36,7 +36,9 @@ jobs:
         timeout-minutes: 5
         run: npm run trailer
 
+      # Even if a still failed, keep what was written (the GIF comes first).
       - name: Upload trailer
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trailer-gif

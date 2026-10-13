@@ -16,7 +16,7 @@ theming, and new classes nearly free.
 - **In the browser:** https://anugnane.github.io/wizard-shootout/ (desktop or phone).
 - **On a phone:** open that link, then **Add to Home Screen** (Safari: Share →
   Add to Home Screen; Chrome: ⋮ → Install app). It opens full screen and plays
-  offline. Hold the phone sideways.
+  offline (every mode but Online). Hold the phone sideways.
 - **On itch.io:** https://anugnane.itch.io/wizard-shootout *(placeholder until
   the page is live)*.
 - **Trailer:** below, recorded fresh from the live game on every deploy.
@@ -123,7 +123,7 @@ element's orb is empowered. In 1P the bot picks a class at random.
 **Gamepads** join seamlessly (Phaser Gamepad API) — a connected pad can take
 a seat in any mode; left stick / d-pad to move, face buttons to shoot, orb,
 and cast. On **touch devices**, 1P mode shows a virtual joystick plus FIRE /
-ORB / SIGNATURE buttons and a pause button. The joystick drops under your
+ORB / PWR (signature) buttons and a pause button. The joystick drops under your
 thumb wherever you touch the left half of the screen; the buttons keep a
 thumb-sized minimum however small the phone. Hold the phone sideways — upright,
 the game asks you to turn it and pauses a running round. Switching away mid-round (another
