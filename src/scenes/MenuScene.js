@@ -5,6 +5,7 @@ import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { getDailyStatus } from '../systems/Stats.js';
 import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
+import { addFullscreenToggle, fullscreenOffer } from '../systems/Fullscreen.js';
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -206,8 +207,16 @@ export class MenuScene extends Phaser.Scene {
         });
         controlsGamepad.setOrigin(0.5);
 
+        // Holiday W-15: a phone browser gets a full-screen toggle in the top
+        // right; where it has no Fullscreen API (iPhone Safari) the footer
+        // points at Add to Home Screen instead.
+        addFullscreenToggle(this, 'menu');
+        const hintText = fullscreenOffer(this) === 'hint'
+            ? 'Add to Home Screen for full screen'
+            : '1 / 2 / 3 / 4 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins';
+
         // Hint
-        const hint = this.add.text(width / 2, 690, '1 / 2 / 3 / 4 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins', {
+        const hint = this.add.text(width / 2, 690, hintText, {
             font: '14px monospace',
             fill: '#666688',
         });

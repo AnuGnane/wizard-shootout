@@ -39,6 +39,9 @@ const config = {
         width: GAME_CONFIG.width,
         height: GAME_CONFIG.height,
         parent: 'game-container',
+        // Holiday W-15: full screen takes the whole page, not a wrapper round
+        // the canvas, so the rotate prompt (index.html) still shows in it.
+        fullscreenTarget: document.documentElement,
     },
     backgroundColor: '#0f0f1a',
     input: {

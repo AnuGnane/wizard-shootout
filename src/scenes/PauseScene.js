@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { audio } from '../systems/AudioSystem.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { addFullscreenToggle } from '../systems/Fullscreen.js';
 
 // Launched (not started) on top of a paused GameScene, so the arena stays
 // visible behind the dark overlay. See MenuScene.makeButton for the button
@@ -33,6 +34,8 @@ export class PauseScene extends Phaser.Scene {
         ensureTapTarget(this, this.makeButton(width / 2, height / 2 - 40, '[ RESUME ]', '#336633', '#66ff66', () => this.resumeGame()));
         this.makeButton(width / 2, height / 2 + 30, '[ RESTART ROUND ]', '#333355', '#5599ff', () => this.restartRound());
         ensureTapTarget(this, this.makeButton(width / 2, height / 2 + 100, '[ QUIT TO MENU ]', '#663333', '#ff6666', () => this.quitToMenu()));
+        // Holiday W-15: the same full-screen toggle as the menu, on a phone.
+        addFullscreenToggle(this, 'pause', 101);
     }
 
     update() {
