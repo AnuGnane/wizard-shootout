@@ -65,6 +65,9 @@ export function loadSettings(settings) {
     if (typeof saved.colorblindTeams === 'boolean') {
         settings.colorblindTeams = saved.colorblindTeams;
     }
+    if (typeof saved.vibration === 'boolean') {
+        settings.vibration = saved.vibration;
+    }
     for (const key of MUTATOR_KEYS) {
         if (typeof saved[key] === 'boolean') {
             settings[key] = saved[key];
@@ -102,6 +105,7 @@ export function saveSettings(settings) {
     payload.fogOfWar = settings.fogOfWar;
     payload.screenShake = settings.screenShake;
     payload.colorblindTeams = settings.colorblindTeams;
+    payload.vibration = settings.vibration;
     for (const key of MUTATOR_KEYS) {
         payload[key] = settings[key];
     }

@@ -240,7 +240,11 @@ export class NetGameSync {
             // Stage 2b: guest-side hit SFX. A snapshot hp below the puppet's
             // current health means the host landed damage this interval; play
             // the hit sound once, before we overwrite the puppet's health.
-            if (typeof ps.hp === 'number' && ps.hp < player.health) audio.hit();
+            // Holiday W-14: the guest's own wizard buzzes from the same drop.
+            if (typeof ps.hp === 'number' && ps.hp < player.health) {
+                audio.hit();
+                this.scene.buzz('hit', ps.n);
+            }
 
             player.x = Phaser.Math.Linear(player.x, ps.x, 0.3);
             player.y = Phaser.Math.Linear(player.y, ps.y, 0.3);
@@ -467,6 +471,7 @@ export class NetGameSync {
                 if (!p || !p.deathBurst || this._deathFxSeats.has(n)) return;
                 this._deathFxSeats.add(n);
                 p.deathBurst();
+                scene.buzz('death', n);
                 return;
             }
             case 'blink': {
@@ -603,6 +608,7 @@ export class NetGameSync {
             scene.roundFlow.showDrawBanner();
         } else {
             if (m.isMatchWin) audio.matchWin(); else audio.roundWin();
+            scene.buzz('win', m.winner);
             scene.roundFlow.showScoreBanner(m.winner, !!m.isMatchWin);
         }
     }

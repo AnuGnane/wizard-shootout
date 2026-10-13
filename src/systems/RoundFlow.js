@@ -359,6 +359,7 @@ export class RoundFlow {
                 } else {
                     audio.roundWin();
                 }
+                scene.buzz('win', winner);
                 this.showScoreBanner(winner, isMatchWin);
             }
         });
