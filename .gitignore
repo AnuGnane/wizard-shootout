@@ -9,6 +9,8 @@ wizard-shootout-*-html5.zip
 
 # Trailer (scripts/trailer.mjs) — generated, never committed
 docs/trailer.gif
+# and its stills for the itch.io page (holiday W-17)
+docs/trailer-*.png
 
 # IDE
 .idea/

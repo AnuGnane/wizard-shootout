@@ -1,7 +1,8 @@
 name: Trailer
 
-# Records docs/trailer.gif from a headless bot match and uploads it as an
-# artifact (never committed). Run by hand: Actions -> Trailer -> Run workflow.
+# Records docs/trailer.gif from a headless bot match, plus the PNG stills for
+# the itch.io page (docs/trailer-*.png), and uploads them as an artifact
+# (never committed). Run by hand: Actions -> Trailer -> Run workflow.
 on:
   workflow_dispatch:
 
@@ -39,5 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: trailer-gif
-          path: docs/trailer.gif
+          path: |
+            docs/trailer.gif
+            docs/trailer-*.png
           if-no-files-found: error
