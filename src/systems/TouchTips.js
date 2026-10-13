@@ -7,8 +7,11 @@
 // cluster for FIRE, ORB and PWR, and "pause" under the pause button. Drawn in
 // screen space above the HUD and the controls, at no less than
 // TOUCH_CONFIG.hudMinCss; the round is not paused. They fade once the player
-// has both moved and fired, or after TOUCH_CONFIG.tips.timeoutMs. Seen once,
-// remembered through Storage.js; the Controls screen can clear the flag.
+// has both moved and fired, or after TOUCH_CONFIG.tips.timeoutMs (the scene's
+// clock, so a pause holds it). Remembered through Storage.js once they fade,
+// so a round left early shows them again; the Controls screen clears the flag.
+// They keep clear of the phone HUD (TouchHud), e.g. survival's run clock
+// beside ORB.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { loadTouchTipsSeen, saveTouchTipsSeen } from './Storage.js';
@@ -19,7 +22,6 @@ export class TouchTips {
     // The tips for this round, or null when they have been seen.
     static maybeShow(scene, controls) {
         if (!controls || loadTouchTipsSeen()) return null;
-        saveTouchTipsSeen(true);
         return new TouchTips(scene, controls);
     }
 
@@ -79,6 +81,31 @@ export class TouchTips {
 
         const p = c.pauseBtn;
         this.texts.pause.setOrigin(0.5, 0).setPosition(p.x, p.y + p.hit + gap);
+
+        // Step each group past any HUD text it lands on: the joystick tip and
+        // the button column upwards, the pause tip downwards.
+        this.clearOfHud([this.texts.move], -1, gap);
+        this.clearOfHud(['runeShoot', 'shoot', 'ability'].map((key) => this.texts[key]), -1, gap);
+        this.clearOfHud([this.texts.pause], 1, gap);
+    }
+
+    clearOfHud(group, dir, gap) {
+        const hud = this.scene.touchHud ? Object.values(this.scene.touchHud.texts()).filter((t) => t && t.active && t.visible) : [];
+        const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        for (let pass = 0; pass < hud.length; pass++) {
+            let shift = 0;
+            for (const tip of group) {
+                const a = tip.getBounds();
+                for (const h of hud) {
+                    const b = h.getBounds();
+                    if (!hit(a, b)) continue;
+                    const d = dir < 0 ? b.top - gap - a.bottom : b.bottom + gap - a.top;
+                    if (Math.abs(d) > Math.abs(shift)) shift = d;
+                }
+            }
+            if (!shift) return;
+            for (const tip of group) tip.y += shift;
+        }
     }
 
     update() {
@@ -92,6 +119,7 @@ export class TouchTips {
     fade() {
         if (this.fading || !this.texts) return;
         this.fading = true;
+        saveTouchTipsSeen(true);
         this.scene.tweens.add({
             targets: Object.values(this.texts),
             alpha: 0,

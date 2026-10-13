@@ -1506,7 +1506,9 @@ try {
                 ...Object.entries(tc.buttons).map(([key, b]) => circ(key, b.x, b.y, b.radius)),
                 circ('pause', tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.hit),
             ] : [];
-            return { tips, ctrls, k, left: c.left, top: c.top,
+            const hud = s.touchHud ? Object.entries(s.touchHud.texts()).filter(([, t]) => t && t.active && t.visible)
+                .map(([name, t]) => { const b = t.getBounds(); return { name, r: { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom } }; }) : [];
+            return { tips, ctrls, hud, k, left: c.left, top: c.top,
                 fire: tc && { x: c.left + tc.buttons.shoot.x * k, y: c.top + tc.buttons.shoot.y * k } };
         });
         const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
@@ -1521,8 +1523,9 @@ try {
         m.tips.forEach((a, i) => {
             m.tips.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) clashes.push(`${a.name}/${b.name}`); });
             m.ctrls.forEach((b) => { if (hit(a.r, b.r)) clashes.push(`${a.name}/${b.name}`); });
+            m.hud.forEach((b) => { if (hit(a.r, b.r)) clashes.push(`${a.name}/hud ${b.name}`); });
         });
-        check('phone tips: the first round labels the touch controls, legible and clear of them and each other',
+        check('phone tips: the first round labels the touch controls, legible and clear of them, the HUD and each other',
             first && names === 'ability,move,pause,runeShoot,shoot' && tooSmall.length === 0 && clashes.length === 0,
             `tips=${names} sizes=${m.tips.map((t) => `${t.name}:${t.css.toFixed(1)}`).join(' ')}`
                 + (tooSmall.length ? ` small=${tooSmall.join(';')}` : '') + (clashes.length ? ` overlaps=${clashes.join(';')}` : ''));
@@ -1547,6 +1550,35 @@ try {
         await phone.waitForTimeout(200);
         const second = (await measure()).tips.length;
         check('phone tips: the next round shows none', second === 0, `tips=${second}`);
+
+        // Survival (fresh flag): the tips keep clear of its HUD, the run clock
+        // beside ORB included.
+        await phone.evaluate(() => localStorage.removeItem('wizard-shootout-touch-tips-v1'));
+        await phone.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = 'survival';
+            M.seatTypes = { 1: 'human', 2: 'off', 3: 'bot', 4: 'bot' };
+            M.playerCount = 3;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            window.__game.scene.getScenes(true)[0].scene.start('GameScene');
+        });
+        await roundReady();
+        await phone.waitForTimeout(150);
+        const sv = await measure();
+        const svClash = [];
+        sv.tips.forEach((a, i) => {
+            sv.tips.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) svClash.push(`${a.name}/${b.name}`); });
+            sv.ctrls.forEach((b) => { if (hit(a.r, b.r)) svClash.push(`${a.name}/${b.name}`); });
+            sv.hud.forEach((b) => { if (hit(a.r, b.r)) svClash.push(`${a.name}/hud ${b.name}`); });
+        });
+        const svSurvival = await phone.evaluate(() => !!window.__game.scene.getScene('GameScene').isSurvival);
+        check('phone tips: in survival they are clear of its HUD and the controls',
+            svSurvival && sv.tips.length === 5 && sv.hud.length > 0 && svClash.length === 0,
+            `survival=${svSurvival} tips=${sv.tips.length} hud=${sv.hud.map((h) => h.name).join(',')}` + (svClash.length ? ` overlaps=${svClash.join(';')}` : ''));
+        await phone.evaluate(() => window.__game.scene.getScene('GameScene').touchTips?.fade());
 
         // Controls -> SHOW TOUCH TIPS by tap -> the round after has them.
         await phone.evaluate(() => window.__game.scene.getScenes(true)[0].scene.start('ControlsScene'));

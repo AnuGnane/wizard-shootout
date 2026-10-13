@@ -176,10 +176,6 @@ export class GameScene extends Phaser.Scene {
             ? new Haptics(this.netRole === 'guest' ? 2 : 1, () => RUNTIME_SETTINGS.vibration)
             : null;
 
-        // Holiday W-16: a player's first round with touch controls labels
-        // them (once, remembered; the Controls screen brings them back).
-        this.touchTips = TouchTips.maybeShow(this, this.touchControls);
-
         this.projectiles = this.physics.add.group();
         this.setupCollisions();
         this.setupEvents();
@@ -193,6 +189,11 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.createUI();
+
+        // Holiday W-16: a player's first round with touch controls labels
+        // them (once, remembered; the Controls screen brings them back).
+        // After createUI so the tips can keep clear of the phone HUD.
+        this.touchTips = TouchTips.maybeShow(this, this.touchControls);
         // Stage 2b: the HOST runs rune spawning (restricted to the map-safe net
         // pool — see spawnRunes) and syncs the orbs to the guest, which only
         // renders rune puppets from snapshots and never simulates its own.
