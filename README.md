@@ -11,6 +11,16 @@ generated in code** — pixel-art textures built at boot, Web Audio synth for
 SFX and music, no binary assets in the repo. That keeps cosmetics, map
 theming, and new classes nearly free.
 
+## Play it
+
+- **In the browser:** https://anugnane.github.io/wizard-shootout/ (desktop or phone).
+- **On a phone:** open that link, then **Add to Home Screen** (Safari: Share →
+  Add to Home Screen; Chrome: ⋮ → Install app). It opens full screen and plays
+  offline (every mode but Online). Hold the phone sideways.
+- **On itch.io:** https://anugnane.itch.io/wizard-shootout *(placeholder until
+  the page is live)*.
+- **Trailer:** below, recorded fresh from the live game on every deploy.
+
 ![Four bots duel on Four Chambers](https://anugnane.github.io/wizard-shootout/trailer.gif)
 
 *The trailer is recorded from a headless four-bot match on every deploy
@@ -58,6 +68,11 @@ hand: on the game's itch.io page, **Edit game → Kind of project: HTML →
 Upload files** (the zip), tick **This file will be played in the browser**,
 set the embed size to 1024 × 700 (the game's native size) with **Fullscreen button** and **Mobile
 friendly** (orientation: landscape) on, then **Save**.
+
+The page's text, tags, embed settings and which trailer still goes where are
+in [`docs/itch.md`](docs/itch.md). A tag's release notes come from
+`docs/release-notes/<tag>.md` when that file exists (the player-facing notes
+for `v1.0.0` are there); otherwise GitHub generates them from the merged PRs.
 
 ## Modes
 
@@ -108,7 +123,7 @@ element's orb is empowered. In 1P the bot picks a class at random.
 **Gamepads** join seamlessly (Phaser Gamepad API) — a connected pad can take
 a seat in any mode; left stick / d-pad to move, face buttons to shoot, orb,
 and cast. On **touch devices**, 1P mode shows a virtual joystick plus FIRE /
-ORB / SIGNATURE buttons and a pause button. The joystick drops under your
+ORB / PWR (signature) buttons and a pause button. The joystick drops under your
 thumb wherever you touch the left half of the screen; the buttons keep a
 thumb-sized minimum however small the phone. Hold the phone sideways — upright,
 the game asks you to turn it and pauses a running round. Switching away mid-round (another

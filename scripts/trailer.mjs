@@ -1,7 +1,12 @@
-// Trailer GIF from a headless bot match (Phase 11 / holiday W-2).
+// Trailer GIF from a headless bot match (Phase 11 / holiday W-2), plus PNG
+// stills for the itch.io page (holiday W-17).
 //
 //   npm run build && npm run trailer            # writes docs/trailer.gif
 //   node scripts/trailer.mjs --out dist/trailer.gif
+//
+// Beside the GIF it writes <name>-1.png .. <name>-3.png (desktop, 1024x700,
+// from the same match) and <name>-phone.png (an 844x390 phone viewport, a 1P
+// round with the touch controls); docs/itch.md says which still goes where.
 //
 // Serves the production build in dist/ (Vite preview), starts a four-bot
 // free-for-all in headless Chromium, grabs the game canvas every few frames
@@ -13,7 +18,7 @@
 // suite does).
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join, basename, extname } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { preview } from 'vite';
 import { chromium } from 'playwright';
@@ -30,6 +35,9 @@ const TRAILER = {
     classes: { 1: 'pyromancer', 2: 'cryomancer', 3: 'stormcaller', 4: 'arcanist' },
     mapIndex: 3,          // Four Chambers
     difficulty: 'hard',
+    // Holiday W-17: desktop stills at these seconds into the capture, and one
+    // phone still this long into a 1P round on a touch viewport.
+    stills: { atSeconds: [3, 6, 9], phone: { width: 844, height: 390, waitMs: 3000, difficulty: 'easy' } },
 };
 
 const outArg = process.argv.indexOf('--out');
@@ -38,6 +46,10 @@ if (!OUT) {
     console.error('usage: node scripts/trailer.mjs [--out <file.gif>]');
     process.exit(1);
 }
+
+// trailer.gif -> trailer-1.png, trailer-phone.png, next to it.
+const stillPath = (tag) => join(dirname(OUT), `${basename(OUT, extname(OUT))}-${tag}.png`);
+const stills = [];
 
 if (!existsSync('dist/index.html')) {
     console.error('trailer: no dist/ — run `npm run build` first');
@@ -168,6 +180,8 @@ try {
 
     const frames = [], times = [];
     const t0 = Date.now();
+    mkdirSync(dirname(OUT), { recursive: true });
+    const stillsAt = [...TRAILER.stills.atSeconds]; // seconds into the capture clock
     // Until the capture clock passes the trailer length (cap: 3x real time).
     while (!(times.length && times[times.length - 1] - times[0] >= TRAILER.seconds * 1000)
         && Date.now() - t0 < TRAILER.seconds * 3000) {
@@ -179,8 +193,17 @@ try {
             return T.frames.splice(0, n);
         });
         for (const f of batch) {
-            frames.push(decodePNG(Buffer.from(f.png, 'base64')));
+            const png = Buffer.from(f.png, 'base64');
+            frames.push(decodePNG(png));
             times.push(f.t);
+            // Desktop stills are captured frames themselves (a screenshot
+            // here would stall the match the GIF is recording).
+            if (stillsAt.length && f.t - times[0] >= stillsAt[0] * 1000) {
+                const path = stillPath(stills.length + 1);
+                writeFileSync(path, png);
+                stills.push(path);
+                stillsAt.shift();
+            }
         }
     }
     if (errors.length) throw new Error('page errors during capture: ' + errors.slice(0, 3).join(' | '));
@@ -212,10 +235,44 @@ try {
     }
     if (gif.length > TRAILER.maxBytes) throw new Error(`GIF is ${gif.length} bytes, over budget`);
 
-    mkdirSync(dirname(OUT), { recursive: true });
     writeFileSync(OUT, gif);
     const secs = delays.reduce((a, b) => a + b, 0) / 100;
     console.log(`trailer: ${OUT} ${w}x${h}, ${kept.length} frames, ${secs.toFixed(1)}s, ${(gif.length / 1048576).toFixed(2)} MB`);
+
+    // The phone still: a 1P round on a touch viewport, so the joystick and
+    // buttons show (first-round tips marked seen, for a clean shot).
+    const P = TRAILER.stills.phone;
+    const phoneCtx = await browser.newContext({ viewport: { width: P.width, height: P.height }, hasTouch: true, isMobile: true });
+    await phoneCtx.addInitScript(() => {
+        try { localStorage.setItem('wizard-shootout-touch-tips-v1', 'seen'); } catch (e) { /* no storage */ }
+    });
+    const phone = await phoneCtx.newPage();
+    phone.on('pageerror', (e) => errors.push(e.message));
+    await phone.goto(url, { waitUntil: 'load' });
+    await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+    await phone.evaluate((t) => {
+        window.__settings.soundEnabled = false;
+        window.__settings.musicEnabled = false;
+        window.__settings.aiDifficulty = t.stills.phone.difficulty; // seat 1 stands idle: keep it alive
+        const M = window.__match;
+        M.online = false; M.isDailyChallenge = false;
+        M.mode = '1p';
+        M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+        M.playerCount = 2;
+        M.classes = { 1: t.classes[1], 2: t.classes[2], 3: 'arcanist', 4: 'arcanist' };
+        M.mapIndex = t.mapIndex; M.round = 1;
+        M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+        window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+    }, TRAILER);
+    await phone.waitForFunction(() => window.__game.scene.getScene('GameScene')?.touchControls, null, { timeout: 10000 });
+    await phone.waitForTimeout(P.waitMs);
+    const phonePath = stillPath('phone');
+    await phone.screenshot({ path: phonePath });
+    stills.push(phonePath);
+    await phoneCtx.close();
+    if (errors.length) throw new Error('page errors during stills: ' + errors.slice(0, 3).join(' | '));
+    if (stills.length !== TRAILER.stills.atSeconds.length + 1) throw new Error(`only ${stills.length} stills written`);
+    console.log(`trailer stills: ${stills.join(', ')}`);
 } catch (err) {
     console.error('trailer failed:', err.message);
     process.exitCode = 1;
