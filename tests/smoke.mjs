@@ -21,6 +21,9 @@
 //   3j. on that phone the in-round HUD (1P and survival) reads at
 //      TOUCH_CONFIG.hudMinCss and is clear of itself and the controls;
 //      568x320 is reported (W-13),
+//   3k. on that phone, with navigator.vibrate stubbed, seat 1 buzzes on a
+//      hit (rate-limited), a death and a won round, not with VIBRATION OFF,
+//      and the Settings row toggles and saves by tap (W-14),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1150,6 +1153,162 @@ try {
             console.log(`        ${hud.labels}`);
         }
         await ctx.close();
+    }
+
+    // 3k. Buzz on a phone (holiday W-14): on an 844x390 touch viewport with
+    // navigator.vibrate stubbed to record its calls, the Settings VIBRATION
+    // row toggles and saves by tap; in a 1P bot round seat 1's first hit
+    // buzzes TOUCH_CONFIG.haptics.hit once, a second hit inside the rate
+    // limit adds nothing, the kill adds the death pattern; a won round adds
+    // the win pattern; with the setting OFF nothing buzzes. On the desktop
+    // page (no touch, though desktop Chromium has navigator.vibrate) the row
+    // is absent.
+    {
+        const H = TOUCH_CONFIG.haptics;
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(() => {
+            window.__vibes = [];
+            Object.defineProperty(Navigator.prototype, 'vibrate', {
+                configurable: true,
+                value(pattern) { window.__vibes.push(pattern); return true; },
+            });
+        });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-buzz pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-buzz console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test) => phone.waitForFunction(test, null, { timeout: 5000 }).then(() => true, () => false);
+        // Tap the centre of a Text on `sceneKey` (found by `match`) with CDP touch events.
+        const tapText = async (sceneKey, match) => {
+            const at = await phone.evaluate(({ sceneKey, match }) => {
+                const s = window.__game.scene.getScene(sceneKey);
+                const t = s.children.list.find((o) => o.type === 'Text' && new RegExp(match).test(o.text));
+                if (!t) return null;
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const r = t.getBounds();
+                return { x: c.left + r.centerX * k, y: c.top + r.centerY * k };
+            }, { sceneKey, match });
+            if (!at) return false;
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            return true;
+        };
+
+        // Settings: the row shows ON, a tap turns it OFF, SAVE persists it.
+        await phone.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+        await reached(() => window.__game.scene.isActive('SettingsScene'));
+        const vibToggle = () => phone.evaluate(() => {
+            const s = window.__game.scene.getScene('SettingsScene');
+            const label = s.children.list.find((o) => o.type === 'Text' && o.text === 'Vibration: ');
+            if (!label) return null;
+            const t = s.children.list.find((o) => o.type === 'Text' && /^\[(ON|OFF)\]$/.test(o.text) && Math.abs(o.y - label.y) < 1 && Math.abs(o.x - label.x - 210) < 1);
+            return t ? t.text : null;
+        });
+        const rowBefore = await vibToggle();
+        const toggleAt = await phone.evaluate(() => {
+            const s = window.__game.scene.getScene('SettingsScene');
+            const label = s.children.list.find((o) => o.type === 'Text' && o.text === 'Vibration: ');
+            const t = label && s.children.list.find((o) => o.type === 'Text' && /^\[(ON|OFF)\]$/.test(o.text) && Math.abs(o.y - label.y) < 1 && Math.abs(o.x - label.x - 210) < 1);
+            if (!t) return null;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const r = t.getBounds();
+            return { x: c.left + r.centerX * k, y: c.top + r.centerY * k };
+        });
+        if (toggleAt) {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: toggleAt.x, y: toggleAt.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        }
+        const rowAfter = await vibToggle();
+        const saved = await tapText('SettingsScene', '^\\[ SAVE \\]$') && await reached(() => window.__game.scene.isActive('MenuScene'));
+        const stored = await phone.evaluate(() => ({
+            setting: window.__settings.vibration,
+            blob: JSON.parse(localStorage.getItem('wizard-shootout-settings-v1') || '{}').vibration,
+        }));
+        check('phone buzz: Settings VIBRATION row toggles by tap and saves',
+            rowBefore === '[ON]' && rowAfter === '[OFF]' && saved && stored.setting === false && stored.blob === false,
+            `row ${rowBefore} -> ${rowAfter}, saved=${saved}, setting=${stored.setting}, stored=${stored.blob}`);
+
+        // A 1P bot round with the setting back ON.
+        const startRound = (round) => phone.evaluate((round) => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = round;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__settings.vibration = true;
+            const from = window.__game.scene.isActive('GameScene') ? 'GameScene' : 'MenuScene';
+            window.__game.scene.getScene(from).scene.start('GameScene');
+        }, round);
+        await startRound(1);
+        const ready = await reached(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return window.__game.scene.isActive('GameScene') && s?.haptics && s.player1?.isAlive;
+        });
+        const seq = await phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const n = () => window.__vibes.length;
+            window.__vibes = [];
+            s.player1.takeDamage(10);
+            const afterHit = n();
+            s.player1.takeDamage(10);
+            const afterSecond = n();
+            s.player1.takeDamage(1000);
+            return { afterHit, afterSecond, calls: JSON.parse(JSON.stringify(window.__vibes)) };
+        });
+        const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+        check('phone buzz: hit, rate-limited second hit, then death pattern',
+            ready && seq.afterHit === 1 && seq.afterSecond === 1 && seq.calls.length === 2 &&
+                same(seq.calls[0], H.hit) && same(seq.calls[1], H.death),
+            ready ? `calls after hit=${seq.afterHit} after 2nd=${seq.afterSecond}: ${JSON.stringify(seq.calls)}` : 'no haptics on GameScene');
+
+        // A won round buzzes the win pattern (after the banner's 300 ms).
+        const winRound = async (vibration) => {
+            await startRound(2);
+            const ok = await reached(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                return window.__game.scene.isActive('GameScene') && s?.haptics && s.player1?.isAlive && window.__match.round === 2;
+            });
+            await phone.evaluate((vibration) => {
+                const s = window.__game.scene.getScene('GameScene');
+                window.__settings.vibration = vibration;
+                window.__vibes = [];
+                s.player1.takeDamage(10);
+                s.player2.lastHitBy = { by: 1, element: 'arcane' };
+                s.player2.takeDamage(1000);
+            }, vibration);
+            // The round resolves on a later update(); the win buzz follows 300 ms on.
+            const resolved = await reached(() => window.__match.scores[1] === 1);
+            if (vibration) await reached(() => window.__vibes.length >= 2);
+            else await phone.waitForTimeout(1000);
+            return { ok: ok && resolved, calls: await phone.evaluate(() => JSON.parse(JSON.stringify(window.__vibes))) };
+        };
+        const won = await winRound(true);
+        check('phone buzz: a won round buzzes the win pattern',
+            won.ok && won.calls.length === 2 && same(won.calls[0], H.hit) && same(won.calls[1], H.win),
+            `round=${won.ok} calls: ${JSON.stringify(won.calls)}`);
+        const off = await winRound(false);
+        check('phone buzz: VIBRATION OFF buzzes nothing', off.ok && off.calls.length === 0,
+            `round=${off.ok} calls: ${JSON.stringify(off.calls)}`);
+        await ctx.close();
+
+        // Desktop (no touch): no row, no haptics.
+        await page.evaluate(() => {
+            const from = window.__game.scene.getScenes(true).find((sc) => sc.scene.key !== 'PauseScene');
+            from.scene.start('SettingsScene');
+        });
+        await page.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+        const desk = await page.evaluate(() => !!window.__game.scene.getScene('SettingsScene').children.list
+            .find((o) => o.type === 'Text' && o.text === 'Vibration: '));
+        await page.evaluate(() => window.__game.scene.getScene('SettingsScene').scene.start('MenuScene'));
+        await page.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 });
+        check('desktop: no VIBRATION row in Settings', !desk, `row shown=${desk}`);
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)

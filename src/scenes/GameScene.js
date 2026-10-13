@@ -6,6 +6,7 @@ import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { TouchControls } from '../systems/TouchControls.js';
 import { TouchHud, SURVIVAL_ELEM_FORMATS } from '../systems/TouchHud.js';
+import { Haptics, canVibrate } from '../systems/Haptics.js';
 import { Projectile } from '../entities/Projectile.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
@@ -162,6 +163,13 @@ export class GameScene extends Phaser.Scene {
         this.createMaze();
 
         this.createPlayers();
+
+        // Holiday W-14: the seat that got touch controls this round (seat 1,
+        // or an online guest's own seat 2) buzzes on a device that can.
+        // Null everywhere else, so desktop, 2P and party never vibrate.
+        this.haptics = (this.touchControls && canVibrate())
+            ? new Haptics(this.netRole === 'guest' ? 2 : 1, () => RUNTIME_SETTINGS.vibration)
+            : null;
 
         this.projectiles = this.physics.add.group();
         this.setupCollisions();
@@ -490,6 +498,12 @@ export class GameScene extends Phaser.Scene {
         if (this.netRole === 'host') {
             this.events.on('playerDied', (n) => this.netSync.sendFx('death', { n }), this);
         }
+        // Holiday W-14: the local touch seat's death buzz, registered only when
+        // this round has haptics (a guest never runs die(): NetGameSync's
+        // 'death' fx buzzes it instead).
+        if (this.haptics) {
+            this.events.on('playerDied', (n) => this.buzz('death', n), this);
+        }
         this.events.on('runeCollected', this.spawnDirector.onRuneCollected, this.spawnDirector);
         this.events.on('playerDamaged', this.onPlayerDamaged, this);
         this.events.on('signatureUsed', this.onSignatureUsed, this);
@@ -553,6 +567,14 @@ export class GameScene extends Phaser.Scene {
     // (this scene's abilityBreach/onPlayerDamaged, RoundFlow's round-end
     // banner, NetGameSync's guest-side round-end mirror) routes through
     // here instead of calling this.cameras.main.shake directly.
+    // Holiday W-14: buzz the phone for 'hit', 'death' or 'win' when `seat` is
+    // the local touch seat. A no-op without haptics (see create()).
+    buzz(kind, seat) {
+        if (!this.haptics || seat !== this.haptics.seat) return;
+        if (kind === 'hit') this.haptics.hit(this.time.now);
+        else this.haptics[kind]();
+    }
+
     shakeCamera(duration, intensity) {
         if (!RUNTIME_SETTINGS.screenShake) return;
         this.cameras.main.shake(duration, intensity);
@@ -1931,6 +1953,7 @@ export class GameScene extends Phaser.Scene {
     onPlayerDamaged({ player, amount }) {
         // Small kick + floating damage number
         this.shakeCamera(80, 0.004);
+        this.buzz('hit', player.playerNumber);
 
         const dmgText = this.add.text(
             player.x + Phaser.Math.Between(-8, 8),

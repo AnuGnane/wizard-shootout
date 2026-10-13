@@ -5,6 +5,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { canVibrate } from '../systems/Haptics.js';
 
 // Runtime settings that can be modified
 export const RUNTIME_SETTINGS = {
@@ -35,6 +36,10 @@ export const RUNTIME_SETTINGS = {
     // Phase 8 — Accessibility
     screenShake: true,      // camera shake on hits/round-end; see GameScene#shakeCamera
     colorblindTeams: false, // swap TEAM_COLORS for the Okabe-Ito TEAM_COLORS_CB set
+
+    // Holiday W-14 — buzz the phone on hit, death and round win (Haptics.js).
+    // The row only shows where the device can vibrate.
+    vibration: true,
 
     // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
     mutGiantShots: false,   // 1.8x projectile scale + physics body
@@ -111,6 +116,14 @@ export class SettingsScene extends Phaser.Scene {
         this.addSectionHeader('ARENA');
         this.addSlider('Orb Spawn Min (s)', 'runeSpawnMin', 3000, 15000, 1000, (v) => (v / 1000).toFixed(0));
         this.addSlider('Orb Spawn Max (s)', 'runeSpawnMax', 5000, 20000, 1000, (v) => (v / 1000).toFixed(0));
+
+        // Holiday W-14: left column, since the right one already reaches the
+        // bottom buttons. Only on a touch device that can buzz.
+        if (canVibrate()) {
+            this.yPos += 20;
+            this.addSectionHeader('PHONE');
+            this.addToggle('Vibration', 'vibration');
+        }
 
         // === RIGHT COLUMN ===
         this.colX = 530;

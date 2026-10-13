@@ -208,6 +208,7 @@ export class SurvivalDirector {
         this.wavesCleared = this.wave;
 
         audio.roundWin();
+        this.scene.buzz('win', 1); // holiday W-14: a cleared wave is survival's round win
         this.showBanner(
             `WAVE ${this.wave} CLEARED`,
             'the horde regroups — catch your breath',

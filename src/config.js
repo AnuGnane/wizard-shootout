@@ -223,6 +223,19 @@ export const TOUCH_CONFIG = {
     hudGap: 8,
     hudBarW: 120,
     hudBarMinW: 60,
+    // Buzz on a phone (holiday W-14): navigator.vibrate durations in ms for
+    // the local touch seat. hit is one pulse, at most one per hitMinGapMs
+    // (burn ticks never buzz); death and win are patterns (on, off, on...)
+    // that ignore that limit.
+    haptics: {
+        hit: 40,
+        hitMinGapMs: 250,
+        // An Online guest only sees health in host snapshots, where a burn
+        // tick is a 1 hp drop; a smaller drop than this does not buzz.
+        guestMinDrop: 4,
+        death: [120, 60, 240],
+        win: [50, 60, 50, 60, 160],
+    },
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers
