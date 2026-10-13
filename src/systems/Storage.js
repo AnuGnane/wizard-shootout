@@ -119,3 +119,24 @@ export function saveSettings(settings) {
         // Private browsing / quota exceeded — settings just won't persist.
     }
 }
+
+// Holiday W-16: whether the first-round touch tips have been shown. Its own
+// key, like the key bindings, so it never rides along with a settings save.
+const TOUCH_TIPS_KEY = 'wizard-shootout-touch-tips-v1';
+
+export function loadTouchTipsSeen() {
+    try {
+        return localStorage.getItem(TOUCH_TIPS_KEY) === 'seen';
+    } catch (e) {
+        return false;
+    }
+}
+
+export function saveTouchTipsSeen(seen) {
+    try {
+        if (seen) localStorage.setItem(TOUCH_TIPS_KEY, 'seen');
+        else localStorage.removeItem(TOUCH_TIPS_KEY);
+    } catch (e) {
+        // Private browsing: the tips just show again next time.
+    }
+}

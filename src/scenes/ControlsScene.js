@@ -6,7 +6,8 @@ import {
     findBinding, keyLabel, keyNameFromCode,
 } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
+import { saveTouchTipsSeen } from '../systems/Storage.js';
 
 const ACTION_LABELS = {
     up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT',
@@ -93,6 +94,26 @@ export class ControlsScene extends Phaser.Scene {
         backBtn.on('pointerdown', doBack);
         ensureTapTarget(this, backBtn);
         this.menuNav.add(backBtn, doBack, { row: BINDABLE_ACTIONS.length, col: 1 });
+
+        // Holiday W-16: on a touch device, bring the first-round touch tips
+        // back for the next round. Touch only, so not in MenuNav.
+        if (isTouchDevice(this)) {
+            const tipsBtn = this.add.text(width / 2, buttonRow + 100, '[ SHOW TOUCH TIPS ]', {
+                font: '20px monospace',
+                fill: '#ffffff',
+                backgroundColor: '#2a4d66',
+                padding: { x: 16, y: 8 },
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            tipsBtn.name = 'showTouchTips';
+            tipsBtn.on('pointerover', () => tipsBtn.setStyle({ fill: '#66ccff' }));
+            tipsBtn.on('pointerout', () => tipsBtn.setStyle({ fill: '#ffffff' }));
+            tipsBtn.on('pointerdown', () => {
+                audio.uiClick();
+                saveTouchTipsSeen(false);
+                tipsBtn.setText('[ TIPS NEXT ROUND ]');
+            });
+            ensureTapTarget(this, tipsBtn);
+        }
 
         this.refreshAllBadges();
     }

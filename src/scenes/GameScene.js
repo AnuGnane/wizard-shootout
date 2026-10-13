@@ -7,6 +7,7 @@ import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { TouchControls } from '../systems/TouchControls.js';
 import { TouchHud, SURVIVAL_ELEM_FORMATS } from '../systems/TouchHud.js';
 import { Haptics, canVibrate } from '../systems/Haptics.js';
+import { TouchTips } from '../systems/TouchTips.js';
 import { Projectile } from '../entities/Projectile.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
@@ -137,6 +138,10 @@ export class GameScene extends Phaser.Scene {
                 this.touchHud.destroy();
                 this.touchHud = null;
             }
+            if (this.touchTips) {
+                this.touchTips.destroy();
+                this.touchTips = null;
+            }
         });
 
         // Phase 7: same restart-safety for the fog overlay — destroy the
@@ -170,6 +175,10 @@ export class GameScene extends Phaser.Scene {
         this.haptics = (this.touchControls && canVibrate())
             ? new Haptics(this.netRole === 'guest' ? 2 : 1, () => RUNTIME_SETTINGS.vibration)
             : null;
+
+        // Holiday W-16: a player's first round with touch controls labels
+        // them (once, remembered; the Controls screen brings them back).
+        this.touchTips = TouchTips.maybeShow(this, this.touchControls);
 
         this.projectiles = this.physics.add.group();
         this.setupCollisions();

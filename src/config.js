@@ -245,6 +245,22 @@ export const TOUCH_CONFIG = {
         death: [120, 60, 240],
         win: [50, 60, 50, 60, 160],
     },
+    // First-round touch tips (holiday W-16): short labels beside the touch
+    // controls in a player's first round with them. They fade once the
+    // player has both moved and fired, or after timeoutMs; fadeMs is the
+    // fade. Text is at least hudMinCss CSS px; gapCss between a tip and its
+    // control. The wording is the package's default ruling.
+    tips: {
+        timeoutMs: 12000,
+        fadeMs: 400,
+        gapCss: 6,
+        move: 'drag to move',
+        shoot: 'FIRE: shoot',
+        runeShoot: 'ORB: fire a held orb',
+        ability: 'PWR: class power',
+        pause: 'pause',
+        fill: '#ffffff', bg: '#1a1a2ecc', padding: { x: 6, y: 3 },
+    },
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers

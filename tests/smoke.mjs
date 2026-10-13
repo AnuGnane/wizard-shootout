@@ -28,6 +28,10 @@
 //      the tap's release and leaves it again, the pause screen has it too,
 //      and without the Fullscreen API the footer says Add to Home Screen
 //      (W-15),
+//   3m. on that phone, with fresh storage, the first round labels the touch
+//      controls at hudMinCss, clear of them and of each other; moving and
+//      firing fades them, the next round has none, and the Controls screen's
+//      SHOW TOUCH TIPS brings them back (W-16),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1450,6 +1454,125 @@ try {
         check('desktop: no full-screen toggle or Add to Home Screen footer', !deskFs.toggle && !deskFs.hint,
             `toggle=${deskFs.toggle} hint=${deskFs.hint}`);
         await desk.close();
+    }
+
+    // 3m. First-round touch tips (holiday W-16): on an 844x390 touch
+    // viewport with fresh storage, a bot round shows the five tips, each at
+    // least TOUCH_CONFIG.hudMinCss CSS px and clear of the touch controls and
+    // of each other; driving the joystick and tapping FIRE with touch events
+    // fades them; the next round shows none; Controls -> SHOW TOUCH TIPS (by
+    // tap) brings them back for the round after.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-tips pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-tips console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        const startRound = () => phone.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            const from = window.__game.scene.getScenes(true)[0];
+            from.scene.start('GameScene');
+        });
+        const roundReady = () => reached(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return window.__game.scene.isActive('GameScene') && s.touchControls && s.player1?.isAlive;
+        });
+        // The tips on screen now: name, CSS font size, CSS rects; plus the
+        // touch controls' CSS rects (joystick at home, buttons, pause hit).
+        const measure = () => phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const tips = s.children.list.filter((o) => o.type === 'Text' && /^touchTip_/.test(o.name) && o.active)
+                .map((o) => {
+                    const b = o.getBounds();
+                    return { name: o.name.slice(9), css: parseFloat(o.style.fontSize) * o.scaleY * k,
+                        r: { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom } };
+                });
+            const tc = s.touchControls;
+            const circ = (name, x, y, r) => ({ name, r: { x0: x - r, y0: y - r, x1: x + r, y1: y + r } });
+            const ctrls = tc ? [
+                circ('joystick', tc.joy.homeX, tc.joy.homeY, tc.joy.radius),
+                ...Object.entries(tc.buttons).map(([key, b]) => circ(key, b.x, b.y, b.radius)),
+                circ('pause', tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.hit),
+            ] : [];
+            return { tips, ctrls, k, left: c.left, top: c.top,
+                fire: tc && { x: c.left + tc.buttons.shoot.x * k, y: c.top + tc.buttons.shoot.y * k } };
+        });
+        const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+        await startRound();
+        const first = await roundReady();
+        await phone.waitForTimeout(100);
+        const m = await measure();
+        const names = m.tips.map((t) => t.name).sort().join(',');
+        const tooSmall = m.tips.filter((t) => t.css < TOUCH_CONFIG.hudMinCss - 0.01).map((t) => `${t.name} ${t.css.toFixed(1)}`);
+        const clashes = [];
+        m.tips.forEach((a, i) => {
+            m.tips.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) clashes.push(`${a.name}/${b.name}`); });
+            m.ctrls.forEach((b) => { if (hit(a.r, b.r)) clashes.push(`${a.name}/${b.name}`); });
+        });
+        check('phone tips: the first round labels the touch controls, legible and clear of them and each other',
+            first && names === 'ability,move,pause,runeShoot,shoot' && tooSmall.length === 0 && clashes.length === 0,
+            `tips=${names} sizes=${m.tips.map((t) => `${t.name}:${t.css.toFixed(1)}`).join(' ')}`
+                + (tooSmall.length ? ` small=${tooSmall.join(';')}` : '') + (clashes.length ? ` overlaps=${clashes.join(';')}` : ''));
+
+        // Move with the joystick, then tap FIRE: the tips fade.
+        const sx = m.left + 200 * m.k, sy = m.top + 450 * m.k;
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy, id: 1 }] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: sx + 40, y: sy, id: 1 }] });
+        await phone.waitForTimeout(100);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const stillUp = await phone.evaluate(() => !!window.__game.scene.getScene('GameScene').touchTips?.texts);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: m.fire.x, y: m.fire.y, id: 2 }] });
+        await phone.waitForTimeout(100);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const gone = await reached(() => !window.__game.scene.getScene('GameScene').children.list
+            .some((o) => /^touchTip_/.test(o.name)), 3000);
+        check('phone tips: moving and then firing fades them', stillUp && gone, `up after move only=${stillUp} gone after fire=${gone}`);
+
+        // The next round: none.
+        await startRound();
+        await roundReady();
+        await phone.waitForTimeout(200);
+        const second = (await measure()).tips.length;
+        check('phone tips: the next round shows none', second === 0, `tips=${second}`);
+
+        // Controls -> SHOW TOUCH TIPS by tap -> the round after has them.
+        await phone.evaluate(() => window.__game.scene.getScenes(true)[0].scene.start('ControlsScene'));
+        await reached(() => window.__game.scene.isActive('ControlsScene'));
+        await phone.waitForTimeout(150);
+        const btn = await phone.evaluate(() => {
+            const t = window.__game.scene.getScene('ControlsScene').children.list.find((o) => o.name === 'showTouchTips');
+            if (!t) return null;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const h = t.input.hitArea;
+            return { x: c.left + t.getCenter().x * k, y: c.top + t.getCenter().y * k, w: h.width * k, h: h.height * k };
+        });
+        if (btn) {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: btn.x, y: btn.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        }
+        await phone.waitForTimeout(100);
+        await startRound();
+        await roundReady();
+        await phone.waitForTimeout(100);
+        const again = (await measure()).tips.length;
+        check('phone tips: Controls SHOW TOUCH TIPS (by tap, 44 CSS px) brings them back',
+            !!btn && Math.min(btn.w, btn.h) >= 43.5 && again === 5,
+            `button=${btn ? `${Math.round(btn.w)}x${Math.round(btn.h)}` : 'missing'} tips next round=${again}`);
+        await ctx.close();
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)
