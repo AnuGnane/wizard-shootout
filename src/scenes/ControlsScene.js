@@ -6,7 +6,8 @@ import {
     findBinding, keyLabel, keyNameFromCode,
 } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
+import { saveTouchTipsSeen } from '../systems/Storage.js';
 
 const ACTION_LABELS = {
     up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT',
@@ -16,6 +17,9 @@ const ACTION_LABELS = {
 const ROW_START_Y = 130;
 const ROW_GAP = 42;
 const COL_X = { 1: 300, 2: 700 };
+// Holiday W-16: SHOW TOUCH TIPS sits this far below RESET/BACK, clear of
+// BACK's 44 CSS px hit area on a phone.
+const TIPS_ROW_OFFSET = 100;
 
 // Rebindable keyboard controls (Phase 8 accessibility). Two columns (P1/P2)
 // x seven action rows. Click a row (or focus it + ENTER/pad A) to enter
@@ -93,6 +97,26 @@ export class ControlsScene extends Phaser.Scene {
         backBtn.on('pointerdown', doBack);
         ensureTapTarget(this, backBtn);
         this.menuNav.add(backBtn, doBack, { row: BINDABLE_ACTIONS.length, col: 1 });
+
+        // Holiday W-16: on a touch device, bring the first-round touch tips
+        // back for the next round. Touch only, so not in MenuNav.
+        if (isTouchDevice(this)) {
+            const tipsBtn = this.add.text(width / 2, buttonRow + TIPS_ROW_OFFSET, '[ SHOW TOUCH TIPS ]', {
+                font: '20px monospace',
+                fill: '#ffffff',
+                backgroundColor: '#2a4d66',
+                padding: { x: 16, y: 8 },
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            tipsBtn.name = 'showTouchTips';
+            tipsBtn.on('pointerover', () => tipsBtn.setStyle({ fill: '#66ccff' }));
+            tipsBtn.on('pointerout', () => tipsBtn.setStyle({ fill: '#ffffff' }));
+            tipsBtn.on('pointerdown', () => {
+                audio.uiClick();
+                saveTouchTipsSeen(false);
+                tipsBtn.setText('[ TIPS NEXT ROUND ]');
+            });
+            ensureTapTarget(this, tipsBtn);
+        }
 
         this.refreshAllBadges();
     }

@@ -7,6 +7,7 @@ import { GamepadInput, CompositeInput } from '../systems/GamepadInput.js';
 import { TouchControls } from '../systems/TouchControls.js';
 import { TouchHud, SURVIVAL_ELEM_FORMATS } from '../systems/TouchHud.js';
 import { Haptics, canVibrate } from '../systems/Haptics.js';
+import { TouchTips } from '../systems/TouchTips.js';
 import { Projectile } from '../entities/Projectile.js';
 import { pickMap, ARENA } from '../systems/Maps.js';
 import { AIController } from '../systems/AIController.js';
@@ -137,6 +138,10 @@ export class GameScene extends Phaser.Scene {
                 this.touchHud.destroy();
                 this.touchHud = null;
             }
+            if (this.touchTips) {
+                this.touchTips.destroy();
+                this.touchTips = null;
+            }
         });
 
         // Phase 7: same restart-safety for the fog overlay — destroy the
@@ -184,6 +189,11 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.createUI();
+
+        // Holiday W-16: a player's first round with touch controls labels
+        // them (once, remembered; the Controls screen brings them back).
+        // After createUI so the tips can keep clear of the phone HUD.
+        this.touchTips = TouchTips.maybeShow(this, this.touchControls);
         // Stage 2b: the HOST runs rune spawning (restricted to the map-safe net
         // pool — see spawnRunes) and syncs the orbs to the guest, which only
         // renders rune puppets from snapshots and never simulates its own.
