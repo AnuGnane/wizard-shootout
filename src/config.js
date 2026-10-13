@@ -214,6 +214,15 @@ export const TOUCH_CONFIG = {
     // controls that leave a screen. Grows the hit area only, never the label.
     menuMinCss: 44,
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
+    // Full screen in the phone browser (holiday W-15): the [ FULL SCREEN ]
+    // toggle in the top-right corner of the menu and the pause screen (game
+    // px, centre; room for the longer [ EXIT FULL SCREEN ] label).
+    fullscreenButton: {
+        menu: { x: 900, y: 30 },
+        pause: { x: 900, y: 34 },
+        font: '16px monospace', padding: { x: 14, y: 6 },
+        fill: '#8899cc', hover: '#aaccff', bg: '#1a1a2e',
+    },
     // In-round HUD on a phone (holiday W-13): the smallest HUD text, in CSS
     // px, in the modes that get touch controls; labels shorten before any
     // text goes below it. hudGap (game px) between HUD neighbours, hudBarW

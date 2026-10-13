@@ -24,6 +24,10 @@
 //   3k. on that phone, with navigator.vibrate stubbed, seat 1 buzzes on a
 //      hit (rate-limited), a death and a won round, not with VIBRATION OFF,
 //      and the Settings row toggles and saves by tap (W-14),
+//   3l. on that phone the menu's FULL SCREEN toggle enters full screen from
+//      the tap's release and leaves it again, the pause screen has it too,
+//      and without the Fullscreen API the footer says Add to Home Screen
+//      (W-15),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -470,7 +474,18 @@ try {
             return true;
         };
 
+        // The full-screen toggle (holiday W-15) is measured like an exit but
+        // not tapped here: full screen would resize the page mid-walk (3l).
+        const measure = async (scene, label) => {
+            await phone.waitForTimeout(150);
+            const b = await find(scene, label);
+            if (!b) { failed.push(`${scene}: no ${label}`); return; }
+            if (b.overlaps.length) small.push(`${scene} ${label} ${Math.round(b.w)}x${Math.round(b.h)} overlaps ${b.overlaps.join('/')}`);
+            else if (Math.min(b.w, b.h) < 43.5) (vp.strict ? small : capped).push(`${scene} ${label} ${Math.round(b.w)}x${Math.round(b.h)}`);
+        };
+
         const M = 'MenuScene';
+        await measure(M, '[ FULL SCREEN ]');
         await tap(M, '[ SETTINGS ]', 'SettingsScene');
         await tap('SettingsScene', '[ CONTROLS ]', 'ControlsScene');
         await tap('ControlsScene', '[ BACK ]', 'SettingsScene', true);
@@ -519,6 +534,7 @@ try {
         let p = await pauseBtn();
         await tapAt(p.x, p.y);
         if (await isActive('PauseScene')) visited.push('PauseScene'); else failed.push('1P pause button -> PauseScene');
+        await measure('PauseScene', '[ FULL SCREEN ]');
         await tap('PauseScene', '[ QUIT TO MENU ]', M, true);
         // Daily: into the round, pause and resume by tap, then play it out to
         // GameOver (the one non-tap step: the match is decided in code) and
@@ -1309,6 +1325,131 @@ try {
         await page.evaluate(() => window.__game.scene.getScene('SettingsScene').scene.start('MenuScene'));
         await page.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 });
         check('desktop: no VIBRATION row in Settings', !desk, `row shown=${desk}`);
+    }
+
+    // 3l. Full screen in the phone browser (holiday W-15): on an 844x390
+    // touch viewport (not the installed app) the menu's [ FULL SCREEN ] is
+    // tapped with CDP touch events; the request is made from the release
+    // (touchend/pointerup, the gesture Chrome counts), the whole page goes
+    // full screen (so the rotate prompt stays visible in it), the label
+    // flips to EXIT and a second tap leaves. Its size and neighbours are
+    // checked in the 3e walk. The pause screen has the toggle too. With
+    // document.fullscreenEnabled stubbed false (iPhone Safari) there is no
+    // toggle and the footer says Add to Home Screen; on the desktop page
+    // neither shows.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(() => {
+            window.__fsCalls = [];
+            const req = Element.prototype.requestFullscreen;
+            Element.prototype.requestFullscreen = function (...a) {
+                window.__fsCalls.push({ event: window.event ? window.event.type : null, el: this === document.documentElement ? 'html' : this.tagName });
+                return req.apply(this, a);
+            };
+        });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-fullscreen pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-fullscreen console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test) => phone.waitForFunction(test, null, { timeout: 3000 }).then(() => true, () => false);
+        const toggle = (key) => phone.evaluate((key) => {
+            const t = window.__game.scene.getScene(key).children.list.find((o) => o.name === 'fullscreenToggle');
+            if (!t || !t.active) return null;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const r = t.getBounds();
+            return { text: t.text, x: c.left + r.centerX * k, y: c.top + r.centerY * k };
+        }, key);
+        const tapAt = async (p) => {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        };
+
+        await phone.waitForTimeout(150);
+        const before = await toggle('MenuScene');
+        if (before) await tapAt(before);
+        const entered = await reached(() => document.fullscreenElement === document.documentElement);
+        const calls = await phone.evaluate(() => window.__fsCalls);
+        const fromRelease = calls.length === 1 && ['touchend', 'pointerup'].includes(calls[0].event) && calls[0].el === 'html';
+        const flipped = entered ? await reached(() => window.__game.scene.getScene('MenuScene').children.list
+            .find((o) => o.name === 'fullscreenToggle')?.text === '[ EXIT FULL SCREEN ]') : false;
+        const rotateInside = await phone.evaluate(() => !!document.fullscreenElement?.contains(document.getElementById('rotate-prompt')));
+        let left = false;
+        if (entered) {
+            await phone.waitForTimeout(300); // the page has re-laid out at its full-screen size
+            const exit = await toggle('MenuScene');
+            if (exit) await tapAt(exit);
+            left = await reached(() => !document.fullscreenElement
+                && window.__game.scene.getScene('MenuScene').children.list.find((o) => o.name === 'fullscreenToggle')?.text === '[ FULL SCREEN ]');
+        }
+        check('phone full screen: the menu toggle enters full screen from the tap release and leaves it',
+            !!before && before.text === '[ FULL SCREEN ]' && fromRelease && entered && flipped && rotateInside && left,
+            `button=${before && before.text} calls=${JSON.stringify(calls)} entered=${entered} label flipped=${flipped} rotate prompt inside=${rotateInside} left=${left}`);
+
+        // The pause screen has it too.
+        await phone.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+        });
+        await reached(() => window.__game.scene.getScene('GameScene')?.touchControls?.pauseBtn);
+        const pb = await phone.evaluate(() => {
+            const tc = window.__game.scene.getScene('GameScene').touchControls;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            return tc ? { x: c.left + tc.pauseBtn.x * k, y: c.top + tc.pauseBtn.y * k } : { x: -1, y: -1 };
+        });
+        await tapAt(pb);
+        const paused = await reached(() => window.__game.scene.isActive('PauseScene'));
+        await phone.waitForTimeout(150);
+        const pauseToggle = paused ? await toggle('PauseScene') : null;
+        check('phone full screen: the pause screen has the toggle', paused && pauseToggle?.text === '[ FULL SCREEN ]',
+            `paused=${paused} toggle=${pauseToggle && pauseToggle.text}`);
+        await ctx.close();
+
+        // No Fullscreen API (iPhone Safari): no toggle, the footer hint instead.
+        const ios = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await ios.addInitScript(() => {
+            Object.defineProperty(Document.prototype, 'fullscreenEnabled', { configurable: true, get: () => false });
+        });
+        const iphone = await ios.newPage();
+        iphone.on('pageerror', (e) => errors.push('phone-no-fullscreen pageerror: ' + e.message));
+        await iphone.goto(url, { waitUntil: 'networkidle' });
+        await iphone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const noApi = await iphone.evaluate(() => {
+            const list = window.__game.scene.getScene('MenuScene').children.list;
+            return {
+                toggle: list.some((o) => o.name === 'fullscreenToggle'),
+                hint: list.some((o) => o.type === 'Text' && o.text === 'Add to Home Screen for full screen'),
+            };
+        });
+        check('phone full screen: without the Fullscreen API, no toggle and an Add to Home Screen footer',
+            !noApi.toggle && noApi.hint, `toggle=${noApi.toggle} hint=${noApi.hint}`);
+        await ios.close();
+
+        // Desktop: neither.
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('desktop-fullscreen pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const deskFs = await desk.evaluate(() => {
+            const list = window.__game.scene.getScene('MenuScene').children.list;
+            return {
+                toggle: list.some((o) => o.name === 'fullscreenToggle'),
+                hint: list.some((o) => o.type === 'Text' && /Add to Home Screen/.test(o.text)),
+            };
+        });
+        check('desktop: no full-screen toggle or Add to Home Screen footer', !deskFs.toggle && !deskFs.hint,
+            `toggle=${deskFs.toggle} hint=${deskFs.hint}`);
+        await desk.close();
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)
