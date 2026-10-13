@@ -42,24 +42,26 @@ const label = (scene) => (scene.scale.isFullscreen ? '[ EXIT FULL SCREEN ]' : '[
 // MenuNav, so keyboard and gamepad focus order stay as they were.
 export function addFullscreenToggle(scene, where, depth = 0) {
     if (fullscreenOffer(scene) !== 'toggle') return null;
-    const { fill, hover, bg } = TOUCH_CONFIG.fullscreenButton;
+    const { fill, hover, bg, font, padding } = TOUCH_CONFIG.fullscreenButton;
     const { x, y } = TOUCH_CONFIG.fullscreenButton[where];
-    const btn = scene.add.text(x, y, label(scene), {
-        font: '16px monospace',
-        fill,
-        backgroundColor: bg,
-        padding: { x: 14, y: 6 },
-    }).setOrigin(0.5).setDepth(depth).setInteractive({ useHandCursor: true });
+    const btn = scene.add.text(x, y, label(scene), { font, fill, backgroundColor: bg, padding }).setOrigin(0.5).setDepth(depth).setInteractive({ useHandCursor: true });
     btn.name = 'fullscreenToggle';
     btn.on('pointerover', () => btn.setStyle({ fill: hover }));
     btn.on('pointerout', () => btn.setStyle({ fill }));
     btn.on('pointerup', () => {
         if (scene.scale.isFullscreen) scene.scale.stopFullscreen();
-        else scene.scale.startFullscreen();
+        // Requested here rather than through scale.startFullscreen(), which
+        // drops the promise: a refusal is then an uncaught rejection. Phaser
+        // still sees the change and emits enterfullscreen.
+        else Promise.resolve(scene.scale.getFullscreenTarget().requestFullscreen({ navigationUI: 'hide' })).catch(() => {});
     });
-    // A new label is a new width: lay the hit area out again.
-    const relabel = () => { if (btn.scene) ensureTapTarget(scene, btn.setText(label(scene))); };
-    const events = ['enterfullscreen', 'leavefullscreen', 'fullscreenfailed'];
+    // A new label is a new width: lay the hit areas out again.
+    const relabel = () => {
+        if (!btn.scene) return;
+        btn.setText(label(scene));
+        if (scene.__tapTargets) scene.__tapTargets.layout();
+    };
+    const events = ['enterfullscreen', 'leavefullscreen'];
     events.forEach((e) => scene.scale.on(e, relabel));
     scene.events.once('shutdown', () => events.forEach((e) => scene.scale.off(e, relabel)));
     return ensureTapTarget(scene, btn);

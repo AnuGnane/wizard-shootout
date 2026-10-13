@@ -220,6 +220,7 @@ export const TOUCH_CONFIG = {
     fullscreenButton: {
         menu: { x: 900, y: 30 },
         pause: { x: 900, y: 34 },
+        font: '16px monospace', padding: { x: 14, y: 6 },
         fill: '#8899cc', hover: '#aaccff', bg: '#1a1a2e',
     },
     // In-round HUD on a phone (holiday W-13): the smallest HUD text, in CSS
