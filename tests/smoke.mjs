@@ -42,9 +42,14 @@
 //      selection, callout or overscroll on html, body and the canvas, and no
 //      context menu on it, while the Online code boxes and the map editor's
 //      name field stay selectable and typeable (W-21),
+//   3q. on the menu, the build version shows in the footer, and the
+//      reload button for a newer deploy is thumb-sized and clear of its
+//      neighbours on both phones (W-22; its production behaviour is in 6b),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
+//      shows a reload button on the menu (never mid-round) once a newer
+//      worker takes over a page it already controlled (W-22),
 //      and the itch.io bundle in dist-itch/ boots from a subfolder in an iframe,
 //   7. the trailer's GIF encoder (scripts/gif.js) writes a GIF Chromium decodes.
 //
@@ -118,6 +123,16 @@ try {
         return expected.filter((k) => !keys.includes(k));
     }, SCENES);
     check('all scenes registered', missing.length === 0, missing.length ? 'missing: ' + missing.join(', ') : `${SCENES.length} scenes`);
+
+    // Holiday W-22: the menu footer names the build; 'dev' on the dev server,
+    // and no reload button without a newer deploy.
+    const devVersion = await page.evaluate(() => {
+        const s = window.__game.scene.getScene('MenuScene');
+        const t = s.children.list.find((o) => o.type === 'Text' && /^build /.test(o.text));
+        return { text: t ? t.text : null, button: !!s.children.getByName('appUpdateButton') };
+    });
+    check('menu footer shows the build version (dev)', devVersion.text === 'build dev' && !devVersion.button,
+        `${devVersion.text} button=${devVersion.button}`);
 
     // 3. A 1P bot round plays, and a kill advances score + round.
     await page.evaluate(() => {
@@ -500,6 +515,10 @@ try {
 
         const M = 'MenuScene';
         await measure(M, '[ FULL SCREEN ]');
+        // Holiday W-22: the reload button a newer deploy raises (dev hook;
+        // 6b raises it the real way), measured and left on the menu.
+        await phone.evaluate(() => window.__appUpdate.markUpdateReady());
+        await measure(M, '[ NEW VERSION - TAP TO RELOAD ]');
         await tap(M, '[ SETTINGS ]', 'SettingsScene');
         await tap('SettingsScene', '[ CONTROLS ]', 'ControlsScene');
         await tap('ControlsScene', '[ BACK ]', 'SettingsScene', true);
@@ -1906,6 +1925,11 @@ try {
         });
         const purl = previewServer.resolvedUrls?.local?.[0];
         const ctx = await browser.newContext();
+        // Holiday W-22: counts page boots, so a reload can be seen.
+        await ctx.addInitScript(() => {
+            sessionStorage.setItem('__bootCount', String(Number(sessionStorage.getItem('__bootCount') || 0) + 1));
+            window.__bootCount = Number(sessionStorage.getItem('__bootCount'));
+        });
         const p2 = await ctx.newPage();
         p2.on('pageerror', (e) => errors.push('pwa pageerror: ' + e.message));
         p2.on('console', (m) => { if (m.type() === 'error') errors.push('pwa console.error: ' + m.text()); });
@@ -1918,6 +1942,10 @@ try {
             const cached = keys.length ? (await (await caches.open(keys[0])).keys()).length : 0;
             return { controlled: !!navigator.serviceWorker.controller, caches: keys.length, cached };
         });
+        // The first install's clients.claim() fires controllerchange too; a
+        // page no worker controlled at boot must not offer a reload.
+        await p2.waitForTimeout(500);
+        const firstInstallButton = await p2.evaluate(() => !!window.__game.scene.getScene('MenuScene').children.getByName('appUpdateButton'));
         await ctx.setOffline(true);
         let offlineBoot = false, offlineRound = false, offlineErr = '';
         try {
@@ -1944,7 +1972,46 @@ try {
         } catch (e) {
             offlineErr = e.message.split('\n')[0];
         }
+        // Holiday W-22: this page booted under the worker, so a takeover by a
+        // newer one (a stubbed controllerchange) offers a reload, on the menu
+        // only: not while the round started above is on, then once back on
+        // the menu; tapping it reloads the page.
+        const upd = { version: null, midRound: null, stillInRound: false, onMenu: false, booted: 0, reloaded: false, err: '' };
+        try {
+            await ctx.setOffline(false);
+            if (!offlineRound) throw new Error('no round to start from');
+            upd.booted = await p2.evaluate(() => window.__bootCount);
+            await p2.evaluate(() => navigator.serviceWorker.dispatchEvent(new Event('controllerchange')));
+            await p2.waitForTimeout(500);
+            upd.midRound = await p2.evaluate(() => window.__game.scene.scenes.some((s) => s.children && s.children.getByName('appUpdateButton')));
+            upd.stillInRound = await p2.evaluate(() => window.__game.scene.isActive('GameScene'));
+            await p2.evaluate(() => window.__game.scene.getScene('GameScene').scene.start('MenuScene'));
+            await p2.waitForFunction(() => window.__game.scene.isActive('MenuScene')
+                && window.__game.scene.getScene('MenuScene').children.getByName('appUpdateButton'), null, { timeout: 5000 });
+            upd.onMenu = true;
+            upd.version = await p2.evaluate(() => {
+                const t = window.__game.scene.getScene('MenuScene').children.list.find((o) => o.type === 'Text' && /^build /.test(o.text));
+                return t ? t.text : null;
+            });
+            const at = await p2.evaluate(() => {
+                const b = window.__game.scene.getScene('MenuScene').children.getByName('appUpdateButton').getBounds();
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                return { x: c.left + b.centerX * k, y: c.top + b.centerY * k };
+            });
+            await p2.mouse.click(at.x, at.y);
+            await p2.waitForFunction((n) => window.__bootCount > n && window.__game?.scene?.isActive('MenuScene'),
+                upd.booted, { timeout: 20000 });
+            upd.reloaded = true;
+        } catch (e) {
+            upd.err = e.message.split('\n')[0];
+        }
         await ctx.close();
+        check('PWA: a newer worker taking over offers a reload on the menu only, and it reloads',
+            !firstInstallButton && upd.midRound === false && upd.stillInRound && upd.onMenu && upd.reloaded,
+            upd.err || `firstInstall=${firstInstallButton} midRound=${upd.midRound} onMenu=${upd.onMenu} reloaded=${upd.reloaded} (boot ${upd.booted}->)`);
+        check('PWA: production menu footer shows the build version',
+            /^build [0-9a-f]{7}$/.test(upd.version || ''), `${upd.version}`);
         check('PWA: production worker controls the page + precaches the bundle',
             sw.controlled && sw.caches === 1 && sw.cached >= 5,
             `controlled=${sw.controlled} caches=${sw.caches} cachedFiles=${sw.cached}`);
