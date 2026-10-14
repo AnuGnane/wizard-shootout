@@ -18,6 +18,14 @@
 // PWR dims with a rim sweep while the signature recharges, FIRE dims lightly
 // during the shot cooldown, ORB greys with no orb held and shows the shots
 // held when there are. Without a player the buttons look as they always did.
+//
+// Holiday W-24 (controller on a phone): while a gamepad is connected (Phaser's
+// gamepad plugin 'connected', or a pad already there when the round starts)
+// the joystick and the three buttons are hidden and take no touches; the pad
+// already drives the seat through the same CompositeInput. The touch pause
+// stays. The next touch on the canvas outside the pause button, or the pad
+// disconnecting, brings them back (the player's latest input wins); that
+// touch only brings them back and fires nothing.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -39,13 +47,18 @@ const DEPTH_TOP = 51;
 export class TouchControls {
     /**
      * @param {Phaser.Scene} scene
-     * @param {{ onPause?: () => void }} [opts] onPause runs from the pause
-     *   button and when the phone turns to portrait.
+     * @param {{ onPause?: () => void, onHiddenChange?: (hidden: boolean) => void }} [opts]
+     *   onPause runs from the pause button and when the phone turns to
+     *   portrait; onHiddenChange when a gamepad hides the controls or they
+     *   come back (not for the state they start in).
      */
     constructor(scene, opts = {}) {
         this.scene = scene;
         this.onPause = opts.onPause || null;
+        this.onHiddenChange = opts.onHiddenChange || null;
         this._destroyed = false;
+        // Holiday W-24: true while a gamepad has put the controls away.
+        this.hidden = false;
 
         // Multitouch: the joystick finger and a button finger must be
         // tracked independently. Phaser starts with a single active pointer;
@@ -115,6 +128,28 @@ export class TouchControls {
         if (this._rotateMql && this._rotateMql.addEventListener) {
             this._rotateMql.addEventListener('change', this._onRotate);
         }
+
+        // Holiday W-24: a paired controller puts the on-screen controls away.
+        this._pads = input.gamepad || null;
+        this._onPadConnected = () => this.setHidden(true);
+        this._onPadDisconnected = () => this.setHidden(false);
+        if (this._pads) {
+            this._pads.on('connected', this._onPadConnected);
+            this._pads.on('disconnected', this._onPadDisconnected);
+            if (this._pads.total > 0) this.setHidden(true, true);
+        }
+    }
+
+    // Hide (a gamepad took over) or show the joystick and the three buttons;
+    // the pause button always stays. `quiet` skips onHiddenChange.
+    setHidden(hidden, quiet = false) {
+        if (this._destroyed || this.hidden === hidden) return;
+        this.hidden = hidden;
+        if (hidden) this._releaseAll();
+        for (const obj of this.graphics) {
+            if (obj !== this.pauseCircle && obj !== this.pauseLabel) obj.setVisible(!hidden);
+        }
+        if (!quiet && this.onHiddenChange) this.onHiddenChange(hidden);
     }
 
     // ---- input-source interface (mirrors KeyboardInput/GamepadInput) -----
@@ -286,6 +321,12 @@ export class TouchControls {
 
         if (this._dist(x, y, this.pauseBtn.x, this.pauseBtn.y) <= this.pauseBtn.hit) {
             this._pause();
+            return;
+        }
+
+        // Put away for a gamepad: this touch only brings the controls back.
+        if (this.hidden) {
+            this.setHidden(false);
             return;
         }
 
@@ -483,6 +524,11 @@ export class TouchControls {
         }
         if (this._rotateMql && this._rotateMql.removeEventListener) {
             this._rotateMql.removeEventListener('change', this._onRotate);
+        }
+        if (this._pads) {
+            this._pads.off('connected', this._onPadConnected);
+            this._pads.off('disconnected', this._onPadDisconnected);
+            this._pads = null;
         }
 
         for (const obj of this.graphics) {

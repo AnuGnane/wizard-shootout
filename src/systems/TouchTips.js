@@ -10,6 +10,8 @@
 // has both moved and fired, or after TOUCH_CONFIG.tips.timeoutMs (the scene's
 // clock, so a pause holds it). Remembered through Storage.js once they fade,
 // so a round left early shows them again; the Controls screen clears the flag.
+// A gamepad putting the controls away (holiday W-24) takes the tips down
+// unseen; they come back with the controls.
 // They keep clear of the phone HUD (TouchHud), e.g. survival's run clock
 // beside ORB.
 
@@ -19,9 +21,10 @@ import { loadTouchTipsSeen, saveTouchTipsSeen } from './Storage.js';
 const DEPTH = 60; // above the touch controls (50-51), below PauseScene (100+)
 
 export class TouchTips {
-    // The tips for this round, or null when they have been seen.
+    // The tips for this round, or null when they have been seen or the
+    // controls are put away for a gamepad (holiday W-24: not marked seen).
     static maybeShow(scene, controls) {
-        if (!controls || loadTouchTipsSeen()) return null;
+        if (!controls || controls.hidden || loadTouchTipsSeen()) return null;
         return new TouchTips(scene, controls);
     }
 
