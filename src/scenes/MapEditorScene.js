@@ -9,6 +9,7 @@ import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
 import { backHint, ensureTapTarget } from '../systems/TouchMenu.js';
+import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 
 // Phase 9a — Map Editor. A pointer-driven grid editor for custom battle maps:
 // paint walls/floor, move the two spawns, cycle the theme, name it, save it to
@@ -762,6 +763,8 @@ export class MapEditorScene extends Phaser.Scene {
         this.overlay = el;
         this.layoutOverlay();
         this.scale.on('resize', this.layoutOverlay, this);
+        // Holiday W-23: the phone keyboard never covers the name field.
+        this.detachKeyboardLift = attachKeyboardLift(this, el, () => this.layoutOverlay());
     }
 
     // Keep the overlay glued to the FIT-scaled canvas rect so its game-pixel
@@ -777,6 +780,8 @@ export class MapEditorScene extends Phaser.Scene {
     destroyOverlay() {
         if (!this.overlay) return;
         this.scale.off('resize', this.layoutOverlay, this);
+        this.detachKeyboardLift();
+        this.detachKeyboardLift = null;
         this.overlay.remove();
         this.overlay = null;
     }

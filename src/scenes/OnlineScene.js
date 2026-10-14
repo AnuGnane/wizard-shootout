@@ -12,6 +12,7 @@ import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../systems/NetSignal.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 
 // Online 1v1 lobby. Stage 1 built the transport + code-exchange UI; stage 2a
 // wires the successful connection straight into a live match: the HOST picks
@@ -203,6 +204,8 @@ export class OnlineScene extends Phaser.Scene {
         document.body.appendChild(el);
         this.overlay = el;
         this._layoutOverlay();
+        // Holiday W-23: the phone keyboard never covers the field typed in.
+        this._detachKeyboardLift = attachKeyboardLift(this, el, () => this._layoutOverlay());
     }
 
     // Keep the overlay glued to the FIT-scaled canvas rect so game-pixel
@@ -1054,6 +1057,8 @@ export class OnlineScene extends Phaser.Scene {
         this._clearFlow();
         this._clearLobby();
         if (this.overlay) {
+            if (this._detachKeyboardLift) this._detachKeyboardLift();
+            this._detachKeyboardLift = null;
             this.overlay.remove();
             this.overlay = null;
         }
