@@ -261,6 +261,25 @@ export const TOUCH_CONFIG = {
         pause: 'pause',
         fill: '#ffffff', bg: '#1a1a2ecc', padding: { x: 6, y: 3 },
     },
+    // Ready buttons on a phone (holiday W-19): the touch buttons show the
+    // seat's cooldowns. A button's fill alpha is readyAlpha when it can be
+    // used, pressedAlpha while held; PWR on cooldown dims to cooldownAlpha
+    // with a rim sweep (sweepCss thick, CSS px) that closes as it recharges;
+    // FIRE dims only lightly (fireCooldownAlpha, the default ruling, since
+    // its cooldown is short); ORB with no orb held goes emptyColor and
+    // otherwise shows the shots held. dimStroke/dimLabel are the rim and
+    // label alphas of a button that cannot be used yet.
+    readiness: {
+        readyAlpha: 0.35,
+        pressedAlpha: 0.75,
+        cooldownAlpha: 0.12,
+        fireCooldownAlpha: 0.22,
+        dimStroke: 0.45,
+        dimLabel: 0.6,
+        sweepCss: 3,
+        sweepAlpha: 0.95,
+        emptyColor: 0x666677,
+    },
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers

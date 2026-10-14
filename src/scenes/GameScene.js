@@ -169,6 +169,18 @@ export class GameScene extends Phaser.Scene {
 
         this.createPlayers();
 
+        // Holiday W-19: the touch buttons show their seat's cooldowns (seat 1,
+        // or an online guest's own seat 2, whose puppet carries the orb from
+        // snapshots but no cooldowns).
+        if (this.touchControls) {
+            const guest = this.netRole === 'guest';
+            const seat = guest ? 2 : 1;
+            this.touchControls.setPlayer(
+                this.players.find(p => p.playerNumber === seat) || null,
+                { cooldowns: !guest },
+            );
+        }
+
         // Holiday W-14: the seat that got touch controls this round (seat 1,
         // or an online guest's own seat 2) buzzes on a device that can.
         // Null everywhere else, so desktop, 2P and party never vibrate.
@@ -1721,6 +1733,10 @@ export class GameScene extends Phaser.Scene {
     // ============ UPDATE LOOP ============
 
     update(time, delta) {
+        // Holiday W-19: redraw the touch buttons' readiness (an online guest's
+        // input is never pumped, so the scene does it for every mode).
+        if (this.touchControls) this.touchControls.update();
+
         if (this.roundOver) return;
 
         // Stage 2a: the guest runs no local simulation — it only sends its input
