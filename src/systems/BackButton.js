@@ -1,13 +1,17 @@
 // Holiday W-20 — the phone's Back button (Android's Back button or gesture,
 // the installed app's back) does what ESC does instead of leaving the game.
 //
-// After the first pointerdown or keydown (Chrome's Back skips history
-// entries a page pushed without a user gesture) one entry is pushed. Back
-// pops it: popstate pushes it again and hands the active scene its back
-// action. An entry re-pushed from popstate has no user gesture behind it,
-// so Chrome may mark the one beneath skippable; the next gesture pushes a
-// fresh entry so a later Back still lands here. Desktop history only ever
-// gains those entries; keyboard and gamepad are untouched.
+// Each pointerdown or keydown pushes one history entry, up to
+// BACK_BUTTON_CONFIG.buffer entries ahead of the game's own (one per
+// gesture: Chrome's Back skips an entry the page pushed without a user
+// gesture since it arrived there). Back pops one: popstate hands the active
+// scene its back action, and when the buffer has run out it re-pushes at
+// once. That gestureless push may let Chrome's Back skip the entry beneath,
+// so the buffer, refilled by the next taps, is what keeps a few Backs in a
+// row (pause, resume) inside the game. Desktop history only gains those
+// entries; keyboard and gamepad are untouched.
+
+import { BACK_BUTTON_CONFIG } from '../config.js';
 
 const STATE = { wizardShootoutBack: true };
 
@@ -56,20 +60,20 @@ export function topScene(game) {
 export function installBackButton(game, win = window) {
     const history = win.history;
     if (!history || typeof history.pushState !== 'function') return null;
-    // armed: the entry on top was pushed from a user gesture.
-    let armed = false;
+    // ahead: entries pushed from a gesture that a Back can still land on.
+    let ahead = 0;
     let pushed = false;
 
     const onGesture = () => {
-        if (armed) return;
+        if (ahead >= BACK_BUTTON_CONFIG.buffer) return;
         history.pushState(STATE, '');
         pushed = true;
-        armed = true;
+        ahead++;
     };
     const onPop = () => {
         if (!pushed) return;
-        history.pushState(STATE, '');
-        armed = !!(win.navigator.userActivation && win.navigator.userActivation.isActive);
+        ahead = Math.max(0, ahead - 1);
+        if (ahead === 0) history.pushState(STATE, '');
         backOnScene(topScene(game));
     };
 
