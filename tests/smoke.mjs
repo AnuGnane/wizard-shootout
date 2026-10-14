@@ -38,6 +38,10 @@
 //   3o. on that phone, after one tap, the browser's Back pauses a round and
 //      resumes it, leaves Settings for the menu, and on the menu stays put
 //      without leaving the page (W-20),
+//   3p. on that phone the page takes no stray gestures: no touch-action,
+//      selection, callout or overscroll on html, body and the canvas, and no
+//      context menu on it, while the Online code boxes and the map editor's
+//      name field stay selectable and typeable (W-21),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1756,6 +1760,77 @@ try {
         check('phone back: Settings -> menu; on the menu Back stays in the game',
             inSettings && toMenu && stays && phone.url() === startUrl,
             `settings=${inSettings} menu=${toMenu} stays=${stays} url=${phone.url() === startUrl ? 'same' : phone.url()}`);
+        await ctx.close();
+    }
+
+    // 3p. No stray page gestures (holiday W-21): on an 844x390 touch
+    // viewport, html, body, the game container and the canvas compute
+    // touch-action none, user-select none, -webkit-touch-callout none and
+    // overscroll-behavior none; a cancelable contextmenu dispatched on the
+    // canvas is defaultPrevented; the Online JOIN flow's room-code input and
+    // code textarea (the same _textarea the HOST flow's reply box uses; HOST
+    // itself is not started, as it opens the public room broker) and the map
+    // editor's name input keep user-select other than none and take typed
+    // text.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-gestures pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-gestures console.error: ' + m.text()); });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        const styles = await phone.evaluate(() => {
+            const pick = (el) => {
+                const cs = getComputedStyle(el);
+                return [cs.touchAction, cs.userSelect || cs.webkitUserSelect, cs.webkitTouchCallout, cs.overscrollBehaviorY].join('/');
+            };
+            return {
+                html: pick(document.documentElement), body: pick(document.body),
+                container: pick(document.getElementById('game-container')),
+                canvas: pick(window.__game.canvas),
+            };
+        });
+        // -webkit-touch-callout is iOS Safari's; Chromium leaves it out of
+        // the computed style, so empty passes for it there.
+        const none4 = (v) => /^none\/none\/(none)?\/none$/.test(v);
+        const canvasOk = none4(styles.canvas);
+        const menuPrevented = await phone.evaluate(() => {
+            const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+            window.__game.canvas.dispatchEvent(ev);
+            return ev.defaultPrevented;
+        });
+        check('phone gestures: no zoom, selection, callout or pull-to-refresh on the page; no context menu on the canvas',
+            none4(styles.html) && none4(styles.body) && none4(styles.container) && canvasOk && menuPrevented,
+            `${JSON.stringify(styles)} contextmenu prevented=${menuPrevented}`);
+
+        // Typeable fields: selectable, and typed text lands.
+        const field = async (selector, text) => {
+            const el = phone.locator(selector).first();
+            if (!(await el.count())) return `${selector}: missing`;
+            const sel = await el.evaluate((n) => getComputedStyle(n).userSelect || getComputedStyle(n).webkitUserSelect);
+            await el.focus();
+            await phone.keyboard.type(text);
+            const value = await el.inputValue();
+            return sel !== 'none' && value.includes(text) ? null : `${selector}: user-select=${sel} value=${JSON.stringify(value)}`;
+        };
+        const bad = [];
+        await phone.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('OnlineScene'));
+        await reached(() => window.__game.scene.isActive('OnlineScene'));
+        await phone.evaluate(() => window.__game.scene.getScene('OnlineScene').startJoin());
+        await phone.waitForTimeout(200);
+        for (const [sel, text] of [['input[data-room-input]', 'ABCDE'], ['textarea:not([readonly])', 'hostcode']]) {
+            const r = await field(sel, text); if (r) bad.push('join ' + r);
+        }
+        await phone.evaluate(() => window.__game.scene.getScene('OnlineScene').goBack());
+        await reached(() => window.__game.scene.isActive('MenuScene'));
+        await phone.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('MapEditorScene'));
+        await reached(() => window.__game.scene.isActive('MapEditorScene'));
+        await phone.evaluate(() => window.__game.scene.getScene('MapEditorScene').openNameEditor());
+        await phone.waitForTimeout(150);
+        { const r = await field('input[data-map-name]', 'Zz'); if (r) bad.push('editor ' + r); }
+        check('phone gestures: Online code boxes and the editor name field stay selectable and typeable',
+            bad.length === 0, bad.length ? bad.join('; ') : 'room input, join code textarea, editor name');
         await ctx.close();
     }
 

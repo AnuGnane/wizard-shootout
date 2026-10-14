@@ -27,6 +27,25 @@
        container keeps the game clear of the notch, the rounded corners and
        the home indicator itself. Fixed insets (not 100vh) also track the
        visible height while mobile browser toolbars come and go. */
+    /* Holiday W-21: no stray page gestures on a phone. A pinch or double-tap
+       on the bars beside the canvas would zoom the page, a long press would
+       raise the text-selection or image callout, and a drag down from the
+       top would start pull-to-refresh mid-match. The game owns every touch. */
+    html, body, #game-container, #game-container canvas {
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      overscroll-behavior: none;
+    }
+    /* ...except the Online lobby's code boxes and the map editor's name
+       field (DOM overlays), which must still scroll, select and type. */
+    input, textarea {
+      touch-action: auto;
+      -webkit-user-select: text;
+      user-select: text;
+      -webkit-touch-callout: default;
+    }
     #game-container {
       position: fixed;
       top: env(safe-area-inset-top, 0px);
