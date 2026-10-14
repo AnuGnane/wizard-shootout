@@ -46,7 +46,10 @@ screen — **Share → Add to Home Screen** in iOS Safari, **⋮ → Install app
 Add to Home screen) in Android Chrome. A service worker caches the whole game
 on first load, so after that it opens and plays with no network: every mode
 except Online works in airplane mode. A new deploy is picked up the next time
-the app is opened with a connection.
+the app is opened with a connection; an app left running in the background
+checks when it comes back into view, and once the new version has arrived the
+main menu shows **[ NEW VERSION - TAP TO RELOAD ]** (never mid-round). The
+menu footer's `build abc1234` names the commit that is running.
 
 The manifest, the service worker and the icons are generated at build time by
 `scripts/pwa.js` (the icon is a 16×16 pixel-art wizard drawn and PNG-encoded in
