@@ -207,6 +207,25 @@ export const BACK_BUTTON_CONFIG = {
     buffer: 2,
 };
 
+// Holiday W-22 — fresh build on the phone (systems/AppUpdate.js). Once a new
+// deploy's service worker has taken over a running app, the menu shows the
+// reload button (game px, centre; top left, clear of the title, the wizards
+// and the FULL SCREEN toggle in the top right). The footer's build version
+// sits in the bottom-right corner (right-aligned at x).
+export const APP_UPDATE_CONFIG = {
+    button: {
+        label: '[ NEW VERSION - TAP TO RELOAD ]',
+        x: 186, y: 30,
+        font: '16px monospace', padding: { x: 14, y: 6 },
+        fill: '#ffdd44', hover: '#ffffff', bg: '#3a3a1a',
+    },
+    version: {
+        prefix: 'build ',
+        x: 1012, y: 690,
+        font: '12px monospace', fill: '#555577',
+    },
+};
+
 // Phase 6e / holiday W-4 — on-screen touch controls (1P mode on a touch
 // device; see systems/TouchControls.js). Sizes are minimums in CSS pixels, so
 // the controls stay thumb-sized however far Phaser's FIT scaling shrinks the
