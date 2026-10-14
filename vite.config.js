@@ -9,7 +9,7 @@ function buildVersion(command) {
     if (command === 'serve') return 'dev';
     if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7);
     try {
-        return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || 'unknown';
+        return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim().slice(0, 7) || 'unknown';
     } catch {
         return 'unknown';
     }

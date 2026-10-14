@@ -6,8 +6,8 @@
 // with. This module watches for that takeover and offers a reload on the
 // main menu, never mid-round:
 //   - watchForUpdates(registration) (main.js, production only) listens for
-//     navigator.serviceWorker's 'controllerchange', but only when a worker
-//     already controlled the page at boot (a first install also fires it),
+//     navigator.serviceWorker's 'controllerchange', skipping the first one
+//     on a page no worker controlled at boot (a first install fires it),
 //     and asks the registration to update() whenever the page comes back
 //     into view, so a phone that is only switched back to finds the deploy;
 //   - addUpdateButton(scene) (MenuScene) shows [ NEW VERSION - TAP TO
@@ -41,10 +41,13 @@ export function markUpdateReady() {
 // navigator.serviceWorker.register().
 export function watchForUpdates(registration) {
     const sw = navigator.serviceWorker;
-    // Read at boot, before the first install's clients.claim() can set it.
-    const hadController = !!sw.controller;
+    // Read at boot, before the first install's clients.claim() can set it:
+    // a page no worker controlled skips that first takeover, and only a
+    // later one (a deploy while it runs) counts.
+    let skipFirst = !sw.controller;
     sw.addEventListener('controllerchange', () => {
-        if (hadController) markUpdateReady();
+        if (skipFirst) { skipFirst = false; return; }
+        markUpdateReady();
     });
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState !== 'visible') return;
