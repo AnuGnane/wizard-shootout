@@ -2011,6 +2011,29 @@ try {
         await pad('disconnected');
         await phone.waitForTimeout(100);
         const back2 = await look();
+        // Round start: a pad still in the plugin's list but disconnected (it
+        // never drops one) leaves the controls out; a connected one hides
+        // them from the first frame.
+        const atStart = await phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const plugin = s.input.gamepad;
+            const Ctor = s.touchControls.constructor;
+            const real = plugin.getAll;
+            const out = {};
+            try {
+                for (const connected of [false, true]) {
+                    plugin.getAll = () => [{ id: 'stub pad', index: 0, connected }];
+                    const tc = new Ctor(s);
+                    out[connected ? 'connected' : 'stale'] = tc.hidden;
+                    tc.destroy();
+                }
+            } finally {
+                plugin.getAll = real;
+            }
+            return out;
+        });
+        check('phone pad: a round starts hidden only with a pad connected now (not one that left)',
+            atStart.stale === false && atStart.connected === true, JSON.stringify(atStart));
         check('phone pad: a gamepad puts the touch controls away (tips unseen); a touch or a disconnect brings them back',
             ready && start.joy && start.buttons && start.tips && !start.hidden
                 && hidden.hidden && !hidden.anyButton && hidden.pause && !hidden.tips && hidden.seen === null

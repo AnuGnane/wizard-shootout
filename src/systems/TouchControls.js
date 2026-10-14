@@ -132,12 +132,18 @@ export class TouchControls {
         // Holiday W-24: a paired controller puts the on-screen controls away.
         this._pads = input.gamepad || null;
         this._onPadConnected = () => this.setHidden(true);
-        this._onPadDisconnected = () => this.setHidden(false);
+        this._onPadDisconnected = () => { if (!this._padConnected()) this.setHidden(false); };
         if (this._pads) {
             this._pads.on('connected', this._onPadConnected);
             this._pads.on('disconnected', this._onPadDisconnected);
-            if (this._pads.total > 0) this.setHidden(true, true);
+            if (this._padConnected()) this.setHidden(true, true);
         }
+    }
+
+    // A pad is connected now. Not the plugin's `total`: its list keeps a pad
+    // that has disconnected (Phaser 3.90), so only the native flag counts.
+    _padConnected() {
+        return !!this._pads && this._pads.getAll().some((p) => p && p.connected);
     }
 
     // Hide (a gamepad took over) or show the joystick and the three buttons;
