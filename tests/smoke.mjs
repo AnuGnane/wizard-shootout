@@ -49,6 +49,10 @@
 //      stubbed short), the focused Online room-code input and the map
 //      editor's name field are lifted into view above it, and go back to
 //      the canvas rect on blur (W-23),
+//   3s. on that phone, a gamepad connecting puts the joystick and fire
+//      buttons away (and the first-round tips, unseen); a tap where FIRE
+//      was fires nothing and brings them back, working; a disconnect while
+//      hidden brings them back too (W-24),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1918,6 +1922,102 @@ try {
         const name = await lift('input[data-map-name]', '[data-map-editor-overlay]', 40);
         check('phone keyboard: the focused room-code input and editor name field are lifted above it, and back on blur',
             ok(room) && ok(name), `room: ${fmt(room)}; name: ${fmt(name)}`);
+        await ctx.close();
+    }
+
+    // 3s. Controller on a phone (holiday W-24): on an 844x390 touch
+    // viewport with fresh storage, a 1P bot round shows the controls and the
+    // first-round tips; Phaser's gamepad plugin emitting 'connected' (a stub
+    // pad) hides the joystick and FIRE/ORB/PWR (the pause stays) and takes
+    // the tips down without marking them seen; a tap where FIRE was emits
+    // no playerShoot and brings the controls (and tips) back, and a second
+    // FIRE tap shoots; 'connected' again hides them and 'disconnected'
+    // while hidden brings them back.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-pad pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-pad console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        await phone.evaluate(() => {
+            localStorage.removeItem('wizard-shootout-touch-tips-v1');
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScenes(true)[0].scene.start('GameScene');
+        });
+        const ready = await reached(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return window.__game.scene.isActive('GameScene') && s.touchControls && s.touchTips && s.player1?.isAlive;
+        });
+        // Count seat 1's shots from here on.
+        await phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            window.__p1Shots = 0;
+            s.events.on('playerShoot', (d) => { if (d.player === s.player1) window.__p1Shots++; });
+        });
+        const look = () => phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const tc = s.touchControls;
+            const vis = (n) => !!s.children.getByName(n)?.visible;
+            return {
+                hidden: tc.hidden,
+                joy: vis('touchJoystickBase') && vis('touchJoystickThumb'),
+                buttons: ['shoot', 'runeShoot', 'ability'].every((k) => vis(`touchButton_${k}`) && vis(`touchButtonLabel_${k}`)),
+                anyButton: ['shoot', 'runeShoot', 'ability'].some((k) => vis(`touchButton_${k}`)) || vis('touchJoystickBase'),
+                pause: vis('touchButton_pause'),
+                tips: !!(s.touchTips && s.touchTips.texts),
+                seen: localStorage.getItem('wizard-shootout-touch-tips-v1'),
+                shots: window.__p1Shots,
+            };
+        });
+        const pad = (ev) => phone.evaluate((ev) => {
+            const s = window.__game.scene.getScene('GameScene');
+            s.input.gamepad.emit(ev, { id: 'stub pad', index: 0, connected: ev === 'connected' }, {});
+        }, ev);
+        const fire = await phone.evaluate(() => {
+            const tc = window.__game.scene.getScene('GameScene').touchControls;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            return { x: c.left + tc.buttons.shoot.x * k, y: c.top + tc.buttons.shoot.y * k };
+        });
+        const tapFire = async () => {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: fire.x, y: fire.y, id: 1 }] });
+            await phone.waitForTimeout(150);
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await phone.waitForTimeout(250);
+        };
+        const start = ready ? await look() : null;
+        await pad('connected');
+        await phone.waitForTimeout(100);
+        const hidden = await look();
+        await tapFire();
+        const back = await look();
+        // Past the shot cooldown, then a real FIRE tap.
+        await phone.waitForTimeout(400);
+        await tapFire();
+        const fired = await look();
+        await pad('connected');
+        await phone.waitForTimeout(100);
+        const hidden2 = await look();
+        await pad('disconnected');
+        await phone.waitForTimeout(100);
+        const back2 = await look();
+        check('phone pad: a gamepad puts the touch controls away (tips unseen); a touch or a disconnect brings them back',
+            ready && start.joy && start.buttons && start.tips && !start.hidden
+                && hidden.hidden && !hidden.anyButton && hidden.pause && !hidden.tips && hidden.seen === null
+                && !back.hidden && back.joy && back.buttons && back.tips && back.shots === hidden.shots
+                && fired.shots > back.shots
+                && hidden2.hidden && !hidden2.anyButton && back2.joy && back2.buttons && !back2.hidden,
+            `start=${JSON.stringify(start)} hidden=${JSON.stringify(hidden)} back=${JSON.stringify(back)} fired=${fired.shots} hidden2=${hidden2.hidden} back2=${back2.buttons}`);
         await ctx.close();
     }
 
