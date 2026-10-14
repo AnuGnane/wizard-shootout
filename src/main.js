@@ -45,6 +45,8 @@ const config = {
         fullscreenTarget: document.documentElement,
     },
     backgroundColor: '#0f0f1a',
+    // Holiday W-21: a long press on the canvas raises no context menu.
+    disableContextMenu: true,
     input: {
         gamepad: true,
     },
