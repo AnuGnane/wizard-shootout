@@ -306,6 +306,10 @@ export const TOUCH_CONFIG = {
         sweepAlpha: 0.95,
         emptyColor: 0x666677,
     },
+    // Phone keyboard over the code boxes (holiday W-23): while a DOM field
+    // has focus and the on-screen keyboard would cover it, its overlay is
+    // lifted until the field's bottom is this many CSS px above the keyboard.
+    keyboardMarginCss: 8,
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers

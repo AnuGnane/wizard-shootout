@@ -45,6 +45,10 @@
 //   3q. on the menu, the build version shows in the footer, and the
 //      reload button for a newer deploy is thumb-sized and clear of its
 //      neighbours on both phones (W-22; its production behaviour is in 6b),
+//   3r. on that phone, with the on-screen keyboard up (visualViewport
+//      stubbed short), the focused Online room-code input and the map
+//      editor's name field are lifted into view above it, and go back to
+//      the canvas rect on blur (W-23),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1850,6 +1854,70 @@ try {
         { const r = await field('input[data-map-name]', 'Zz'); if (r) bad.push('editor ' + r); }
         check('phone gestures: Online code boxes and the editor name field stay selectable and typeable',
             bad.length === 0, bad.length ? bad.join('; ') : 'room input, join code textarea, editor name');
+        await ctx.close();
+    }
+
+    // 3r. Phone keyboard over the code boxes (holiday W-23): on an 844x390
+    // touch viewport, the on-screen keyboard is stood in for by stubbing
+    // visualViewport's height and firing its resize. A focused field whose
+    // bottom is below it is lifted until it is visible, the canvas does not
+    // move, a scale 'resize' keeps the lift, and on blur (with the height
+    // restored) the overlay is back on
+    // the canvas rect. The Online room-code input (bottom near 168 CSS px)
+    // is checked at height 150, the editor's name field (near 48) at 40.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-keyboard pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-keyboard console.error: ' + m.text()); });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        // Focus `selector`, raise a keyboard leaving `h` CSS px, measure; then
+        // blur, lower it, measure again.
+        const lift = (selector, overlaySel, h) => phone.evaluate(async ([selector, overlaySel, h]) => {
+            const frame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+            const el = document.querySelector(selector);
+            const overlay = document.querySelector(overlaySel);
+            if (!el || !overlay) return { err: `missing ${selector} or ${overlaySel}` };
+            const vv = window.visualViewport;
+            const canvasTop = () => window.__game.canvas.getBoundingClientRect().top;
+            const c0 = canvasTop();
+            const before = Math.round(el.getBoundingClientRect().bottom);
+            el.focus();
+            Object.defineProperty(vv, 'height', { configurable: true, get: () => h });
+            vv.dispatchEvent(new Event('resize'));
+            await frame();
+            // A rescale (rotation, a browser resizing the page for the
+            // keyboard) re-lays the overlay out; the lift must survive it.
+            window.__game.scale.emit('resize', window.__game.scale.gameSize, window.__game.scale.baseSize, window.__game.scale.displaySize);
+            await frame();
+            const up = el.getBoundingClientRect();
+            const lifted = { bottom: Math.round(up.bottom), top: Math.round(up.top), canvasMoved: canvasTop() !== c0 };
+            el.blur();
+            delete vv.height;
+            vv.dispatchEvent(new Event('resize'));
+            await frame();
+            const back = Math.abs(overlay.getBoundingClientRect().top - canvasTop()) < 0.5;
+            return { before, lifted, back, h };
+        }, [selector, overlaySel, h]);
+        const ok = (r) => r && !r.err && r.before > r.h && r.lifted.bottom <= r.h && r.lifted.top >= 0 && !r.lifted.canvasMoved && r.back;
+        const fmt = (r) => r.err || `bottom ${r.before} -> ${r.lifted.bottom} (keyboard leaves ${r.h}) canvasMoved=${r.lifted.canvasMoved} back=${r.back}`;
+
+        await phone.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('OnlineScene'));
+        await reached(() => window.__game.scene.isActive('OnlineScene'));
+        await phone.evaluate(() => window.__game.scene.getScene('OnlineScene').startJoin());
+        await phone.waitForTimeout(200);
+        const room = await lift('input[data-room-input]', '[data-online-lobby]', 150);
+        await phone.evaluate(() => window.__game.scene.getScene('OnlineScene').goBack());
+        await reached(() => window.__game.scene.isActive('MenuScene'));
+        await phone.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('MapEditorScene'));
+        await reached(() => window.__game.scene.isActive('MapEditorScene'));
+        await phone.evaluate(() => window.__game.scene.getScene('MapEditorScene').openNameEditor());
+        await phone.waitForTimeout(150);
+        const name = await lift('input[data-map-name]', '[data-map-editor-overlay]', 40);
+        check('phone keyboard: the focused room-code input and editor name field are lifted above it, and back on blur',
+            ok(room) && ok(name), `room: ${fmt(room)}; name: ${fmt(name)}`);
         await ctx.close();
     }
 
