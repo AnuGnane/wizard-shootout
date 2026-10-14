@@ -293,7 +293,19 @@ export class GameScene extends Phaser.Scene {
     // that gets them. createPlayers() destroys the previous round's instance
     // first and the shutdown handler in create() destroys the last one.
     addTouchControls() {
-        this.touchControls = new TouchControls(this, { onPause: () => this.openPause() });
+        this.touchControls = new TouchControls(this, {
+            onPause: () => this.openPause(),
+            // Holiday W-24: tips go with controls a gamepad puts away, unseen,
+            // and come back with them.
+            onHiddenChange: (hidden) => {
+                if (hidden && this.touchTips && !this.touchTips.fading) {
+                    this.touchTips.destroy();
+                    this.touchTips = null;
+                } else if (!hidden && !this.touchTips && this.touchHud) {
+                    this.touchTips = TouchTips.maybeShow(this, this.touchControls);
+                }
+            },
+        });
         return this.touchControls;
     }
 
