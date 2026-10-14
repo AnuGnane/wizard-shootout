@@ -1768,8 +1768,10 @@ try {
     // touch-action none, user-select none, -webkit-touch-callout none and
     // overscroll-behavior none; a cancelable contextmenu dispatched on the
     // canvas is defaultPrevented; the Online JOIN flow's room-code input and
-    // code textarea, the HOST flow's reply textarea and the map editor's
-    // name input keep user-select other than none and take typed text.
+    // code textarea (the same _textarea the HOST flow's reply box uses; HOST
+    // itself is not started, as it opens the public room broker) and the map
+    // editor's name input keep user-select other than none and take typed
+    // text.
     {
         const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
         const phone = await ctx.newPage();
@@ -1820,9 +1822,6 @@ try {
         for (const [sel, text] of [['input[data-room-input]', 'ABCDE'], ['textarea:not([readonly])', 'hostcode']]) {
             const r = await field(sel, text); if (r) bad.push('join ' + r);
         }
-        await phone.evaluate(() => window.__game.scene.getScene('OnlineScene').startHost());
-        await phone.waitForTimeout(200);
-        { const r = await field('textarea:not([readonly])', 'replycode'); if (r) bad.push('host ' + r); }
         await phone.evaluate(() => window.__game.scene.getScene('OnlineScene').goBack());
         await reached(() => window.__game.scene.isActive('MenuScene'));
         await phone.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('MapEditorScene'));
@@ -1831,7 +1830,7 @@ try {
         await phone.waitForTimeout(150);
         { const r = await field('input[data-map-name]', 'Zz'); if (r) bad.push('editor ' + r); }
         check('phone gestures: Online code boxes and the editor name field stay selectable and typeable',
-            bad.length === 0, bad.length ? bad.join('; ') : 'room input, join + host textareas, editor name');
+            bad.length === 0, bad.length ? bad.join('; ') : 'room input, join code textarea, editor name');
         await ctx.close();
     }
 
