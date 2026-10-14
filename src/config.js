@@ -200,6 +200,13 @@ export const CONTROLS = {
     },
 };
 
+// Holiday W-20 — the phone's Back button (systems/BackButton.js): how many
+// history entries the game keeps ahead of its own, one pushed per tap or
+// key, so that many Backs in a row stay in the game.
+export const BACK_BUTTON_CONFIG = {
+    buffer: 2,
+};
+
 // Phase 6e / holiday W-4 — on-screen touch controls (1P mode on a touch
 // device; see systems/TouchControls.js). Sizes are minimums in CSS pixels, so
 // the controls stay thumb-sized however far Phaser's FIT scaling shrinks the

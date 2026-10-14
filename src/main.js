@@ -14,6 +14,7 @@ import { StatsScene } from './scenes/StatsScene.js';
 import { WardrobeScene } from './scenes/WardrobeScene.js';
 import { OnlineScene } from './scenes/OnlineScene.js';
 import { audio } from './systems/AudioSystem.js';
+import { installBackButton } from './systems/BackButton.js';
 import { loadSettings } from './systems/Storage.js';
 import { loadCustomMaps } from './systems/CustomMaps.js';
 import { MATCH_STATE } from './systems/MatchState.js';
@@ -62,6 +63,10 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+
+// Holiday W-20: the phone's Back button does what ESC does on the active
+// screen instead of leaving the game (systems/BackButton.js).
+installBackButton(game);
 
 // Handy for debugging from the browser console
 window.__game = game;
