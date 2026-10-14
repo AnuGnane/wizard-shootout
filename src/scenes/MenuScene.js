@@ -6,6 +6,7 @@ import { getDailyStatus } from '../systems/Stats.js';
 import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { addFullscreenToggle, fullscreenOffer } from '../systems/Fullscreen.js';
+import { addUpdateButton, addVersionText } from '../systems/AppUpdate.js';
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -229,6 +230,11 @@ export class MenuScene extends Phaser.Scene {
             yoyo: true,
             repeat: -1,
         });
+
+        // Holiday W-22: the build's version in the footer, and a reload
+        // button once a newer deploy's service worker has taken over.
+        addVersionText(this);
+        addUpdateButton(this, this.menuNav);
 
         this.input.keyboard.on('keydown-ONE', () => this.startGame('1p'));
         this.input.keyboard.on('keydown-TWO', () => this.startGame('2p'));

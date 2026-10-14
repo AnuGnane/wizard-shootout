@@ -15,6 +15,7 @@ import { WardrobeScene } from './scenes/WardrobeScene.js';
 import { OnlineScene } from './scenes/OnlineScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { installBackButton } from './systems/BackButton.js';
+import { watchForUpdates } from './systems/AppUpdate.js';
 import { loadSettings } from './systems/Storage.js';
 import { loadCustomMaps } from './systems/CustomMaps.js';
 import { MATCH_STATE } from './systems/MatchState.js';
@@ -90,7 +91,11 @@ if (import.meta.env && import.meta.env.DEV) {
 // time) precaches the bundle so the game opens offline. Production only — in
 // dev it would cache modules Vite expects to hot-swap.
 if (import.meta.env && import.meta.env.PROD && 'serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
-    });
+    const registration = new Promise((resolve) => window.addEventListener('load', () => {
+        resolve(navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => null));
+    }));
+    // Holiday W-22: a later deploy's worker taking over offers a reload on
+    // the menu (systems/AppUpdate.js). Watched from boot, so a takeover
+    // before 'load' is not missed.
+    watchForUpdates(registration);
 }
