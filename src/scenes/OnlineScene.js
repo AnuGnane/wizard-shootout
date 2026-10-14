@@ -144,12 +144,15 @@ export class OnlineScene extends Phaser.Scene {
         this._buildOverlay();
         this.scale.on('resize', this._layoutOverlay, this);
 
-        this.input.keyboard.once('keydown-ESC', () => {
-            audio.uiClick();
-            this.scene.start('MenuScene');
-        });
+        this.input.keyboard.once('keydown-ESC', () => this.goBack());
 
         this.events.once('shutdown', this._shutdown, this);
+    }
+
+    // ESC, and the phone's Back button (holiday W-20).
+    goBack() {
+        audio.uiClick();
+        this.scene.start('MenuScene');
     }
 
     // Gamepad polling for the pick lobby's focus nav (Phaser has no

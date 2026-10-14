@@ -35,6 +35,9 @@
 //   3n. on that phone the touch buttons show seat 1's readiness: PWR dims
 //      with a recharge sweep after a cast and is ready again once it has
 //      passed, ORB greys with no orb and reads x3 with three shots (W-19),
+//   3o. on that phone, after one tap, the browser's Back pauses a round and
+//      resumes it, leaves Settings for the menu, and on the menu stays put
+//      without leaving the page (W-20),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1691,6 +1694,68 @@ try {
             empty && !empty.orb.ready && empty.orb.color === R.emptyColor && !/x\d/.test(empty.orb.label)
                 && held && held.orb.ready && held.orb.shots === 3 && /x3/.test(held.orb.label) && held.orb.color !== R.emptyColor,
             `empty=${JSON.stringify(empty?.orb)} held=${JSON.stringify(held?.orb)}`);
+        await ctx.close();
+    }
+
+    // 3o. Back button on a phone (holiday W-20): on an 844x390 touch
+    // viewport, after one tap on an empty part of the menu, page.goBack()
+    // in a bot round opens PauseScene with the URL unchanged; Back again
+    // resumes; from SettingsScene Back returns to MenuScene; on MenuScene
+    // Back stays there and the page is not navigated away (a marker set on
+    // window survives).
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-back pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-back console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        // A page before the game, so a Back that escaped would land on it.
+        await phone.goto(url + '?before', { waitUntil: 'networkidle' });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await phone.evaluate(() => { window.__backMarker = 1; });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        const back = () => phone.goBack({ timeout: 3000 }).catch(() => null);
+        const startUrl = phone.url();
+        const lenBefore = await phone.evaluate(() => history.length);
+        const c = await phone.evaluate(() => { const r = window.__game.canvas.getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: c.x, y: c.y, id: 1 }] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const lenAfter = await phone.evaluate(() => history.length);
+
+        await phone.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScenes(true)[0].scene.start('GameScene');
+        });
+        const inRound = await reached(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').player1?.isAlive);
+        await back();
+        const paused = await reached(() => window.__game.scene.isActive('PauseScene') && window.__game.scene.isPaused('GameScene'));
+        const urlPaused = phone.url();
+        await back();
+        const resumed = await reached(() => !window.__game.scene.isActive('PauseScene') && window.__game.scene.isActive('GameScene')
+            && !window.__game.scene.isPaused('GameScene'));
+        check('phone back: in a round Back pauses (URL unchanged), Back again resumes',
+            lenAfter === lenBefore + 1 && inRound && paused && urlPaused === startUrl && resumed,
+            `history ${lenBefore}->${lenAfter} round=${inRound} paused=${paused} url=${urlPaused === startUrl ? 'same' : urlPaused} resumed=${resumed}`);
+
+        await phone.evaluate(() => window.__game.scene.getScene('GameScene').scene.start('SettingsScene'));
+        const inSettings = await reached(() => window.__game.scene.isActive('SettingsScene'));
+        await back();
+        const toMenu = await reached(() => window.__game.scene.isActive('MenuScene'));
+        await phone.waitForTimeout(150);
+        await back();
+        await phone.waitForTimeout(400);
+        const stays = await phone.evaluate(() => window.__backMarker === 1 && window.__game.scene.isActive('MenuScene')).catch(() => false);
+        check('phone back: Settings -> menu; on the menu Back stays in the game',
+            inSettings && toMenu && stays && phone.url() === startUrl,
+            `settings=${inSettings} menu=${toMenu} stays=${stays} url=${phone.url() === startUrl ? 'same' : phone.url()}`);
         await ctx.close();
     }
 
