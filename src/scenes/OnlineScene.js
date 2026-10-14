@@ -144,6 +144,9 @@ export class OnlineScene extends Phaser.Scene {
         // DOM overlay that tracks the canvas.
         this._buildOverlay();
         this.scale.on('resize', this._layoutOverlay, this);
+        // Holiday W-23: the phone keyboard never covers the field typed in.
+        // Attached after the resize layout above, so a rescale is lifted again.
+        this._detachKeyboardLift = attachKeyboardLift(this, this.overlay, () => this._layoutOverlay());
 
         this.input.keyboard.once('keydown-ESC', () => this.goBack());
 
@@ -204,8 +207,6 @@ export class OnlineScene extends Phaser.Scene {
         document.body.appendChild(el);
         this.overlay = el;
         this._layoutOverlay();
-        // Holiday W-23: the phone keyboard never covers the field typed in.
-        this._detachKeyboardLift = attachKeyboardLift(this, el, () => this._layoutOverlay());
     }
 
     // Keep the overlay glued to the FIT-scaled canvas rect so game-pixel

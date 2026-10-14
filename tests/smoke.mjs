@@ -1861,7 +1861,8 @@ try {
     // touch viewport, the on-screen keyboard is stood in for by stubbing
     // visualViewport's height and firing its resize. A focused field whose
     // bottom is below it is lifted until it is visible, the canvas does not
-    // move, and on blur (with the height restored) the overlay is back on
+    // move, a scale 'resize' keeps the lift, and on blur (with the height
+    // restored) the overlay is back on
     // the canvas rect. The Online room-code input (bottom near 168 CSS px)
     // is checked at height 150, the editor's name field (near 48) at 40.
     {
@@ -1886,6 +1887,10 @@ try {
             el.focus();
             Object.defineProperty(vv, 'height', { configurable: true, get: () => h });
             vv.dispatchEvent(new Event('resize'));
+            await frame();
+            // A rescale (rotation, a browser resizing the page for the
+            // keyboard) re-lays the overlay out; the lift must survive it.
+            window.__game.scale.emit('resize', window.__game.scale.gameSize, window.__game.scale.baseSize, window.__game.scale.displaySize);
             await frame();
             const up = el.getBoundingClientRect();
             const lifted = { bottom: Math.round(up.bottom), top: Math.round(up.top), canvasMoved: canvasTop() !== c0 };

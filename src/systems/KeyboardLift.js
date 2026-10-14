@@ -32,7 +32,11 @@ export function attachKeyboardLift(scene, overlay, relayout) {
         if (over > 0) overlay.style.top = (parseFloat(overlay.style.top) || 0) - over + 'px';
     };
     // After a blur, focus has not landed anywhere yet: settle first.
-    const onFocusOut = () => setTimeout(update, 0);
+    let settle = null;
+    const onFocusOut = () => {
+        clearTimeout(settle);
+        settle = setTimeout(update, 0);
+    };
 
     const vv = window.visualViewport;
     overlay.addEventListener('focusin', update);
@@ -41,11 +45,13 @@ export function attachKeyboardLift(scene, overlay, relayout) {
         vv.addEventListener('resize', update);
         vv.addEventListener('scroll', update);
     }
-    // Registered after the scene's own layout, so a rescale is lifted again.
+    // Callers attach this after their own 'resize' layout, so a rescale is
+    // lifted again.
     scene.scale.on('resize', update);
     update();
 
     return () => {
+        clearTimeout(settle);
         overlay.removeEventListener('focusin', update);
         overlay.removeEventListener('focusout', onFocusOut);
         if (vv) {
