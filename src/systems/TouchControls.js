@@ -12,6 +12,12 @@
 // browser chrome showing/hiding); the joystick floats to wherever the thumb
 // lands on the left half; a radial dead zone feeds 8 equal 45° sectors; a
 // pause button stands in for ESC; turning the phone to portrait pauses.
+//
+// Holiday W-19 (ready buttons): GameScene hands it the touch seat's Player
+// (setPlayer) and update() redraws the buttons from that seat's cooldowns:
+// PWR dims with a rim sweep while the signature recharges, FIRE dims lightly
+// during the shot cooldown, ORB greys with no orb held and shows the shots
+// held when there are. Without a player the buttons look as they always did.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -69,6 +75,16 @@ export class TouchControls {
         this.graphics = [];
         this.buttonCircles = {};
         this.buttonLabels = {};
+        // Holiday W-19: the seat whose cooldowns the buttons show, and what
+        // they show now (read by the smoke suite).
+        this.player = null;
+        this.showCooldowns = true;
+        this.readiness = {
+            shoot: { ready: true, remaining: 0 },
+            runeShoot: { ready: true, shots: 0 },
+            ability: { ready: true, remaining: 0 },
+        };
+        this._drawn = null;
         this._buildJoystick();
         this._buildButtons();
         this._buildPause();
@@ -103,7 +119,26 @@ export class TouchControls {
 
     // ---- input-source interface (mirrors KeyboardInput/GamepadInput) -----
 
-    update() {}
+    // Pumped by the seat's CompositeInput (local and host) and by GameScene
+    // each frame (an Online guest's input is never pumped); idempotent.
+    update() {
+        this._refreshReadiness();
+    }
+
+    /**
+     * The seat these buttons belong to.
+     * @param {Player|null} player
+     * @param {{ cooldowns?: boolean }} [opts] cooldowns false when the
+     *   player's cooldown fields are not live (an Online guest's puppet: the
+     *   snapshot carries the orb, not the cooldowns), so PWR and FIRE stay
+     *   as they were and only ORB follows the player.
+     */
+    setPlayer(player, opts = {}) {
+        this.player = player || null;
+        this.showCooldowns = opts.cooldowns !== false;
+        this._drawn = null;
+        this._refreshReadiness();
+    }
 
     getState() {
         return { ...this.state };
@@ -147,6 +182,14 @@ export class TouchControls {
             this.buttonLabels[btn.key] = label;
             this.graphics.push(circle, label);
         }
+
+        // PWR's recharge sweep: an arc on its rim, redrawn by _drawSweep.
+        const sweep = this.scene.add.graphics();
+        sweep.setScrollFactor(0);
+        sweep.setDepth(DEPTH_TOP);
+        sweep.name = 'touchButtonSweep_ability';
+        this.abilitySweep = sweep;
+        this.graphics.push(sweep);
     }
 
     _buildPause() {
@@ -209,8 +252,10 @@ export class TouchControls {
             const b = this.buttons[btn.key];
             this.buttonCircles[btn.key].setPosition(b.x, b.y).setRadius(b.radius);
             this.buttonLabels[btn.key].setPosition(b.x, b.y).setScale(labelScale);
-            this._refreshButton(btn.key);
         }
+        this.abilitySweep.setPosition(this.buttons.ability.x, this.buttons.ability.y);
+        this._drawn = null;
+        this._refreshReadiness();
 
         // The pause button is drawn small to fit the top bar; its hit area
         // is the CSS minimum.
@@ -343,12 +388,81 @@ export class TouchControls {
         if (this.onPause) this.onPause();
     }
 
+    // Read the seat's cooldowns into this.readiness and redraw whatever
+    // changed. Without a player every button reads ready, as before W-19.
+    _refreshReadiness() {
+        if (this._destroyed) return;
+        const p = this.player;
+        const r = this.readiness;
+        const live = p && p.scene && this.showCooldowns;
+        const now = this.scene.time.now;
+        const left = (readyAt, cooldown) => (readyAt > now && cooldown > 0)
+            ? Math.min(1, (readyAt - now) / cooldown) : 0;
+
+        r.ability.remaining = live ? left(p.abilityReadyAt, p.abilityCooldown) : 0;
+        r.ability.ready = r.ability.remaining === 0;
+        r.shoot.remaining = live ? left(p.normalReadyAt, p.normalCooldown) : 0;
+        r.shoot.ready = r.shoot.remaining === 0;
+        r.runeShoot.shots = (p && p.heldRune) ? (p.runeShots | 0) : 0;
+        r.runeShoot.ready = !p || r.runeShoot.shots > 0;
+
+        // Skip the redraw when nothing visible moved (the sweep in 1% steps).
+        const key = [
+            Math.ceil(r.ability.remaining * 100), r.shoot.ready, p ? r.runeShoot.shots : -1,
+            this.buttonPointerIds.shoot, this.buttonPointerIds.runeShoot, this.buttonPointerIds.ability,
+        ].join('|');
+        if (key === this._drawn) return;
+        this._drawn = key;
+        for (const btn of BUTTONS) this._refreshButton(btn.key);
+        this._drawSweep();
+    }
+
     _refreshButton(key) {
         const btn = BUTTONS.find(b => b.key === key);
         const circle = this.buttonCircles[key];
+        const label = this.buttonLabels[key];
         if (!btn || !circle) return;
+        const R = TOUCH_CONFIG.readiness;
+        const state = this.readiness[key];
         const pressed = this.buttonPointerIds[key] !== null;
-        circle.setFillStyle(btn.color, pressed ? 0.75 : 0.35);
+        let color = btn.color;
+        let fill = R.readyAlpha;
+        if (!state.ready) {
+            if (key === 'runeShoot') color = R.emptyColor;
+            fill = key === 'shoot' ? R.fireCooldownAlpha : R.cooldownAlpha;
+        }
+        // A press still brightens, less so while the button cannot fire.
+        if (pressed) fill = state.ready ? R.pressedAlpha : Math.min(R.pressedAlpha, fill * 2);
+        // FIRE's dim is light (its cooldown is short): rim and label stay.
+        const dim = !state.ready && key !== 'shoot';
+        circle.setFillStyle(color, fill);
+        circle.setStrokeStyle(2, color, dim ? R.dimStroke : 0.9);
+        if (label) {
+            label.setAlpha(dim ? R.dimLabel : 1);
+            if (key === 'runeShoot') {
+                label.setText(state.shots > 0 ? `${btn.label}\nx${state.shots}` : btn.label);
+                label.setAlign('center');
+            }
+        }
+    }
+
+    // PWR's rim arc: drawn clockwise from the top over the part already
+    // recharged, so it closes into a full ring as the signature comes back;
+    // none when ready.
+    _drawSweep() {
+        const g = this.abilitySweep;
+        const b = this.buttons.ability;
+        if (!g || !b) return;
+        g.clear();
+        const remaining = this.readiness.ability.remaining;
+        if (remaining <= 0) return;
+        const R = TOUCH_CONFIG.readiness;
+        const btn = BUTTONS.find(x => x.key === 'ability');
+        const start = -Math.PI / 2;
+        g.lineStyle(R.sweepCss / this._cssPerGamePx(), btn.color, R.sweepAlpha);
+        g.beginPath();
+        g.arc(0, 0, b.radius, start, start + Math.PI * 2 * (1 - remaining), false);
+        g.strokePath();
     }
 
     // ---- teardown --------------------------------------------------------
@@ -377,5 +491,7 @@ export class TouchControls {
         this.graphics = [];
         this.buttonCircles = {};
         this.buttonLabels = {};
+        this.abilitySweep = null;
+        this.player = null;
     }
 }

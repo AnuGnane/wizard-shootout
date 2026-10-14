@@ -32,6 +32,9 @@
 //      controls at hudMinCss, clear of them and of each other; moving and
 //      firing fades them, the next round has none, and the Controls screen's
 //      SHOW TOUCH TIPS brings them back (W-16),
+//   3n. on that phone the touch buttons show seat 1's readiness: PWR dims
+//      with a recharge sweep after a cast and is ready again once it has
+//      passed, ORB greys with no orb and reads x3 with three shots (W-19),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1604,6 +1607,90 @@ try {
         check('phone tips: Controls SHOW TOUCH TIPS (by tap, 44 CSS px) brings them back',
             !!btn && Math.min(btn.w, btn.h) >= 43.5 && again === 5,
             `button=${btn ? `${Math.round(btn.w)}x${Math.round(btn.h)}` : 'missing'} tips next round=${again}`);
+        await ctx.close();
+    }
+
+    // 3n. Ready buttons on a phone (holiday W-19): on an 844x390 touch
+    // viewport, in a 1P bot round as the warden (its ward always casts),
+    // PWR reads ready, then after useSignature() with the cooldown shortened
+    // on the instance it reads not-ready with a sweep fraction strictly
+    // between 0 and 1 and dimmed, and ready again once abilityReadyAt has
+    // passed; ORB reads empty (grey) with no orb and `x3` with three shots.
+    {
+        const R = TOUCH_CONFIG.readiness;
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('phone-ready pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('phone-ready console.error: ' + m.text()); });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        await phone.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'warden', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScenes(true)[0].scene.start('GameScene');
+        });
+        const ready = await reached(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return window.__game.scene.isActive('GameScene') && s.touchControls?.player && s.player1?.isAlive;
+        });
+        // What the buttons show: readiness plus the drawn fill alpha/colour,
+        // ORB's label and whether PWR's sweep has anything drawn.
+        const read = () => phone.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const tc = s.touchControls;
+            if (!tc) return null;
+            const c = (k) => ({ alpha: tc.buttonCircles[k].fillAlpha, color: tc.buttonCircles[k].fillColor });
+            return {
+                player: tc.player === s.player1,
+                ability: { ...tc.readiness.ability, ...c('ability'), sweep: tc.abilitySweep.commandBuffer.length > 0 },
+                shoot: { ...tc.readiness.shoot, ...c('shoot') },
+                orb: { ...tc.readiness.runeShoot, ...c('runeShoot'), label: tc.buttonLabels.runeShoot.text },
+            };
+        });
+        const before = ready ? await read() : null;
+        await phone.evaluate(() => {
+            const p = window.__game.scene.getScene('GameScene').player1;
+            p.abilityCooldown = 1500;
+            p.useSignature();
+        });
+        await phone.waitForTimeout(300);
+        const casting = ready ? await read() : null;
+        const back = await reached(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s.time.now > s.player1.abilityReadyAt + 50 && s.touchControls.readiness.ability.ready;
+        }, 4000);
+        const after = ready ? await read() : null;
+        check('phone ready: PWR dims with a recharge sweep after a cast and is ready again once it has passed',
+            ready && before?.player && before.ability.ready && !before.ability.sweep
+                && casting && !casting.ability.ready && casting.ability.remaining > 0 && casting.ability.remaining < 1
+                && casting.ability.sweep && Math.abs(casting.ability.alpha - R.cooldownAlpha) < 1e-6
+                && back && after.ability.ready && !after.ability.sweep && Math.abs(after.ability.alpha - R.readyAlpha) < 1e-6,
+            `before=${JSON.stringify(before?.ability)} casting=${JSON.stringify(casting?.ability)} after=${JSON.stringify(after?.ability)}`);
+
+        // ORB: empty with no orb, x3 with three shots.
+        await phone.evaluate(() => {
+            const p = window.__game.scene.getScene('GameScene').player1;
+            p.heldRune = null; p.runeShots = 0;
+        });
+        await phone.waitForTimeout(100);
+        const empty = await read();
+        await phone.evaluate(() => {
+            const p = window.__game.scene.getScene('GameScene').player1;
+            p.heldRune = 'fire'; p.runeShots = 3;
+        });
+        await phone.waitForTimeout(100);
+        const held = await read();
+        check('phone ready: ORB greys with no orb and reads x3 with three shots',
+            empty && !empty.orb.ready && empty.orb.color === R.emptyColor && !/x\d/.test(empty.orb.label)
+                && held && held.orb.ready && held.orb.shots === 3 && /x3/.test(held.orb.label) && held.orb.color !== R.emptyColor,
+            `empty=${JSON.stringify(empty?.orb)} held=${JSON.stringify(held?.orb)}`);
         await ctx.close();
     }
 
