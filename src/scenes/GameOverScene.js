@@ -309,7 +309,12 @@ export class GameOverScene extends Phaser.Scene {
         };
         btn.on('pointerover', () => btn.setStyle({ fill: cfg.hover }));
         btn.on('pointerout', () => btn.setStyle({ fill: cfg.fill }));
-        btn.on('pointerup', go);
+        // Only a press that began on the button: a finger still down from
+        // the round, lifted over it, must not open the share sheet.
+        let armed = false;
+        btn.on('pointerdown', () => { armed = true; });
+        btn.on('pointerup', () => { if (armed) go(); armed = false; });
+        btn.on('pointerout', () => { armed = false; });
         ensureTapTarget(this, btn);
         this.menuNav.add(btn, go);
         this.shareBtn = btn;
