@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, TEAM_NAMES } from '../config.js';
+import { PLAYER_CONFIG, TEAM_NAMES, SHARE_CONFIG } from '../config.js';
 import { getTeamColors } from '../systems/TeamColors.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { clearSession } from '../systems/NetSession.js';
@@ -8,6 +8,7 @@ import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
 
 export class GameOverScene extends Phaser.Scene {
     constructor() {
@@ -85,6 +86,10 @@ export class GameOverScene extends Phaser.Scene {
             restartBtn.on('pointerdown', doRematch);
             this.menuNav.add(restartBtn, doRematch);
         }
+
+        // Holiday W-29: the Daily card shares (or, without a share sheet,
+        // copies) the day's line, after REMATCH in the focus order.
+        if (this.isDaily && !this.isSurvival) this.createDailyShare();
 
         // Menu button
         const menuBtn = this.add.text(width / 2, 545, '[ MAIN MENU ]', {
@@ -272,6 +277,42 @@ export class GameOverScene extends Phaser.Scene {
                 fill: hasBest ? '#66ff66' : '#8888aa',
             }).setOrigin(0.5);
         }
+    }
+
+    // The day's line: date, won/lost and score, today's best.
+    dailyShareText() {
+        const best = this.dailyStatus && this.dailyStatus.bestRounds != null
+            ? fillShare(SHARE_CONFIG.dailyBest, { n: this.dailyStatus.bestRounds })
+            : SHARE_CONFIG.dailyNoBest;
+        return fillShare(SHARE_CONFIG.daily, {
+            date: DailyChallenge.todayKey(),
+            result: this.winner === 1 ? 'won' : 'lost',
+            score: `${this.scores[1]}-${this.scores[2]}`,
+            best,
+        });
+    }
+
+    createDailyShare() {
+        const cfg = SHARE_CONFIG.dailyButton;
+        const btn = this.add.text(cfg.x, cfg.y, canShare() ? SHARE_CONFIG.shareLabel : SHARE_CONFIG.copyLabel, {
+            font: cfg.font,
+            fill: cfg.fill,
+            backgroundColor: cfg.bg,
+            padding: cfg.padding,
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        // The share sheet needs a user gesture: fire on the tap's release.
+        const go = () => {
+            audio.uiClick();
+            shareOrCopy(this.dailyShareText()).then((how) => {
+                if (how === 'copied' && btn.scene) btn.setText('[ COPIED ]');
+            });
+        };
+        btn.on('pointerover', () => btn.setStyle({ fill: cfg.hover }));
+        btn.on('pointerout', () => btn.setStyle({ fill: cfg.fill }));
+        btn.on('pointerup', go);
+        ensureTapTarget(this, btn);
+        this.menuNav.add(btn, go);
+        this.shareBtn = btn;
     }
 
     update() {

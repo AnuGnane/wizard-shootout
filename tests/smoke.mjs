@@ -66,6 +66,10 @@
 //      with a doubled cursor ring, two taps a tile apart paint two tiles, a
 //      tap on each grown tool button selects its tool and no grown hit areas
 //      intersect; a desktop click paints with the 1-tile cursor (W-28),
+//   3x. with navigator.share stubbed, [ SHARE ] on a hosted Online room
+//      shares the room code and the page's address and the Daily card's
+//      button shares its score; without it Online keeps only COPY and the
+//      Daily button copies the line instead (W-29),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -2453,6 +2457,85 @@ try {
         check('editor on a desktop: a click paints the tile with the 1-tile ring and no tool button grew',
             d1.cells[3][5] === '#' && d1.cursor.on && Math.round(d1.cursor.w) === 22 && d0.tools.every((t) => !t.grew),
             `cell=${d1.cells[3][5]} ring=${JSON.stringify(d1.cursor)} grew=${d0.tools.filter((t) => t.grew).map((t) => t.key).join(',') || 'none'}`);
+    }
+
+    // 3x. Holiday W-29: the phone's share sheet. An init script records
+    // navigator.share calls (and clipboard writes); the Online host screen
+    // gets a SHARE button whose tap shares the room code with the game's
+    // address, and the Daily result card's button shares the day's score.
+    // With navigator.share removed, the host screen has only its COPY and the
+    // Daily button reads COPY RESULT and copies the same line.
+    {
+        const record = (withShare) => {
+            window.__shared = [];
+            window.__copied = [];
+            if (withShare) {
+                navigator.share = (d) => { window.__shared.push(d.text); return Promise.resolve(); };
+            } else {
+                delete Navigator.prototype.share;
+                delete navigator.share;
+            }
+            if (navigator.clipboard) navigator.clipboard.writeText = (t) => { window.__copied.push(t); return Promise.resolve(); };
+        };
+        const run = async (withShare) => {
+            const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+            await ctx.addInitScript(record, withShare);
+            const pg = await ctx.newPage();
+            const tag = withShare ? 'share' : 'no-share';
+            pg.on('pageerror', (e) => errors.push(`${tag} pageerror: ` + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('OnlineScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('OnlineScene'), null, { timeout: 5000 });
+            await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').startHost());
+            await pg.waitForTimeout(300);
+            const buttons = await pg.evaluate(() => [...document.querySelectorAll('button')].map((b) => b.textContent));
+            let online = null;
+            if (buttons.includes('SHARE')) {
+                await pg.evaluate(() => { window.__game.scene.getScene('OnlineScene').roomCode = 'QWXYZ'; });
+                await pg.getByRole('button', { name: 'SHARE', exact: true }).tap();
+                await pg.waitForTimeout(100);
+                online = await pg.evaluate(() => window.__shared.slice());
+            }
+            const origin = await pg.evaluate(() => location.origin);
+            // The Daily result card, as RoundFlow starts it after a daily.
+            await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('OnlineScene');
+                s.goBack();
+                window.__game.scene.getScene('MenuScene').scene.start('GameOverScene', {
+                    winner: 1, scores: { 1: 3, 2: 1 }, rounds: 4, isDaily: true, dailyStatus: { bestRounds: 4 } });
+            });
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameOverScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(150);
+            const btn = await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('GameOverScene');
+                const b = s.shareBtn;
+                if (!b) return null;
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                return { label: b.text, x: c.left + b.x * k, y: c.top + b.y * k };
+            });
+            if (btn) {
+                const cdp = await ctx.newCDPSession(pg);
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: btn.x, y: btn.y, id: 1 }] });
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+                await pg.waitForTimeout(100);
+            }
+            const after = await pg.evaluate(() => ({ shared: window.__shared.slice(), copied: window.__copied.slice() }));
+            await ctx.close();
+            return { buttons, online, origin, daily: btn && btn.label, ...after };
+        };
+        const a = await run(true);
+        const b = await run(false);
+        const room = a.online && a.online[0];
+        check('share sheet: SHARE on a hosted room shares the room code and the game address; the Daily card shares its score',
+            !!room && room.includes('QWXYZ') && room.includes(a.origin) && a.daily === '[ SHARE ]'
+                && a.shared.length === 2 && a.shared[1].includes('won 3-1') && a.shared[1].includes(a.origin),
+            JSON.stringify({ room, daily: a.daily, dailyLine: a.shared[1] }));
+        check('share sheet: without navigator.share the host screen keeps COPY only and the Daily button copies the line',
+            !b.buttons.includes('SHARE') && b.buttons.includes('COPY') && b.daily === '[ COPY RESULT ]'
+                && b.copied.length === 1 && b.copied[0].includes('won 3-1') && !b.shared.length,
+            JSON.stringify({ buttons: b.buttons, daily: b.daily, copied: b.copied }));
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)

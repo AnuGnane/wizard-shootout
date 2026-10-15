@@ -13,6 +13,8 @@ import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../systems/NetSignal.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
+import { SHARE_CONFIG } from '../config.js';
+import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
 
 // Online 1v1 lobby. Stage 1 built the transport + code-exchange UI; stage 2a
 // wires the successful connection straight into a live match: the HOST picks
@@ -437,6 +439,9 @@ export class OnlineScene extends Phaser.Scene {
         this._label('No room code? Send this code across yourself:', COL_X, 344);
         this.offerArea = this._textarea(COL_X, 366, COL_W, AREA_H, true, '');
         this._button('COPY', COL_X, 440, 120, () => this._copy(this.offerArea));
+        // Holiday W-29: on a phone, send the room code through the share
+        // sheet. A DOM click fires on the tap's release, a user gesture.
+        if (canShare()) this._button('SHARE', COL_X + 130, 440, 120, () => this._shareRoom());
 
         this._label('Paste their reply code here:', COL_X, 480);
         this.answerPaste = this._textarea(COL_X, 502, COL_W, AREA_H, false, 'paste reply code…');
@@ -996,6 +1001,19 @@ export class OnlineScene extends Phaser.Scene {
     }
 
     // ---- copy helper ------------------------------------------------------
+
+    // One line with the room code; the manual codes are too long to share.
+    _shareRoom() {
+        if (!this.roomCode) {
+            this.statusText.setText('no room code yet - use COPY for the code below.');
+            return;
+        }
+        shareOrCopy(fillShare(SHARE_CONFIG.room, { code: this.roomCode })).then((how) => {
+            if (!this._alive) return;
+            if (how === 'shared') this.statusText.setText('shared!');
+            else if (how === 'copied') this.statusText.setText('copied to clipboard!');
+        });
+    }
 
     _copy(area) {
         const text = area && area.value;
