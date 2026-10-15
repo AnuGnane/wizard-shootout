@@ -153,6 +153,12 @@ export function ensureTapTarget(scene, obj) {
     return obj;
 }
 
+// Lay the scene's grown targets out again, for a label that changed size
+// after it was added (the map editor's theme button, holiday W-28).
+export function relayoutTapTargets(scene) {
+    if (scene.__tapTargets) scene.__tapTargets.layout();
+}
+
 // True on a phone or tablet: the footers then name the on-screen way out
 // instead of a key (holiday W-10).
 export function isTouchDevice(scene) {

@@ -62,6 +62,10 @@
 //   3v. on a 568x320 phone a tap at the centre of each Wardrobe swatch
 //      equips that swatch and no other, the grown hit areas never intersect
 //      and the rings match them; on a desktop the swatches are as drawn (W-27),
+//   3w. on that 844x390 phone a finger paints the Map editor tile under it
+//      with a doubled cursor ring, two taps a tile apart paint two tiles, a
+//      tap on each grown tool button selects its tool and no grown hit areas
+//      intersect; a desktop click paints with the 1-tile cursor (W-28),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -2360,6 +2364,95 @@ try {
             `${p.sw.length} swatches, hit ${p.sw[0].hit.w}x${p.sw[0].hit.h} game px; wrong=${wrong.join(',') || 'none'} small=${small.join(',') || 'none'} overlaps=${p.bad} rings=${ringsOff.join(',') || 'ok'}`);
         check('wardrobe: on a desktop the swatches keep their 54x38 hit areas and 62x46 rings',
             d.sw.length === 11 && deskOk, JSON.stringify(d.sw.slice(0, 2).map((w) => [w.hit, w.ring])));
+    }
+
+    // 3w. Holiday W-28: the Map editor by finger. On an 844x390 touch phone,
+    // a touch on a floor tile paints it while the cursor ring shows at
+    // TOUCH_CONFIG.editor.cursorScale tiles and goes on lift; two taps a tile
+    // apart paint two tiles; a tap at the centre of each grown tool button
+    // (taller than its label) selects that tool; no two hit areas intersect.
+    // On a desktop a click paints with the 1-tile ring and no button grew.
+    {
+        const toEditor = async (pg) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('MapEditorScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('MapEditorScene') && window.__mapEditor?.modal, null, { timeout: 5000 });
+            await pg.waitForTimeout(150);
+            await pg.evaluate(() => window.__mapEditor.closeModal());
+            await pg.waitForTimeout(150);
+        };
+        // CSS point of a tile's centre or a game point, and the editor's state.
+        const probe = (pg) => pg.evaluate(() => {
+            const e = window.__mapEditor;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const css = (gx, gy) => ({ x: c.left + gx * k, y: c.top + gy * k });
+            const tile = (tx, ty) => css(e.originX + tx * 22 + 11, e.originY + ty * 22 + 11);
+            const rect = (o) => {
+                const h = o.input.hitArea;
+                const x0 = o.x - o.displayOriginX + h.x, y0 = o.y - o.displayOriginY + h.y;
+                return { x0, y0, x1: x0 + h.width, y1: y0 + h.height };
+            };
+            const live = e.children.list.filter((o) => o.input && o.input.enabled && o.visible
+                && o.input.hitArea && o.input.hitArea.width !== undefined);
+            let bad = 0;
+            for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+                const a = rect(live[i]), b = rect(live[j]);
+                if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) bad++;
+            }
+            const tools = Object.entries(e.toolButtons).map(([key, b]) => {
+                const r = rect(b);
+                return { key, at: css((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), grew: (r.y1 - r.y0) > b.height + 0.5 };
+            });
+            const barGrew = [e.saveBtn, e.testBtn].every((b) => rect(b).y1 - rect(b).y0 > b.height + 0.5);
+            return { t53: tile(5, 3), t73: tile(7, 3), t83: tile(8, 3), cells: e.cells.map((r) => r.join('')),
+                cursor: { on: e.cursorRect.visible, w: e.cursorRect.width }, tools, bad, barGrew, tool: e.tool };
+        });
+
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('editor 844x390 pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('editor 844x390 console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await toEditor(phone);
+        const p0 = await probe(phone);
+        const down = (pt) => cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: pt.x, y: pt.y, id: 1 }] });
+        const up = async () => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await phone.waitForTimeout(60); };
+        await down(p0.t53);
+        await phone.waitForTimeout(60);
+        const held = await probe(phone);
+        await up();
+        const lifted = await probe(phone);
+        await down(p0.t73); await up();
+        await down(p0.t83); await up();
+        const two = await probe(phone);
+        const picked = [];
+        for (const t of [...p0.tools].reverse()) {
+            await down(t.at); await up();
+            picked.push(`${t.key}:${(await probe(phone)).tool}`);
+        }
+        await ctx.close();
+        const big = Math.round(22 * TOUCH_CONFIG.editor.cursorScale);
+        const r = { painted: held.cells[3][5], ring: held.cursor, lifted: lifted.cursor.on,
+            two: two.cells[3].slice(7, 9), picked, toolsGrew: p0.tools.every((t) => t.grew), barGrew: p0.barGrew, bad: p0.bad };
+        check('editor by finger: a touch paints the tile under it with a doubled ring that goes on lift, two taps paint two tiles (844x390)',
+            r.painted === '#' && r.ring.on && Math.round(r.ring.w) === big && !r.lifted && r.two === '##', JSON.stringify(r));
+        check('editor by finger: each grown tool button takes a tap, the bar grew, no two hit areas intersect (844x390)',
+            r.picked.every((x) => x.split(':')[0] === x.split(':')[1]) && r.toolsGrew && r.barGrew && !r.bad,
+            `picked=${r.picked.join(',')} toolsGrew=${r.toolsGrew} barGrew=${r.barGrew} overlaps=${r.bad}`);
+
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('editor desktop pageerror: ' + e.message));
+        await toEditor(desk);
+        const d0 = await probe(desk);
+        await desk.mouse.click(d0.t53.x, d0.t53.y);
+        await desk.waitForTimeout(60);
+        const d1 = await probe(desk);
+        await desk.close();
+        check('editor on a desktop: a click paints the tile with the 1-tile ring and no tool button grew',
+            d1.cells[3][5] === '#' && d1.cursor.on && Math.round(d1.cursor.w) === 22 && d0.tools.every((t) => !t.grew),
+            `cell=${d1.cells[3][5]} ring=${JSON.stringify(d1.cursor)} grew=${d0.tools.filter((t) => t.grew).map((t) => t.key).join(',') || 'none'}`);
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)

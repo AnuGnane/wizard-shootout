@@ -8,7 +8,8 @@ import { MenuNav } from '../systems/MenuNav.js';
 import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
-import { backHint, ensureTapTarget } from '../systems/TouchMenu.js';
+import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx } from '../systems/TouchMenu.js';
+import { TOUCH_CONFIG } from '../config.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 
 // Phase 9a — Map Editor. A pointer-driven grid editor for custom battle maps:
@@ -92,6 +93,7 @@ export class MapEditorScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         this.menuNav = new MenuNav(this, { onBack: () => this.goBack() });
+        this.touch = isTouchDevice(this);
 
         this.gridGfx = this.add.graphics();
         this.cursorRect = this.add.rectangle(0, 0, TILE, TILE, 0x000000, 0)
@@ -118,6 +120,7 @@ export class MapEditorScene extends Phaser.Scene {
         // buttons live) and anything while a modal or the name field is up.
         this.input.on('pointerdown', this.onPointerPaint, this);
         this.input.on('pointermove', this.onPointerMove, this);
+        this.input.on('pointerup', this.onPointerUp, this);
 
         // Start on the smallest arena so there's always a valid document, then
         // immediately offer the size menu (the NEW flow) on top of it.
@@ -181,6 +184,13 @@ export class MapEditorScene extends Phaser.Scene {
         });
 
         this.refreshToolButtons();
+
+        // Thumb-sized on a phone (holiday W-28), capped by each other.
+        if (this.touch) {
+            for (const btn of [...Object.values(this.toolButtons), this.themeBtn, this.newBtn]) {
+                ensureTapTarget(this, btn);
+            }
+        }
     }
 
     // Six buttons laid out left-to-right and centered as a group — their labels
@@ -207,6 +217,9 @@ export class MapEditorScene extends Phaser.Scene {
 
         [this.saveBtn, this.loadBtn, this.deleteBtn, this.testBtn, this.nameBtn, this.backBtn] = buttons;
         ensureTapTarget(this, this.backBtn);
+        if (this.touch) {
+            for (const btn of buttons) if (btn !== this.backBtn) ensureTapTarget(this, btn);
+        }
         this.menuNav.refresh();
     }
 
@@ -332,8 +345,37 @@ export class MapEditorScene extends Phaser.Scene {
     onPointerPaint(pointer, currentlyOver) {
         if (this.modal || this.nameInput) return;
         if (currentlyOver && currentlyOver.length) return;
-        const tile = this.tileAt(pointer.x, pointer.y);
-        if (tile) this.paint(tile.x, tile.y);
+        const tile = this.tileUnder(pointer);
+        if (tile) {
+            if (pointer.wasTouch) this.showCursor(tile, true);
+            this.paint(tile.x, tile.y);
+        }
+    }
+
+    // The tile a pointer paints: under it, or for a finger
+    // TOUCH_CONFIG.editor.fingerOffsetCss above it (holiday W-28).
+    tileUnder(pointer) {
+        const offset = pointer.wasTouch
+            ? TOUCH_CONFIG.editor.fingerOffsetCss / cssPerGamePx(this) : 0;
+        return this.tileAt(pointer.x, pointer.y - offset);
+    }
+
+    // Ring the tile being painted. A finger gets a bigger ring in a
+    // contrasting colour so it shows around the fingertip; a mouse the tile's.
+    showCursor(tile, finger) {
+        const { cursorScale, cursorStroke, cursorStrokeW } = TOUCH_CONFIG.editor;
+        const size = finger ? TILE * cursorScale : TILE;
+        if (finger) this.cursorRect.setStrokeStyle(cursorStrokeW, cursorStroke, 1);
+        else this.cursorRect.setStrokeStyle(2, 0xffdd44, 0.9);
+        this.cursorRect.setSize(size, size).setVisible(true).setPosition(
+            this.originX + tile.x * TILE + TILE / 2,
+            this.originY + tile.y * TILE + TILE / 2,
+        );
+    }
+
+    // A finger lifted: its ring goes with it (a mouse keeps hovering).
+    onPointerUp(pointer) {
+        if (pointer.wasTouch) this.cursorRect.setVisible(false);
     }
 
     onPointerMove(pointer, currentlyOver) {
@@ -342,12 +384,10 @@ export class MapEditorScene extends Phaser.Scene {
             this.cursorRect.setVisible(false);
             return;
         }
-        const tile = this.tileAt(pointer.x, pointer.y);
+        const tile = this.tileUnder(pointer);
         if (tile) {
-            this.cursorRect.setVisible(true).setPosition(
-                this.originX + tile.x * TILE + TILE / 2,
-                this.originY + tile.y * TILE + TILE / 2,
-            );
+            // A finger is always down while it moves; hovering is a mouse's.
+            this.showCursor(tile, pointer.wasTouch);
             if (pointer.isDown) this.paint(tile.x, tile.y);
         } else {
             this.cursorRect.setVisible(false);
@@ -439,7 +479,11 @@ export class MapEditorScene extends Phaser.Scene {
     refreshLabels() {
         const theme = THEMES[this.theme] || THEMES[DEFAULT_THEME];
         this.nameText.setText(`NAME: ${this.mapName}${this.dirty ? ' *' : ''}`);
-        this.themeBtn.setText(`[ THEME: ${theme.name} ]`);
+        const themeLabel = `[ THEME: ${theme.name} ]`;
+        if (this.themeBtn.text !== themeLabel) {
+            this.themeBtn.setText(themeLabel);
+            if (this.touch) relayoutTapTargets(this);
+        }
         this.sizeText.setText(`size: ${this.cols} x ${this.rows}`);
         const saved = customMapIndex(this.mapName) !== -1;
         this.savedText.setText(saved
@@ -645,6 +689,8 @@ export class MapEditorScene extends Phaser.Scene {
         for (const obj of this.modal.objects) obj.destroy();
         this.modal = null;
         this.menuNav.setActive(true);
+        // The grown buttons wait out a modal unlaid (TouchMenu); lay them out now.
+        if (this.touch) relayoutTapTargets(this);
     }
 
     // ============ NAME FIELD (DOM overlay) ============
@@ -791,5 +837,6 @@ export class MapEditorScene extends Phaser.Scene {
         this.destroyOverlay();
         this.input.off('pointerdown', this.onPointerPaint, this);
         this.input.off('pointermove', this.onPointerMove, this);
+        this.input.off('pointerup', this.onPointerUp, this);
     }
 }

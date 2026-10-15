@@ -245,6 +245,12 @@ export const TOUCH_CONFIG = {
     // W-10 cap, so a row must leave menuMinCss / scale between centres: 96
     // game px on a 568x320 phone (scale ~0.46), which both rows clear.
     wardrobe: { robeSpacing: 130, staffSpacing: 150 },
+    // Map editor by finger (holiday W-28): while a finger is down the
+    // cursor ring draws cursorScale tiles wide in cursorStroke (cursorStrokeW
+    // game px) so the tile being painted shows around the fingertip.
+    // fingerOffsetCss paints that many CSS px above the touch point instead
+    // of under it: 0 (the default ruling) paints under the finger.
+    editor: { fingerOffsetCss: 0, cursorScale: 2, cursorStroke: 0x00ffff, cursorStrokeW: 3 },
     // Full screen in the phone browser (holiday W-15): the [ FULL SCREEN ]
     // toggle in the top-right corner of the menu and the pause screen (game
     // px, centre; room for the longer [ EXIT FULL SCREEN ] label).
