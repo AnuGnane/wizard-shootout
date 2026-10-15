@@ -310,6 +310,16 @@ export const TOUCH_CONFIG = {
     // has focus and the on-screen keyboard would cover it, its overlay is
     // lifted until the field's bottom is this many CSS px above the keyboard.
     keyboardMarginCss: 8,
+    // Modes that need a second device (holiday W-25): on a touch device with
+    // no gamepad connected, the first tap on 2P, PARTY or survival DUO shows
+    // this note (at hudMinCss CSS px, and never below minFontPx game px);
+    // a second tap within windowMs goes on.
+    secondDeviceNote: {
+        text: 'needs a keyboard or gamepads for the other seats - tap again to go on',
+        windowMs: 4000,
+        minFontPx: 14,
+        fill: '#ffdd44',
+    },
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers
