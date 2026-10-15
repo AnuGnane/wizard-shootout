@@ -56,6 +56,9 @@
 //   3t. on that phone with no pad, the first tap on PARTY or survival DUO
 //      shows a second-device note and the second goes on; with a pad, on
 //      SOLO, 1P and a desktop the first goes on (W-25),
+//   3u. on that phone the Settings sliders' [-]/[+] take a tap inside their
+//      grown hit areas, stop at the ends, step from the keyboard on the
+//      focused row, and nothing overlaps or moves at 568x320 either (W-26),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -2150,6 +2153,128 @@ try {
                 && second && second.cls && second.mode === 'party'
                 && duo1.cls && duo1.duo === null && duo1.note && duo2 && solo && onep && padded && deskOn,
             `first=${JSON.stringify(first)} second=${JSON.stringify(second)} duo1=${JSON.stringify(duo1)} duo2=${duo2} solo=${solo} 1p=${onep} pad=${padded} desktop=${deskOn}`);
+    }
+
+    // 3u. Settings sliders by tap and pad (holiday W-26): on an 844x390
+    // touch viewport, a tap inside Burn Duration's grown [+] hit area but
+    // off its glyph steps the value up once; [-] tapped past the minimum
+    // stays there; with the keyboard, focusing the row and pressing right
+    // steps it up, left down; at 844x390 and 568x320 no two grown hit areas
+    // intersect, and no label or glyph sits anywhere but where the desktop
+    // draws it.
+    {
+        // Every interactive object's hit rect and frame, plus Burn's row.
+        const layout = (pg) => pg.evaluate(() => {
+            const s = window.__game.scene.getScene('SettingsScene');
+            const rect = (o) => {
+                const h = o.input.hitArea;
+                const m = o.getWorldTransformMatrix();
+                const sx = Math.hypot(m.a, m.b), sy = Math.hypot(m.c, m.d);
+                const x0 = m.tx + (h.x - o.displayOriginX) * sx, y0 = m.ty + (h.y - o.displayOriginY) * sy;
+                return { x0, y0, x1: x0 + h.width * sx, y1: y0 + h.height * sy };
+            };
+            const live = s.children.list.filter((o) => o.input && o.input.enabled && o.visible
+                && o.input.hitArea && o.input.hitArea.width !== undefined);
+            const frames = s.children.list.filter((o) => o.type === 'Text').map((o) => `${o.text}@${Math.round(o.x)},${Math.round(o.y)}`);
+            const hits = live.map((o) => ({ t: o.text, r: rect(o) }));
+            const bad = [];
+            for (let i = 0; i < hits.length; i++) for (let j = i + 1; j < hits.length; j++) {
+                const a = hits[i].r, b = hits[j].r;
+                if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) bad.push(`${hits[i].t}/${hits[j].t}@${Math.round(a.y0)}`);
+            }
+            return { frames, bad, n: hits.length };
+        });
+        const toSettings = async (pg) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(250); // the first frame's tap-target layout
+        };
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('sliders desktop pageerror: ' + e.message));
+        await toSettings(desk);
+        const deskLayout = await layout(desk);
+        await desk.close();
+
+        const out = {};
+        for (const vp of [{ width: 844, height: 390 }, { width: 568, height: 320 }]) {
+            const size = `${vp.width}x${vp.height}`;
+            const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+            const phone = await ctx.newPage();
+            phone.on('pageerror', (e) => errors.push(`sliders ${size} pageerror: ` + e.message));
+            phone.on('console', (m) => { if (m.type() === 'error') errors.push(`sliders ${size} console.error: ` + m.text()); });
+            const cdp = await ctx.newCDPSession(phone);
+            await toSettings(phone);
+            const lay = await layout(phone);
+            // The phone-only VIBRATION row (W-14) has no desktop twin; every
+            // other text must sit exactly where the desktop draws it.
+            const yOf = (f) => f.slice(f.lastIndexOf(',') + 1);
+            const vib = lay.frames.find((f) => f.startsWith('Vibration'));
+            const phoneOnly = (f) => f.startsWith('PHONE@') || (!!vib && yOf(f) === yOf(vib));
+            const r = { bad: lay.bad, moved: lay.frames.filter((f) => !phoneOnly(f) && !deskLayout.frames.includes(f)) };
+            if (vp.width === 844) {
+                // Burn Duration's row: its [-]/[+] and value, and a point
+                // inside [+]'s hit area that is off the glyph.
+                const row = () => phone.evaluate(() => {
+                    const s = window.__game.scene.getScene('SettingsScene');
+                    const texts = s.children.list.filter((o) => o.type === 'Text');
+                    const label = texts.find((o) => o.text.startsWith('Burn Duration'));
+                    const same = texts.filter((o) => Math.abs(o.y - label.y) < 1 && o.x > label.x);
+                    const plus = same.find((o) => o.text === '[+]'), minus = same.find((o) => o.text === '[-]');
+                    const value = same.find((o) => o !== plus && o !== minus);
+                    const c = window.__game.canvas.getBoundingClientRect();
+                    const k = c.width / 1024;
+                    const css = (o, off) => {
+                        const h = o.input.hitArea, g = o.getBounds();
+                        const x0 = o.x + h.x, y0 = o.y + h.y;
+                        // Half-way between the glyph's top and the hit area's top, or its bottom.
+                        const up = g.top - y0, down = (y0 + h.height) - g.bottom;
+                        const y = up >= down ? (y0 + g.top) / 2 : (g.bottom + y0 + h.height) / 2;
+                        return { x: c.left + (x0 + h.width / 2) * k, y: c.top + y * k, offGlyph: Math.max(up, down) * k, w: h.width * k, h: h.height * k };
+                    };
+                    return { value: value.text, plus: css(plus), minus: css(minus) };
+                });
+                const tapAt = async (p) => {
+                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] });
+                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+                    await phone.waitForTimeout(60);
+                };
+                const before = await row();
+                await tapAt(before.plus);
+                const afterPlus = (await row()).value;
+                for (let i = 0; i < 16; i++) await tapAt(before.minus);
+                const atMin = (await row()).value;
+                await tapAt(before.minus);
+                const stays = (await row()).value;
+                // Keyboard: focus Burn's row, right once, then left once.
+                const keyed = await phone.evaluate(() => {
+                    const s = window.__game.scene.getScene('SettingsScene');
+                    const nav = s.menuNav;
+                    const i = nav.items.findIndex((it) => it.gameObject.text && it.gameObject.text.startsWith('Burn Duration'));
+                    nav.setFocus(i);
+                    return i;
+                });
+                const valueNow = async () => (await row()).value;
+                await phone.keyboard.press('ArrowRight');
+                const right = await valueNow();
+                await phone.keyboard.press('ArrowLeft');
+                const left = await valueNow();
+                Object.assign(r, { before: before.value, afterPlus, atMin, stays, keyed, right, left,
+                    offGlyph: Math.round(before.plus.offGlyph), plusCss: `${Math.round(before.plus.w)}x${Math.round(before.plus.h)}`,
+                    plusMin: Math.min(before.plus.w, before.plus.h) >= TOUCH_CONFIG.menuMinCss - 0.5 });
+            }
+            out[size] = r;
+            await ctx.close();
+        }
+        const a = out['844x390'], b = out['568x320'];
+        check('settings sliders: a tap off the [+] glyph inside its grown hit area steps once, [-] stops at the minimum, keyboard right/left step the focused row',
+            a.before === '4.0' && a.afterPlus === '4.5' && a.atMin === '1.0' && a.stays === '1.0' && a.offGlyph > 2 && a.plusMin
+                && a.keyed >= 0 && a.right === '1.5' && a.left === '1.0',
+            JSON.stringify(a));
+        check('settings sliders: no two hit areas intersect and nothing moved from the desktop layout (844x390, 568x320)',
+            !a.bad.length && !b.bad.length && !a.moved.length && !b.moved.length,
+            `844: bad=${a.bad.join(',') || 'none'} moved=${a.moved.join(',') || 'none'}; 568: bad=${b.bad.join(',') || 'none'} moved=${b.moved.join(',') || 'none'}`);
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)

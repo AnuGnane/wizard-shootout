@@ -86,9 +86,10 @@ export class SettingsScene extends Phaser.Scene {
         this.controls = [];
 
         // Phase 8 — keyboard/pad focus nav over every toggle + the Save/
-        // Controls/Back buttons (sliders stay mouse/touch-only for now, see
-        // ROADMAP follow-ups). Created before addToggle()/buttons below run,
-        // since they register themselves as items as they're built.
+        // Controls/Back buttons, and (holiday W-26) every slider row, whose
+        // value left/right step. Created before addToggle()/addSlider()/
+        // buttons below run, since they register themselves as items as
+        // they're built.
         this.menuNav = new MenuNav(this, { onBack: () => this.goToMenu() });
 
         // === LEFT COLUMN ===
@@ -264,7 +265,7 @@ export class SettingsScene extends Phaser.Scene {
     }
 
     addSlider(label, key, min, max, step, formatter = (v) => v) {
-        this.add.text(this.colX + 20, this.yPos, `${label}: `, {
+        const labelText = this.add.text(this.colX + 20, this.yPos, `${label}: `, {
             font: '14px monospace',
             fill: '#aaaacc',
         });
@@ -284,17 +285,20 @@ export class SettingsScene extends Phaser.Scene {
             fill: '#66ff66',
         }).setInteractive({ useHandCursor: true });
 
-        minus.on('pointerdown', () => {
+        const doStep = (dir) => {
             audio.uiClick();
-            this.settings[key] = Math.max(min, Math.round((this.settings[key] - step) * 100) / 100);
+            const next = Math.round((this.settings[key] + dir * step) * 100) / 100;
+            this.settings[key] = Math.min(max, Math.max(min, next));
             valueText.setText(`${formatter(this.settings[key])}`);
-        });
-
-        plus.on('pointerdown', () => {
-            audio.uiClick();
-            this.settings[key] = Math.min(max, Math.round((this.settings[key] + step) * 100) / 100);
-            valueText.setText(`${formatter(this.settings[key])}`);
-        });
+        };
+        minus.on('pointerdown', () => doStep(-1));
+        plus.on('pointerdown', () => doStep(1));
+        // Holiday W-26: thumb-sized where the rows leave room (the W-10 cap:
+        // never into a neighbour; the glyphs stay as drawn), and the row is
+        // a focus stop whose value left/right step.
+        ensureTapTarget(this, minus);
+        ensureTapTarget(this, plus);
+        this.menuNav.add(labelText, () => {}, { onStep: doStep });
 
         this.controls.push({ key, valueText, formatter });
         this.yPos += 25;

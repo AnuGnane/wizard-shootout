@@ -63,13 +63,14 @@ export class MenuNav {
         scene.events.once('shutdown', () => this.destroy());
     }
 
-    // Registers one focusable item. `gameObject` must support getBounds()
+    // Registers one focusable item. `meta.onStep(+1|-1)`, when given, takes
+    // left/right while the item is focused. `gameObject` must support getBounds()
     // (Text/Rectangle/Image/Container all do). `activate` is called on
     // ENTER/SPACE, gamepad A, or a direct activate() call while this item is
     // focused - pass the exact same function already bound to the object's
     // 'pointerdown' so keyboard/pad and mouse/touch stay in lockstep.
     add(gameObject, activate, meta = {}) {
-        const item = { gameObject, activate, row: meta.row ?? 0, col: meta.col ?? this.items.length };
+        const item = { gameObject, activate, row: meta.row ?? 0, col: meta.col ?? this.items.length, onStep: meta.onStep || null };
         this.items.push(item);
         if (this.index === -1) this.setFocus(0);
         return item;
@@ -94,6 +95,13 @@ export class MenuNav {
 
     moveFocus(dir) {
         if (!this.active || this.items.length === 0) return;
+        // Holiday W-26: left/right on an item with onStep (a Settings
+        // slider row) steps its value instead of moving the focus.
+        const cur = this.items[this.index];
+        if (cur && cur.onStep && (dir === 'left' || dir === 'right')) {
+            cur.onStep(dir === 'right' ? 1 : -1);
+            return;
+        }
         if (this.grid) {
             this.moveFocusGrid(dir);
         } else {
