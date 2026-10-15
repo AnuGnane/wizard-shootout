@@ -53,6 +53,9 @@
 //      buttons away (and the first-round tips, unseen); a tap where FIRE
 //      was fires nothing and brings them back, working; a disconnect while
 //      hidden brings them back too (W-24),
+//   3t. on that phone with no pad, the first tap on PARTY or survival DUO
+//      shows a second-device note and the second goes on; with a pad, on
+//      SOLO, 1P and a desktop the first goes on (W-25),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -543,6 +546,9 @@ try {
         if (!(await reached(() => !window.__game.scene.getScene('MapEditorScene').modal))) failed.push('MapEditor size picker CANCEL');
         await tap('MapEditorScene', '[ BACK ]', M, true);
         for (const mode of ['[ 2 PLAYERS ]', '[ PARTY  3-4 P ]']) {
+            // Holiday W-25: the first tap says the other seats need a
+            // second device (3t); the second goes on.
+            await tap(M, mode, M);
             await tap(M, mode, 'ClassSelectScene');
             await tap('ClassSelectScene', '[ BACK ]', M, true);
         }
@@ -2042,6 +2048,108 @@ try {
                 && hidden2.hidden && !hidden2.anyButton && back2.joy && back2.buttons && !back2.hidden,
             `start=${JSON.stringify(start)} hidden=${JSON.stringify(hidden)} back=${JSON.stringify(back)} fired=${fired.shots} hidden2=${hidden2.hidden} back2=${back2.buttons}`);
         await ctx.close();
+    }
+
+    // 3t. Modes that need a second device (holiday W-25): on an 844x390
+    // touch viewport with no pad, one tap on PARTY stays on the menu with
+    // the note shown at hudMinCss CSS px, a second tap opens ClassSelect in
+    // party mode; DUO on the survival picker does the same; with a stub pad
+    // connected the first PARTY tap goes on; SOLO and 1P never show it; on
+    // a desktop the first PARTY click goes on.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('second-device pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('second-device console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, arg) => phone.waitForFunction(test, arg, { timeout: 5000 }).then(() => true, () => false);
+        const at = (scene, label) => phone.evaluate(([scene, label]) => {
+            const s = window.__game.scene.getScene(scene);
+            const b = s.children.list.find((o) => o.type === 'Text' && o.text === label && o.input).getBounds();
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            return { x: c.left + b.centerX * k, y: c.top + b.centerY * k };
+        }, [scene, label]);
+        const tapLabel = async (scene, label) => {
+            await phone.waitForTimeout(150);
+            const p = await at(scene, label);
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await phone.waitForTimeout(200);
+        };
+        const state = (scene) => phone.evaluate((scene) => {
+            const g = window.__game;
+            const s = g.scene.getScene(scene);
+            const n = s.children.getByName('secondDeviceNote');
+            const k = g.canvas.getBoundingClientRect().width / 1024;
+            return {
+                menu: g.scene.isActive('MenuScene'), cls: g.scene.isActive('ClassSelectScene'),
+                mode: g.scene.getScene('ClassSelectScene').mode, duo: g.scene.getScene('ClassSelectScene').duo,
+                note: !!(n && n.visible && s.sys.isActive()), css: n ? parseFloat(n.style.fontSize) * n.scaleY * k : 0,
+            };
+        }, scene);
+        const toMenu = async () => {
+            await phone.evaluate(() => {
+                const g = window.__game;
+                for (const s of g.scene.getScenes(true)) g.scene.stop(s.scene.key);
+                g.scene.start('MenuScene');
+            });
+            await reached(() => window.__game.scene.isActive('MenuScene'));
+        };
+        await tapLabel('MenuScene', '[ PARTY  3-4 P ]');
+        const first = await state('MenuScene');
+        await tapLabel('MenuScene', '[ PARTY  3-4 P ]');
+        const second = await reached(() => window.__game.scene.isActive('ClassSelectScene')) ? await state('ClassSelectScene') : null;
+        // Survival: SOLO goes on at once; DUO needs a second tap.
+        await toMenu();
+        await tapLabel('MenuScene', '[ SURVIVAL ]');
+        await reached(() => window.__game.scene.isActive('ClassSelectScene'));
+        await tapLabel('ClassSelectScene', '[ DUO ]');
+        const duo1 = await state('ClassSelectScene');
+        await tapLabel('ClassSelectScene', '[ DUO ]');
+        const duo2 = await reached(() => window.__game.scene.getScene('ClassSelectScene').duo === true);
+        await toMenu();
+        await tapLabel('MenuScene', '[ SURVIVAL ]');
+        await reached(() => window.__game.scene.isActive('ClassSelectScene'));
+        await tapLabel('ClassSelectScene', '[ SOLO ]');
+        const solo = await reached(() => window.__game.scene.getScene('ClassSelectScene').duo === false);
+        await toMenu();
+        await tapLabel('MenuScene', '[ 1 PLAYER  vs BOT ]');
+        const onep = await reached(() => window.__game.scene.isActive('ClassSelectScene'));
+        // A pad connected now: the first tap goes on.
+        await toMenu();
+        await phone.evaluate(() => {
+            const plugin = window.__game.scene.getScene('MenuScene').input.gamepad;
+            plugin.getAll = () => [{ id: 'stub pad', index: 0, connected: true }];
+        });
+        await tapLabel('MenuScene', '[ PARTY  3-4 P ]');
+        const padded = await reached(() => window.__game.scene.isActive('ClassSelectScene')
+            && window.__game.scene.getScene('ClassSelectScene').mode === 'party');
+        await ctx.close();
+        // Desktop: the first click goes on.
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('second-device desktop pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await desk.waitForTimeout(150);
+        const dp = await desk.evaluate(() => {
+            const s = window.__game.scene.getScene('MenuScene');
+            const b = s.children.list.find((o) => o.type === 'Text' && o.text === '[ PARTY  3-4 P ]').getBounds();
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            return { x: c.left + b.centerX * k, y: c.top + b.centerY * k };
+        });
+        await desk.mouse.click(dp.x, dp.y);
+        const deskOn = await desk.waitForFunction(() => window.__game.scene.isActive('ClassSelectScene')
+            && window.__game.scene.getScene('ClassSelectScene').mode === 'party', null, { timeout: 5000 }).then(() => true, () => false);
+        await desk.close();
+        check('phone: 2P/PARTY/DUO say they need a second device on the first tap, go on at the second; a pad, SOLO, 1P and a desktop go on at once',
+            first.menu && first.note && first.css >= TOUCH_CONFIG.hudMinCss - 0.01
+                && second && second.cls && second.mode === 'party'
+                && duo1.cls && duo1.duo === null && duo1.note && duo2 && solo && onep && padded && deskOn,
+            `first=${JSON.stringify(first)} second=${JSON.stringify(second)} duo1=${JSON.stringify(duo1)} duo2=${duo2} solo=${solo} 1p=${onep} pad=${padded} desktop=${deskOn}`);
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)

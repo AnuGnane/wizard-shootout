@@ -9,6 +9,7 @@ import { saveSettings } from '../systems/Storage.js';
 import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { addBackButton, backHint } from '../systems/TouchMenu.js';
+import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 
 // Phase 9c: card width is derived from the class count (rather than a flat
 // number) so the row keeps fitting inside the 1024px canvas as classes are
@@ -206,8 +207,12 @@ export class ClassSelectScene extends Phaser.Scene {
             this.scene.restart({ mode: 'survival', duo });
         };
 
+        // Holiday W-25: on a phone with no pad, the first tap on DUO says
+        // seat 2 needs a keyboard or gamepad; a second tap goes on.
+        const secondDevice = secondDeviceGate(this, width / 2, 420);
         this.makeSizeButton(width / 2 - 150, 340, '[ SOLO ]', '1 wizard', () => choose(false));
-        this.makeSizeButton(width / 2 + 150, 340, '[ DUO ]', '2 wizards, co-op', () => choose(true));
+        this.makeSizeButton(width / 2 + 150, 340, '[ DUO ]', '2 wizards, co-op',
+            (pointer) => secondDevice('duo', pointer, () => choose(true)));
 
         this.add.text(width / 2, height - 25, backHint(this, 'ESC - back', 'BACK - top left'), {
             font: '14px monospace',
