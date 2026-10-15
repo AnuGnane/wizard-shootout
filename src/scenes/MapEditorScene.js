@@ -121,6 +121,7 @@ export class MapEditorScene extends Phaser.Scene {
         this.input.on('pointerdown', this.onPointerPaint, this);
         this.input.on('pointermove', this.onPointerMove, this);
         this.input.on('pointerup', this.onPointerUp, this);
+        this.input.on('pointerupoutside', this.onPointerUp, this);
 
         // Start on the smallest arena so there's always a valid document, then
         // immediately offer the size menu (the NEW flow) on top of it.
@@ -373,7 +374,7 @@ export class MapEditorScene extends Phaser.Scene {
         );
     }
 
-    // A finger lifted: its ring goes with it (a mouse keeps hovering).
+    // A finger lifted (on the canvas or off it): its ring goes with it (a mouse keeps hovering).
     onPointerUp(pointer) {
         if (pointer.wasTouch) this.cursorRect.setVisible(false);
     }
@@ -838,5 +839,6 @@ export class MapEditorScene extends Phaser.Scene {
         this.input.off('pointerdown', this.onPointerPaint, this);
         this.input.off('pointermove', this.onPointerMove, this);
         this.input.off('pointerup', this.onPointerUp, this);
+        this.input.off('pointerupoutside', this.onPointerUp, this);
     }
 }
