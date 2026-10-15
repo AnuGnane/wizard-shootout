@@ -8,7 +8,8 @@ import {
 } from '../systems/Cosmetics.js';
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 import { STATS } from '../systems/Stats.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { TOUCH_CONFIG } from '../config.js';
+import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
 
 // Phase 6c — the Wardrobe: preview + equip the seat-1 (blue team) cosmetics.
 // Two rows of swatches (robe base + staff material); unlocked ones are
@@ -80,12 +81,23 @@ export class WardrobeScene extends Phaser.Scene {
 
         this.input.keyboard.once('keydown-ESC', () => this.goBack());
 
+        // On a phone the swatch rings follow the grown hit areas (holiday
+        // W-27), after ensureTapTarget has laid them out: on the first
+        // frame and whenever the canvas rescales.
+        if (isTouchDevice(this)) {
+            const fit = () => this.fitRings();
+            this.events.once('postupdate', fit);
+            this.scale.on('resize', fit);
+            this.events.once('shutdown', () => this.scale.off('resize', fit));
+        }
+
         this.refreshPreview();
         this.refreshHighlights();
     }
 
     buildRow(slot, options, width, yRect) {
-        const spacing = slot === 'robe' ? 130 : 150;
+        const { robeSpacing, staffSpacing } = TOUCH_CONFIG.wardrobe;
+        const spacing = slot === 'robe' ? robeSpacing : staffSpacing;
         const startX = width / 2 - ((options.length - 1) * spacing) / 2;
         options.forEach((option, i) => {
             this.makeSwatch(startX + i * spacing, yRect, slot, option);
@@ -131,9 +143,27 @@ export class WardrobeScene extends Phaser.Scene {
         } else {
             rect.setInteractive({ useHandCursor: true });
             rect.on('pointerdown', () => this.onSwatchClick(slot, option.id));
+            // Thumb-sized on a phone (holiday W-27): the hit area grows to
+            // menuMinCss, capped by its neighbours; the colour stays 54x38.
+            // A desktop keeps the drawn 54x38 hit area.
+            if (isTouchDevice(this)) ensureTapTarget(this, rect);
         }
 
-        this.swatches.push({ slot, id: option.id, border, unlocked });
+        this.swatches.push({ slot, id: option.id, border, unlocked, rect: unlocked ? rect : null });
+    }
+
+    // Size each unlocked swatch's ring to its grown hit area (never smaller
+    // than the desktop's 62x46), so the selected ring shows what a tap hits.
+    fitRings() {
+        for (const sw of this.swatches) {
+            if (!sw.rect || !sw.rect.scene) continue;
+            const h = sw.rect.input.hitArea;
+            const x0 = sw.rect.x - sw.rect.displayOriginX + h.x;
+            const y0 = sw.rect.y - sw.rect.displayOriginY + h.y;
+            const w = Math.max(62, h.width), hh = Math.max(46, h.height);
+            sw.border.setSize(w, hh);
+            sw.border.setPosition(x0 + h.width / 2, y0 + h.height / 2);
+        }
     }
 
     onSwatchClick(slot, id) {

@@ -240,6 +240,11 @@ export const TOUCH_CONFIG = {
     // controls that leave a screen. Grows the hit area only, never the label.
     menuMinCss: 44,
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
+    // Wardrobe swatches (holiday W-27): the game-px spacing of each row's
+    // swatch centres. Each swatch's hit area grows to menuMinCss under the
+    // W-10 cap, so a row must leave menuMinCss / scale between centres: 96
+    // game px on a 568x320 phone (scale ~0.46), which both rows clear.
+    wardrobe: { robeSpacing: 130, staffSpacing: 150 },
     // Full screen in the phone browser (holiday W-15): the [ FULL SCREEN ]
     // toggle in the top-right corner of the menu and the pause screen (game
     // px, centre; room for the longer [ EXIT FULL SCREEN ] label).

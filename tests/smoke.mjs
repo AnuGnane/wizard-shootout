@@ -59,6 +59,9 @@
 //   3u. on that phone the Settings sliders' [-]/[+] take a tap inside their
 //      grown hit areas, stop at the ends, step from the keyboard on the
 //      focused row, and nothing overlaps or moves at 568x320 either (W-26),
+//   3v. on a 568x320 phone a tap at the centre of each Wardrobe swatch
+//      equips that swatch and no other, the grown hit areas never intersect
+//      and the rings match them; on a desktop the swatches are as drawn (W-27),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -2275,6 +2278,88 @@ try {
         check('settings sliders: no two hit areas intersect and nothing moved from the desktop layout (844x390, 568x320)',
             !a.bad.length && !b.bad.length && !a.moved.length && !b.moved.length,
             `844: bad=${a.bad.join(',') || 'none'} moved=${a.moved.join(',') || 'none'}; 568: bad=${b.bad.join(',') || 'none'} moved=${b.moved.join(',') || 'none'}`);
+    }
+
+    // 3v. Holiday W-27: Wardrobe swatches at thumb size. With every swatch
+    // unlocked, on a 568x320 touch phone a tap at the centre of each one
+    // equips it (and leaves the other row as it was), every swatch's hit
+    // area is at least menuMinCss and no two hit areas intersect, and each
+    // ring is the size of its swatch's hit area; on a desktop the swatches
+    // keep their 54x38 hit areas and 62x46 rings.
+    {
+        const toWardrobe = async (pg) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene') && window.__stats, null, { timeout: 20000 });
+            await pg.evaluate(() => {
+                Object.assign(window.__stats, { matchWins: 25, kills: 100, bestStreak: 3, flawlessWins: 1,
+                    matchWinsByClass: Object.fromEntries(Object.keys(window.__stats.matchWinsByClass).map((key) => [key, 1])) });
+                window.__game.scene.getScene('MenuScene').scene.start('WardrobeScene');
+            });
+            await pg.waitForFunction(() => window.__game.scene.isActive('WardrobeScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(250); // the first frame's tap-target layout
+        };
+        const swatches = (pg) => pg.evaluate(() => {
+            const s = window.__game.scene.getScene('WardrobeScene');
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const rect = (o) => {
+                const h = o.input.hitArea;
+                const x0 = o.x - o.displayOriginX + h.x, y0 = o.y - o.displayOriginY + h.y;
+                return { x0, y0, x1: x0 + h.width, y1: y0 + h.height };
+            };
+            const live = s.children.list.filter((o) => o.input && o.input.enabled && o.visible
+                && o.input.hitArea && o.input.hitArea.width !== undefined).map(rect);
+            let bad = 0;
+            for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+                const a = live[i], b = live[j];
+                if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) bad++;
+            }
+            const sw = s.swatches.map((w) => {
+                const r = w.rect ? rect(w.rect) : null;
+                return { slot: w.slot, id: w.id, unlocked: w.unlocked,
+                    tap: w.rect ? { x: c.left + w.rect.x * k, y: c.top + w.rect.y * k } : null,
+                    hitCss: r ? { w: (r.x1 - r.x0) * k, h: (r.y1 - r.y0) * k } : null,
+                    hit: r ? { w: Math.round(r.x1 - r.x0), h: Math.round(r.y1 - r.y0) } : null,
+                    ringFits: r ? Math.abs(w.border.width - Math.max(62, r.x1 - r.x0)) < 0.5
+                        && Math.abs(w.border.height - Math.max(46, r.y1 - r.y0)) < 0.5
+                        && Math.abs(w.border.x - (r.x0 + r.x1) / 2) < 0.5 && Math.abs(w.border.y - (r.y0 + r.y1) / 2) < 0.5 : null,
+                    ring: { w: w.border.width, h: w.border.height } };
+            });
+            return { bad, n: live.length, sw };
+        });
+
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('wardrobe desktop pageerror: ' + e.message));
+        await toWardrobe(desk);
+        const d = await swatches(desk);
+        await desk.close();
+        const deskOk = d.sw.every((w) => w.unlocked && w.hit.w === 54 && w.hit.h === 38 && w.ring.w === 62 && w.ring.h === 46);
+
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('wardrobe 568x320 pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('wardrobe 568x320 console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await toWardrobe(phone);
+        const p = await swatches(phone);
+        const wrong = [];
+        for (const w of p.sw) {
+            const before = await phone.evaluate(() => ({ ...window.__stats.cosmetics }));
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: w.tap.x, y: w.tap.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await phone.waitForTimeout(60);
+            const after = await phone.evaluate(() => ({ ...window.__stats.cosmetics }));
+            const other = w.slot === 'robe' ? 'staff' : 'robe';
+            if (after[w.slot] !== w.id || after[other] !== before[other]) wrong.push(`${w.slot}:${w.id}->${after[w.slot]}`);
+        }
+        await ctx.close();
+        const small = p.sw.filter((w) => Math.min(w.hitCss.w, w.hitCss.h) < TOUCH_CONFIG.menuMinCss - 0.5).map((w) => w.id);
+        const ringsOff = p.sw.filter((w) => !w.ringFits).map((w) => w.id);
+        check('wardrobe: a tap at each swatch centre equips that swatch only, hit areas >= menuMinCss and disjoint, rings follow them (568x320)',
+            p.sw.length === 11 && !wrong.length && !small.length && !p.bad && !ringsOff.length,
+            `${p.sw.length} swatches, hit ${p.sw[0].hit.w}x${p.sw[0].hit.h} game px; wrong=${wrong.join(',') || 'none'} small=${small.join(',') || 'none'} overlaps=${p.bad} rings=${ringsOff.join(',') || 'ok'}`);
+        check('wardrobe: on a desktop the swatches keep their 54x38 hit areas and 62x46 rings',
+            d.sw.length === 11 && deskOk, JSON.stringify(d.sw.slice(0, 2).map((w) => [w.hit, w.ring])));
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)
