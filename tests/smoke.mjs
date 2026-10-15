@@ -2261,14 +2261,15 @@ try {
                 await phone.keyboard.press('ArrowLeft');
                 const left = await valueNow();
                 Object.assign(r, { before: before.value, afterPlus, atMin, stays, keyed, right, left,
-                    offGlyph: Math.round(before.plus.offGlyph), plusCss: `${Math.round(before.plus.w)}x${Math.round(before.plus.h)}` });
+                    offGlyph: Math.round(before.plus.offGlyph), plusCss: `${Math.round(before.plus.w)}x${Math.round(before.plus.h)}`,
+                    plusMin: Math.min(before.plus.w, before.plus.h) >= TOUCH_CONFIG.menuMinCss - 0.5 });
             }
             out[size] = r;
             await ctx.close();
         }
         const a = out['844x390'], b = out['568x320'];
         check('settings sliders: a tap off the [+] glyph inside its grown hit area steps once, [-] stops at the minimum, keyboard right/left step the focused row',
-            a.before === '4.0' && a.afterPlus === '4.5' && a.atMin === '1.0' && a.stays === '1.0' && a.offGlyph > 2
+            a.before === '4.0' && a.afterPlus === '4.5' && a.atMin === '1.0' && a.stays === '1.0' && a.offGlyph > 2 && a.plusMin
                 && a.keyed >= 0 && a.right === '1.5' && a.left === '1.0',
             JSON.stringify(a));
         check('settings sliders: no two hit areas intersect and nothing moved from the desktop layout (844x390, 568x320)',
