@@ -99,4 +99,4 @@ When this queue is empty the slot is free; Anu may point it at `AnuGnane/prospec
 
 Notes from Anu's phone land here, newest last.
 
-- (empty)
+- 2026-10-15: **go** for v1.0. Anu's word, relayed from the orchestrator session; W-18 is unblocked. (Not a playtest note.)
