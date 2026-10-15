@@ -226,6 +226,27 @@ export const APP_UPDATE_CONFIG = {
     },
 };
 
+// Holiday W-29 — the phone's share sheet (systems/Share.js). Where the
+// browser has navigator.share, the Online host screen and the Daily result
+// card share one line of text; {code}, {date}, {result}, {score}, {best} and
+// {url} (the game's own address) are filled in. Without navigator.share the
+// Daily button copies the same line. dailyButton is the Daily card's button
+// (game px, centre; right of REMATCH, which spans about 395 to 630).
+export const SHARE_CONFIG = {
+    title: 'Wizard Shootout',
+    room: 'Join my Wizard Shootout match - code {code} - {url}',
+    daily: 'Wizard Shootout daily {date}: {result} {score} - {best} - {url}',
+    dailyBest: 'best today {n} rounds',
+    dailyNoBest: 'not beaten yet today',
+    shareLabel: '[ SHARE ]',
+    copyLabel: '[ COPY RESULT ]',
+    dailyButton: {
+        x: 800, y: 470,
+        font: '18px monospace', padding: { x: 14, y: 8 },
+        fill: '#ffffff', hover: '#66ccff', bg: '#2a4d66',
+    },
+};
+
 // Phase 6e / holiday W-4 — on-screen touch controls (1P mode on a touch
 // device; see systems/TouchControls.js). Sizes are minimums in CSS pixels, so
 // the controls stay thumb-sized however far Phaser's FIT scaling shrinks the
