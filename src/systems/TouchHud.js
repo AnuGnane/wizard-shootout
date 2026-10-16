@@ -240,9 +240,8 @@ export class TouchHud {
         // The run clock ends just left of ORB, a FIRE-ORB gap away (W-8).
         const btns = s.touchControls && s.touchControls.buttons;
         if (btns && s.roundText) {
-            const orb = btns.runeShoot;
-            const g = (btns.shoot.x - btns.shoot.radius) - (orb.x + orb.radius);
-            s.roundText.setOrigin(1, 0.5).setPosition(orb.x - orb.radius - g, H - 15);
+            const a = s.touchControls.clockAnchor();
+            s.roundText.setOrigin(a.originX, 0.5).setPosition(a.x, H - 15);
         }
 
         s.updateSurvivalUI();

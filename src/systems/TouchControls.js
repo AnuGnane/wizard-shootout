@@ -26,6 +26,11 @@
 // stays. The next touch on the canvas outside the pause button, or the pad
 // disconnecting, brings them back (the player's latest input wins); that
 // touch only brings them back and fires nothing.
+//
+// Holiday W-32 (left-handed layout): `opts.mirrored` mirrors the layout left
+// to right, so the joystick sits bottom-right and floats on the right half,
+// and FIRE sits bottom-left with ORB to its right and PWR above it. Every x
+// is derived from the right-handed one through _mx(); the pause stays put.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -56,6 +61,7 @@ export class TouchControls {
         this.scene = scene;
         this.onPause = opts.onPause || null;
         this.onHiddenChange = opts.onHiddenChange || null;
+        this.mirrored = !!opts.mirrored;
         this._destroyed = false;
         // Holiday W-24: true while a gamepad has put the controls away.
         this.hidden = false;
@@ -258,9 +264,27 @@ export class TouchControls {
         return k > 0 ? k : 1;
     }
 
+    // Holiday W-32: an x laid out for the right-handed layout, mirrored when
+    // the left-handed one is on.
+    _mx(x) {
+        return this.mirrored ? GAME_CONFIG.width - x : x;
+    }
+
+    // Where the survival run clock goes (W-8): beside ORB on the side away
+    // from FIRE, as far from it as ORB is from FIRE. originX is the text's.
+    clockAnchor() {
+        const orb = this.buttons.runeShoot;
+        const fire = this.buttons.shoot;
+        const gap = Math.abs(fire.x - orb.x) - fire.radius - orb.radius;
+        return this.mirrored
+            ? { x: orb.x + orb.radius + gap, originX: 0 }
+            : { x: orb.x - orb.radius - gap, originX: 1 };
+    }
+
     // Size every control to its CSS minimum at the current scale and anchor
     // it to the canvas corners: joystick bottom-left, FIRE bottom-right with
-    // ORB to its left and PWR above it, all inside the thumb arcs.
+    // ORB to its left and PWR above it, all inside the thumb arcs (mirrored
+    // for the left-handed layout).
     _layout() {
         if (this._destroyed) return;
         const k = this._cssPerGamePx();
@@ -272,7 +296,7 @@ export class TouchControls {
 
         const jr = radius(TOUCH_CONFIG.joystick);
         this.joy.radius = jr;
-        this.joy.homeX = margin + jr;
+        this.joy.homeX = this._mx(margin + jr);
         this.joy.homeY = H - margin - jr;
         this.joyBaseGfx.setRadius(jr);
         this.joyThumbGfx.setRadius(jr * 0.48);
@@ -280,13 +304,14 @@ export class TouchControls {
 
         const fr = radius(TOUCH_CONFIG.fire);
         const sr = radius(TOUCH_CONFIG.small);
-        const fire = { x: W - margin - fr, y: H - margin - fr, radius: fr };
+        const fireX = W - margin - fr;
+        const fire = { x: this._mx(fireX), y: H - margin - fr, radius: fr };
         this.buttons = {
             shoot: fire,
-            // Bottom-aligned with FIRE, to its left.
-            runeShoot: { x: fire.x - fr - gap - sr, y: H - margin - sr, radius: sr },
-            // Right-aligned with FIRE, above it.
-            ability: { x: W - margin - sr, y: fire.y - fr - gap - sr, radius: sr },
+            // Bottom-aligned with FIRE, on its inner side.
+            runeShoot: { x: this._mx(fireX - fr - gap - sr), y: H - margin - sr, radius: sr },
+            // Outer-edge-aligned with FIRE, above it.
+            ability: { x: this._mx(W - margin - sr), y: fire.y - fr - gap - sr, radius: sr },
         };
         const labelScale = Math.max(1, (sr / TOUCH_CONFIG.small.radius) * 0.8);
         for (const btn of BUTTONS) {
@@ -357,7 +382,7 @@ export class TouchControls {
         if (this._dist(x, y, homeX, homeY) <= radius * 1.25) {
             this.joyPointerId = pointer.id;
             this._updateJoystick(pointer);
-        } else if (x <= GAME_CONFIG.width * zone.maxX && y >= zone.minY) {
+        } else if (this._mx(x) <= GAME_CONFIG.width * zone.maxX && y >= zone.minY) {
             this.joyPointerId = pointer.id;
             this._placeJoystick(
                 Math.min(Math.max(x, radius), GAME_CONFIG.width - radius),

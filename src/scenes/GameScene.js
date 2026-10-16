@@ -305,6 +305,7 @@ export class GameScene extends Phaser.Scene {
     addTouchControls() {
         this.touchControls = new TouchControls(this, {
             onPause: () => this.openPause(),
+            mirrored: RUNTIME_SETTINGS.touchLayout === 'left',
             // Holiday W-24: tips go with controls a gamepad puts away, unseen,
             // and come back with them.
             onHiddenChange: (hidden) => {
@@ -1358,17 +1359,15 @@ export class GameScene extends Phaser.Scene {
             // corner, so the run clock ends just left of ORB instead, clear
             // of the buttons and as far from the key hint as it can be.
             // (The gap is the one TouchControls leaves between ORB and FIRE.)
-            const btns = this.touchControls && this.touchControls.buttons;
-            let clockX = GAME_CONFIG.width - 14;
-            if (btns) {
-                const orb = btns.runeShoot;
-                const gap = (btns.shoot.x - btns.shoot.radius) - (orb.x + orb.radius);
-                clockX = orb.x - orb.radius - gap;
-            }
-            this.roundText = this.add.text(clockX, GAME_CONFIG.height - 15, '', {
+            // Holiday W-32: beside ORB on the side away from FIRE, which is
+            // the right of it in the left-handed layout.
+            const clock = this.touchControls
+                ? this.touchControls.clockAnchor()
+                : { x: GAME_CONFIG.width - 14, originX: 1 };
+            this.roundText = this.add.text(clock.x, GAME_CONFIG.height - 15, '', {
                 font: '12px monospace',
                 fill: '#8888aa',
-            }).setOrigin(1, 0.5).setDepth(11);
+            }).setOrigin(clock.originX, 0.5).setDepth(11);
         } else if (MATCH_STATE.playerCount <= 2) {
             // Shoot/orb-shot/ability read the live rebindable bindings (see
             // systems/KeyBindings.js) so a rebind shows up here immediately;

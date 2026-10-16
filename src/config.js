@@ -404,6 +404,9 @@ export const TOUCH_CONFIG = {
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers
     // A touch in the left part of the canvas (below the top bar) drops the
     // joystick under the thumb instead of making the thumb find a fixed spot.
+    // Holiday W-32: Settings' TOUCH LAYOUT choices; 'left' mirrors the
+    // controls (joystick right, FIRE/ORB/PWR left). First is the default.
+    layouts: ['right', 'left'],
     floatZone: { maxX: 0.5, minY: 80 }, // minY clears the pause button's hit area on a phone
     // Portrait on a phone: the page shows a rotate prompt (index.html mirrors
     // this query in CSS) and a running round pauses.
