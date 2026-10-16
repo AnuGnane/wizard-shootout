@@ -328,6 +328,15 @@ export const TOUCH_CONFIG = {
         font: '16px monospace', padding: { x: 14, y: 6 },
         fill: '#8899cc', hover: '#aaccff', bg: '#1a1a2e',
     },
+    // Holiday W-34: [ INSTALL ] on the main menu, under the full-screen
+    // toggle, where the browser offered beforeinstallprompt (Android Chrome);
+    // far enough below it that both hit areas reach menuMinCss on a phone,
+    // and right of the red wizard.
+    installButton: {
+        x: 950, y: 112, label: '[ INSTALL ]',
+        font: '16px monospace', padding: { x: 14, y: 6 },
+        fill: '#8899cc', hover: '#aaccff', bg: '#1a1a2e',
+    },
     // In-round HUD on a phone (holiday W-13): the smallest HUD text, in CSS
     // px, in the modes that get touch controls; labels shorten before any
     // text goes below it. hudGap (game px) between HUD neighbours, hudBarW

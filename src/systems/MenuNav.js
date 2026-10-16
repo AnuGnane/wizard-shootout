@@ -76,6 +76,17 @@ export class MenuNav {
         return item;
     }
 
+    // Drops an item added with add() (a button that hides itself, holiday
+    // W-34); focus stays on the item it was on, or moves to the next one.
+    remove(gameObject) {
+        const i = this.items.findIndex((it) => it.gameObject === gameObject);
+        if (i === -1) return;
+        this.items.splice(i, 1);
+        if (this.index > i || this.index >= this.items.length) this.index -= 1;
+        if (this.index >= 0) this.refresh();
+        else this.highlight.setVisible(false);
+    }
+
     setFocus(i) {
         if (i < 0 || i >= this.items.length) return;
         this.index = i;

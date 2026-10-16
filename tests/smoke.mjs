@@ -1513,6 +1513,81 @@ try {
         await desk.close();
     }
 
+    // 3l2. An install button where the browser offers one (holiday W-34): on
+    // an 844x390 touch viewport a synthetic beforeinstallprompt (a stubbed
+    // prompt() that resolves accepted) raises [ INSTALL ] on the menu, at
+    // least 44 CSS px; a tap calls prompt() once, from the release, and the
+    // button goes. As the installed app ((display-mode: standalone) stubbed
+    // by matchMedia) the event raises no button, nor on the desktop page.
+    {
+        const offer = () => {
+            const e = new CustomEvent('beforeinstallprompt', { cancelable: true });
+            window.__installCalls = [];
+            e.prompt = () => { window.__installCalls.push(window.event ? window.event.type : null); return Promise.resolve({ outcome: 'accepted' }); };
+            window.dispatchEvent(e);
+            return e.defaultPrevented;
+        };
+        const button = (page) => page.evaluate(() => {
+            const b = window.__game.scene.getScene('MenuScene').children.list.find((o) => o.name === 'installButton');
+            if (!b || !b.active) return null;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const r = b.getBounds();
+            const h = b.input.hitArea;
+            return { text: b.text, x: c.left + r.centerX * k, y: c.top + r.centerY * k, w: h.width * k, h: h.height * k };
+        });
+        const boot = async (ctx, name) => {
+            const page = await ctx.newPage();
+            page.on('pageerror', (e) => errors.push(name + ' pageerror: ' + e.message));
+            page.on('console', (m) => { if (m.type() === 'error') errors.push(name + ' console.error: ' + m.text()); });
+            await page.goto(url, { waitUntil: 'networkidle' });
+            await page.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await page.waitForTimeout(150);
+            return page;
+        };
+
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await boot(ctx, 'phone-install');
+        const cdp = await ctx.newCDPSession(phone);
+        const none = await button(phone);
+        const prevented = await phone.evaluate(offer);
+        await phone.waitForTimeout(100);
+        const shown = await button(phone);
+        if (shown) {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: shown.x, y: shown.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        }
+        await phone.waitForTimeout(150);
+        const calls = await phone.evaluate(() => window.__installCalls);
+        const gone = !(await button(phone));
+        check('phone install: beforeinstallprompt raises [ INSTALL ]; a tap calls prompt() once from the release and hides it',
+            !none && prevented && shown?.text === '[ INSTALL ]' && Math.min(shown.w, shown.h) >= 43.5
+                && calls.length === 1 && ['touchend', 'pointerup'].includes(calls[0]) && gone,
+            `before=${!!none} prevented=${prevented} button=${JSON.stringify(shown)} calls=${JSON.stringify(calls)} gone=${gone}`);
+        await ctx.close();
+
+        const app = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await app.addInitScript(() => {
+            const mm = window.matchMedia.bind(window);
+            window.matchMedia = (q) => (q === '(display-mode: standalone)'
+                ? { matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }
+                : mm(q));
+        });
+        const installed = await boot(app, 'phone-installed');
+        await installed.evaluate(offer);
+        await installed.waitForTimeout(100);
+        const appBtn = await button(installed);
+        await app.close();
+
+        const desk = await boot(browser, 'desktop-install');
+        await desk.evaluate(offer);
+        await desk.waitForTimeout(100);
+        const deskBtn = await button(desk);
+        await desk.close();
+        check('install: no [ INSTALL ] in the installed app or on the desktop page', !appBtn && !deskBtn,
+            `installed app=${!!appBtn} desktop=${!!deskBtn}`);
+    }
+
     // 3m. First-round touch tips (holiday W-16): on an 844x390 touch
     // viewport with fresh storage, a bot round shows the five tips, each at
     // least TOUCH_CONFIG.hudMinCss CSS px and clear of the touch controls and
