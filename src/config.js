@@ -247,6 +247,31 @@ export const SHARE_CONFIG = {
     },
 };
 
+// Holiday W-31 — effect levels (systems/Effects.js). `full` is how the game
+// has always drawn; `lite` draws fewer death shards, dash sparks and blink
+// dots, no idle staff sparkles, a sparser and shorter projectile trail, a
+// smaller screen shake (still only when the Screen Shake setting is on) and
+// a coarser fog of war (FOG_CONFIG's recompute interval and ray samples,
+// scaled). Settings' EFFECTS row picks FULL / LITE / AUTO; under AUTO a round
+// measures its frame time over `auto.windowMs` (after `auto.skipMs` of
+// start-up frames) and goes lite for the rest of the round when the average
+// exceeds `auto.frameMs` (25 ms is below 40 fps). Never back mid-round.
+export const FX_CONFIG = {
+    full: {
+        deathShards: 14, dashSparks: 6, blinkDots: 8, idleSparkles: true,
+        trailEveryMs: 35, trailFadeMs: 120,
+        shakeScale: 1, fogRecomputeScale: 1, fogSamplesScale: 1,
+    },
+    lite: {
+        deathShards: 5, dashSparks: 2, blinkDots: 3, idleSparkles: false,
+        trailEveryMs: 70, trailFadeMs: 80,
+        shakeScale: 0.5, fogRecomputeScale: 2, fogSamplesScale: 0.5,
+    },
+    auto: { skipMs: 500, windowMs: 2000, frameMs: 25, maxFrameMs: 100 },
+    levels: ['auto', 'full', 'lite'],   // Settings cycles in this order
+    pauseNote: 'EFFECTS: LITE (auto)',
+};
+
 // Holiday W-30 — the human balance tally (Stats.js `balanceTally`, the
 // BALANCE block on StatsScene). Only 1P matches against this bot difficulty
 // count, since the self-play harness band (docs/balance.md) was measured

@@ -3,6 +3,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
 import { addFullscreenToggle } from '../systems/Fullscreen.js';
+import { FX_CONFIG } from '../config.js';
 
 // Launched (not started) on top of a paused GameScene, so the arena stays
 // visible behind the dark overlay. See MenuScene.makeButton for the button
@@ -22,6 +23,15 @@ export class PauseScene extends Phaser.Scene {
             font: 'bold 48px monospace',
             fill: '#ffffff',
         }).setOrigin(0.5).setDepth(101).setStroke('#000000', 6);
+
+        // Holiday W-31: say so when AUTO turned this round's effects lite.
+        const game = this.scene.get('GameScene');
+        if (game && game.fxAutoLite) {
+            this.fxNote = this.add.text(width / 2, height / 2 - 100, FX_CONFIG.pauseNote, {
+                font: 'bold 18px monospace',
+                fill: '#ffcc66',
+            }).setOrigin(0.5).setDepth(101).setStroke('#000000', 4);
+        }
 
         // Phase 8 — focus nav over the three buttons; ESC/pad B resumes,
         // same as the dedicated ESC shortcut this replaces (both routed

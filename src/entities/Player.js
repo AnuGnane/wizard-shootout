@@ -9,6 +9,7 @@ import { resolveColors } from '../systems/Cosmetics.js';
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 import { getTeamColors } from '../systems/TeamColors.js';
 import { getBindings } from '../systems/KeyBindings.js';
+import { fx } from '../systems/Effects.js';
 
 // Reads the real keyboard for a given player's control scheme.
 // Exposes the same getState() interface as AIController so Player
@@ -468,8 +469,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     spawnDashSpark(x, y) {
-        for (let i = 0; i < 6; i++) {
-            const a = (i / 6) * Math.PI * 2;
+        const n = fx(this.scene).dashSparks;
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2;
             const spark = this.scene.add.circle(x, y, 3, 0xffff66, 0.9);
             spark.setDepth(30);
             this.scene.tweens.add({
@@ -518,7 +520,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
             if (time >= this.nextSparkleAt) {
                 this.nextSparkleAt = time + Phaser.Math.Between(500, 900);
-                this.spawnIdleSparkle();
+                if (fx(this.scene).idleSparkles) this.spawnIdleSparkle();
             }
         }
     }
@@ -894,8 +896,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
             onComplete: () => ring.destroy(),
         });
 
-        for (let i = 0; i < 14; i++) {
-            const angle = (i / 14) * Math.PI * 2 + Math.random() * 0.4;
+        const shards = fx(this.scene).deathShards;
+        for (let i = 0; i < shards; i++) {
+            const angle = (i / shards) * Math.PI * 2 + Math.random() * 0.4;
             const dist = 40 + Math.random() * 40;
             const particle = this.scene.add.rectangle(
                 this.x, this.y,
