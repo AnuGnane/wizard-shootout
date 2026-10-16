@@ -30,7 +30,7 @@ cheapest model tier that can do it well.
 - [x] `[S]` Scale-to-fit: Phaser Scale.FIT + autoCenter — fills any screen, no clipping
 - [x] `[S]` Pause menu on ESC: resume / restart round / quit to menu (physics + timers pause)
 - [x] `[S]` localStorage persistence: settings, sound, bot difficulty survive refresh
-- [ ] `[F]` Enable GitHub Pages in repo settings (manual, one-time — Settings → Pages → Source: GitHub Actions)
+- [x] `[F]` Enable GitHub Pages in repo settings (manual, one-time — Settings → Pages → Source: GitHub Actions) — done: the "Deploy to GitHub Pages" workflow (`.github/workflows/deploy.yml`) has deployed every merge since holiday W-1, and `curl -sI https://anugnane.github.io/wizard-shootout/` answers `HTTP/2 200` (checked 2026-10-16; holiday W-33)
 
 ## Phase 2 — Feel Pass (combat readability)
 
