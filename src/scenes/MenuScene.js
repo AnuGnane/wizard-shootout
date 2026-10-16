@@ -7,6 +7,7 @@ import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { addFullscreenToggle, fullscreenOffer } from '../systems/Fullscreen.js';
 import { addUpdateButton, addVersionText } from '../systems/AppUpdate.js';
+import { addInstallButton } from '../systems/InstallPrompt.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 
 export class MenuScene extends Phaser.Scene {
@@ -243,6 +244,9 @@ export class MenuScene extends Phaser.Scene {
         // button once a newer deploy's service worker has taken over.
         addVersionText(this);
         addUpdateButton(this, this.menuNav);
+        // Holiday W-34: [ INSTALL ] under the full-screen toggle where the
+        // browser offered an install (Android Chrome, not yet installed).
+        addInstallButton(this, this.menuNav);
 
         this.input.keyboard.on('keydown-ONE', () => this.startGame('1p'));
         this.input.keyboard.on('keydown-TWO', () => this.startGame('2p'));

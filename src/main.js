@@ -16,6 +16,7 @@ import { OnlineScene } from './scenes/OnlineScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { installBackButton } from './systems/BackButton.js';
 import { watchForUpdates } from './systems/AppUpdate.js';
+import { watchInstallPrompt } from './systems/InstallPrompt.js';
 import { loadSettings } from './systems/Storage.js';
 import { loadCustomMaps } from './systems/CustomMaps.js';
 import { MATCH_STATE } from './systems/MatchState.js';
@@ -32,6 +33,10 @@ loadSettings(RUNTIME_SETTINGS);
 loadCustomMaps();
 audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
 audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
+
+// Holiday W-34: keep the browser's install offer; it can fire before any
+// scene exists, so the listener goes in before the game boots.
+watchInstallPrompt();
 
 const config = {
     type: Phaser.AUTO,
