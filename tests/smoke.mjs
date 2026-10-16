@@ -2627,6 +2627,91 @@ try {
         await ctx.close();
     }
 
+    // 3z. Holiday W-31: lite effects. Settings' EFFECTS row cycles
+    // AUTO -> FULL -> LITE and saves; with EFFECTS on LITE one death spawns
+    // fewer shards than on FULL, by FX_CONFIG's ratio; under AUTO a window of
+    // 40 ms frames turns the round lite and the pause screen says so, while
+    // 16 ms frames leave it full.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 1024, height: 700 } });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('fx pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene') && window.__fx, null, { timeout: 20000 });
+        await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+        await pg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+        const row = await pg.evaluate(() => {
+            const s = window.__game.scene.getScene('SettingsScene');
+            const c = s.controls.find((x) => x.key === 'effects');
+            if (!c) return null;
+            const seen = [c.choice.text];
+            c.choice.emit('pointerdown'); seen.push(c.choice.text);
+            c.choice.emit('pointerdown'); seen.push(c.choice.text);
+            s.applySettings();
+            const saved = Object.values(localStorage).map((v) => { try { return JSON.parse(v); } catch (e) { return null; } })
+                .find((o) => o && 'effects' in o);
+            return { seen, runtime: window.__settings.effects, saved: saved && saved.effects };
+        });
+        check('lite effects: the Settings EFFECTS row cycles AUTO, FULL, LITE and saves LITE',
+            !!row && row.seen.join(' ') === '[AUTO] [FULL] [LITE]' && row.runtime === 'lite' && row.saved === 'lite',
+            JSON.stringify(row));
+        const startRound = async (effects) => {
+            await pg.evaluate((effects) => {
+                window.__settings.effects = effects;
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScenes(true)[0].scene.start('GameScene');
+            }, effects);
+            await pg.waitForFunction(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                return s && window.__game.scene.isActive('GameScene') && s.player1 && s.player2;
+            }, null, { timeout: 8000 });
+        };
+        const shards = () => pg.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const count = () => s.children.list.filter((o) => o.type === 'Rectangle' && o.depth === 30).length;
+            const before = count();
+            s.player2.deathBurst();
+            return count() - before;
+        });
+        await startRound('lite');
+        const lite = await shards();
+        await startRound('full');
+        const full = await shards();
+        const cfg = await pg.evaluate(() => window.__fx.FX_CONFIG);
+        check('lite effects: one death on LITE spawns fewer shards than on FULL, by FX_CONFIG',
+            lite < full && full === cfg.full.deathShards && lite === cfg.lite.deathShards,
+            `lite=${lite} full=${full}`);
+        await startRound('auto');
+        // Freeze the round inside the monitor's start-up skip, so a slow CI
+        // machine's real frames never count; only the stubbed deltas do.
+        const auto = await pg.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            s.scene.pause();
+            const a = s.fxMonitor.cfg;
+            const frames = (ms) => Math.ceil((a.skipMs + a.windowMs) / ms) + 1;
+            const fast = new s.fxMonitor.constructor(() => { fast.slow = true; });
+            for (let i = 0; i < frames(16); i++) fast.sample(16);
+            const startedLite = s.fxLite;
+            for (let i = 0; i < frames(40); i++) s.fxMonitor.sample(40);
+            s.scene.resume();
+            return { fastSlow: !!fast.slow, startedLite, lite: s.fxLite, auto: s.fxAutoLite };
+        });
+        await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+        await pg.waitForFunction(() => window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 });
+        const note = await pg.evaluate(() => window.__game.scene.getScene('PauseScene').fxNote?.text || null);
+        check('lite effects: under AUTO 40 ms frames turn the round lite and the pause screen says so; 16 ms frames do not',
+            !auto.fastSlow && !auto.startedLite && auto.lite && auto.auto && note === cfg.pauseNote,
+            JSON.stringify({ ...auto, note }));
+        await ctx.close();
+    }
+
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
         if (!window.__net || !window.__net.NetConnection) return { err: 'window.__net missing' };

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PROJECTILE_CONFIG, ELEMENT_TYPES, NORMAL_SHOT_CONFIG, FROST_CONFIG, MUTATOR_CONFIG } from '../config.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
+import { fx } from '../systems/Effects.js';
 
 export class Projectile extends Phaser.Physics.Arcade.Sprite {
     constructor(scene, x, y, dirX, dirY, element, ownerPlayerNumber, isRuneShot = false, configOverride = null) {
@@ -135,9 +136,10 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
 
     createTrail() {
         const color = this.config.color;
+        const fade = () => fx(this.scene).trailFadeMs;
 
         this.trailTimer = this.scene.time.addEvent({
-            delay: 35,
+            delay: fx(this.scene).trailEveryMs,
             callback: () => {
                 if (!this.active) return;
 
@@ -146,7 +148,7 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
                     targets: trail,
                     alpha: 0,
                     scale: 0.2,
-                    duration: 120,
+                    duration: fade(),
                     onComplete: () => trail.destroy(),
                 });
             },

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { MATCH_CONFIG } from '../config.js';
+import { MATCH_CONFIG, FX_CONFIG } from '../config.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
@@ -40,6 +40,9 @@ export const RUNTIME_SETTINGS = {
     // Holiday W-14 — buzz the phone on hit, death and round win (Haptics.js).
     // The row only shows where the device can vibrate.
     vibration: true,
+
+    // Holiday W-31 — 'auto' | 'full' | 'lite' (FX_CONFIG, systems/Effects.js).
+    effects: 'auto',
 
     // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
     mutGiantShots: false,   // 1.8x projectile scale + physics body
@@ -119,12 +122,12 @@ export class SettingsScene extends Phaser.Scene {
         this.addSlider('Orb Spawn Max (s)', 'runeSpawnMax', 5000, 20000, 1000, (v) => (v / 1000).toFixed(0));
 
         // Holiday W-14: left column, since the right one already reaches the
-        // bottom buttons. Only on a touch device that can buzz.
-        if (canVibrate()) {
-            this.yPos += 20;
-            this.addSectionHeader('PHONE');
-            this.addToggle('Vibration', 'vibration');
-        }
+        // bottom buttons. Holiday W-31: EFFECTS shows on every device; the
+        // Vibration row joins it only on a touch device that can buzz.
+        this.yPos += 20;
+        this.addSectionHeader('DEVICE');
+        this.addChoice('Effects', 'effects', FX_CONFIG.levels);
+        if (canVibrate()) this.addToggle('Vibration', 'vibration');
 
         // === RIGHT COLUMN ===
         this.colX = 530;
@@ -261,6 +264,33 @@ export class SettingsScene extends Phaser.Scene {
         this.menuNav.add(toggle, doToggle);
 
         this.controls.push({ key, toggle, isRuneToggle });
+        this.yPos += 25;
+    }
+
+    // Holiday W-31: a row that cycles through `options` (stored as given,
+    // shown upper-case). A tap steps forward; left/right step on a pad.
+    addChoice(label, key, options) {
+        const labelText = this.add.text(this.colX + 20, this.yPos, `${label}: `, {
+            font: '14px monospace',
+            fill: '#aaaacc',
+        });
+        const show = () => `[${String(this.settings[key]).toUpperCase()}]`;
+        const value = this.add.text(this.colX + 230, this.yPos, show(), {
+            font: '14px monospace',
+            fill: '#66ccff',
+        }).setInteractive({ useHandCursor: true });
+
+        const doStep = (dir) => {
+            audio.uiClick();
+            const i = Math.max(0, options.indexOf(this.settings[key]));
+            this.settings[key] = options[(i + dir + options.length) % options.length];
+            value.setText(show());
+        };
+        value.on('pointerdown', () => doStep(1));
+        ensureTapTarget(this, value);
+        this.menuNav.add(labelText, () => doStep(1), { onStep: doStep });
+
+        this.controls.push({ key, choice: value });
         this.yPos += 25;
     }
 

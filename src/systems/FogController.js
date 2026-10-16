@@ -14,6 +14,7 @@
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { MATCH_STATE } from './MatchState.js';
 import { ARENA } from './Maps.js';
+import { fx } from './Effects.js';
 
 // Tunables live here so they're easy to adjust.
 const FOG_CONFIG = {
@@ -145,7 +146,7 @@ export class FogController {
         const dy = y1 - y0;
         const span = Math.max(Math.abs(dx), Math.abs(dy));
         if (span <= 1) return true;
-        const steps = Math.ceil(span * FOG_CONFIG.losSamplesPerTile);
+        const steps = Math.ceil(span * FOG_CONFIG.losSamplesPerTile * fx(this.scene).fogSamplesScale);
         for (let i = 1; i < steps; i++) {
             const t = i / steps;
             const sx = Math.round(x0 + dx * t);
@@ -162,7 +163,7 @@ export class FogController {
         const fog = this.fog;
         const player1 = this.scene.player1;
         if (!fog || !player1) return;
-        fog.nextRecomputeAt = time + FOG_CONFIG.recomputeMs;
+        fog.nextRecomputeAt = time + FOG_CONFIG.recomputeMs * fx(this.scene).fogRecomputeScale;
         fog.lastTile = this.scene.tileOf(player1.x, player1.y);
         fog.visibleSet = this.computeVisibleTiles();
         this.render(fog.visibleSet);

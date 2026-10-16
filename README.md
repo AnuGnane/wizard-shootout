@@ -307,7 +307,10 @@ one authority for every collision, and the two arenas can't drift apart.
 The Settings screen tunes the game without touching code: which orbs spawn,
 damage numbers, burn/slow durations, orb spawn rate, target score, sudden
 death (1 HP), fog of war, mutators, and sound/music on/off. Everything
-persists to `localStorage`.
+persists to `localStorage`. **Effects** (FULL / LITE / AUTO, default AUTO)
+draws fewer sparks, shorter trails, a smaller shake and a coarser fog on
+LITE; AUTO switches a round to LITE when its frames run slower than 40 fps,
+and the pause screen then says "EFFECTS: LITE (auto)".
 
 ## Development
 

@@ -23,6 +23,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { recordKill, recordShot, recordDamage, checkAchievements } from '../systems/Stats.js';
 import { getBindings, keyLabel } from '../systems/KeyBindings.js';
+import { fx, FxMonitor } from '../systems/Effects.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
@@ -81,6 +82,15 @@ export class GameScene extends Phaser.Scene {
         // profile (kills/orbs/shots/damage/rounds/matches/achievements) —
         // the daily has its own isolated result tracking (recordDailyResult).
         this.trackProfile = !MATCH_STATE.isDailyChallenge;
+
+        // Holiday W-31: the saved EFFECTS level, fresh each round. Under AUTO
+        // the round starts full and a slow run of frames turns it lite for
+        // the rest of the round (fxAutoLite tells the pause screen why).
+        this.fxLite = RUNTIME_SETTINGS.effects === 'lite';
+        this.fxAutoLite = false;
+        this.fxMonitor = RUNTIME_SETTINGS.effects === 'auto'
+            ? new FxMonitor(() => { this.fxLite = true; this.fxAutoLite = true; })
+            : null;
 
         // Phase 6a: seat-1 "died at least once this match" flag, used for the
         // Flawless achievement/stat. create() runs on every scene.restart()
@@ -611,7 +621,7 @@ export class GameScene extends Phaser.Scene {
 
     shakeCamera(duration, intensity) {
         if (!RUNTIME_SETTINGS.screenShake) return;
-        this.cameras.main.shake(duration, intensity);
+        this.cameras.main.shake(duration, intensity * fx(this).shakeScale);
     }
 
     // Stage 2b / Phase 10.2 — the ONE seam that makes a projectile visible to
@@ -712,8 +722,9 @@ export class GameScene extends Phaser.Scene {
         this.spawnRing(toX, toY, color, 3, 300);
 
         // Brief particle trail along the jump
-        for (let i = 0; i < 8; i++) {
-            const t2 = i / 7;
+        const dots = fx(this).blinkDots;
+        for (let i = 0; i < dots; i++) {
+            const t2 = i / (dots - 1);
             const trail = this.add.circle(
                 fromX + (toX - fromX) * t2,
                 fromY + (toY - fromY) * t2,
@@ -1750,6 +1761,8 @@ export class GameScene extends Phaser.Scene {
         if (this.touchControls) this.touchControls.update();
 
         if (this.roundOver) return;
+
+        if (this.fxMonitor) this.fxMonitor.sample(delta);
 
         // Stage 2a: the guest runs no local simulation — it only sends its input
         // up and renders the host's authoritative snapshots as puppets.
