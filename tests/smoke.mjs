@@ -2689,14 +2689,18 @@ try {
             lite < full && full === cfg.full.deathShards && lite === cfg.lite.deathShards,
             `lite=${lite} full=${full}`);
         await startRound('auto');
+        // Freeze the round inside the monitor's start-up skip, so a slow CI
+        // machine's real frames never count; only the stubbed deltas do.
         const auto = await pg.evaluate(() => {
             const s = window.__game.scene.getScene('GameScene');
+            s.scene.pause();
             const a = s.fxMonitor.cfg;
             const frames = (ms) => Math.ceil((a.skipMs + a.windowMs) / ms) + 1;
             const fast = new s.fxMonitor.constructor(() => { fast.slow = true; });
             for (let i = 0; i < frames(16); i++) fast.sample(16);
             const startedLite = s.fxLite;
             for (let i = 0; i < frames(40); i++) s.fxMonitor.sample(40);
+            s.scene.resume();
             return { fastSlow: !!fast.slow, startedLite, lite: s.fxLite, auto: s.fxAutoLite };
         });
         await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
