@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
-import { ELEMENT_COLORS } from '../config.js';
+import { ELEMENT_COLORS, BALANCE_TALLY_CONFIG } from '../config.js';
 import { STATS, ACHIEVEMENTS } from '../systems/Stats.js';
 import { audio } from '../systems/AudioSystem.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { balanceRows, balanceMarkdown, formatRate } from '../systems/BalanceTally.js';
+import { canShare, shareOrCopy } from '../systems/Share.js';
 
 const ELEMENT_KEYS = ['arcane', 'fire', 'ice', 'earth', 'lightning'];
 
@@ -84,6 +86,8 @@ export class StatsScene extends Phaser.Scene {
             this.drawAchievementCell(cx, cy, cellW - 10, cellH - 8, ach);
         });
 
+        this.drawBalance(width);
+
         // Back button + ESC, matching SettingsScene's convention.
         const backBtn = this.add.text(width / 2, height - 34, '[ BACK ]', {
             font: '24px monospace',
@@ -98,6 +102,53 @@ export class StatsScene extends Phaser.Scene {
         ensureTapTarget(this, backBtn);
 
         this.input.keyboard.once('keydown-ESC', () => this.goBack());
+    }
+
+    // Holiday W-30 — each class's win rate against the Hard bot in 1P, with
+    // its match count; green inside the harness band once a class has
+    // enough matches, orange outside it, grey before. The button copies
+    // (or shares) the tally as docs/balance.md's markdown tables.
+    drawBalance(width) {
+        const cfg = BALANCE_TALLY_CONFIG;
+        this.add.text(width / 2, cfg.titleY, cfg.heading, {
+            font: 'bold 12px monospace',
+            fill: '#8888aa',
+        }).setOrigin(0.5);
+
+        const rows = balanceRows();
+        const startX = width / 2 - ((rows.length - 1) * cfg.colW) / 2;
+        const colors = { in: cfg.colors.inBand, out: cfg.colors.outBand, few: cfg.colors.few };
+        rows.forEach((r, i) => {
+            this.add.text(startX + i * cfg.colW, cfg.rowY, `${r.name}\n${formatRate(r.rate)} (${r.matches})`, {
+                font: '12px monospace',
+                fill: colors[r.band],
+                align: 'center',
+            }).setOrigin(0.5);
+        });
+
+        const b = cfg.button;
+        const btn = this.add.text(b.x, b.y, canShare() ? cfg.shareLabel : cfg.copyLabel, {
+            font: b.font,
+            fill: b.fill,
+            backgroundColor: b.bg,
+            padding: b.padding,
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        // The share sheet and the clipboard want a user gesture: fire on the
+        // release of a press that began on the button (as the Daily card).
+        let armed = false;
+        btn.on('pointerover', () => btn.setStyle({ fill: b.hover }));
+        btn.on('pointerout', () => { btn.setStyle({ fill: b.fill }); armed = false; });
+        btn.on('pointerdown', () => { armed = true; });
+        btn.on('pointerup', () => {
+            if (!armed) return;
+            armed = false;
+            audio.uiClick();
+            shareOrCopy(balanceMarkdown()).then((how) => {
+                if (how === 'copied' && btn.scene) btn.setText(cfg.copiedLabel);
+            });
+        });
+        ensureTapTarget(this, btn);
+        this.tallyBtn = btn;
     }
 
     goBack() {

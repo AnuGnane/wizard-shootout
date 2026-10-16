@@ -10,12 +10,13 @@
 // Note: `this.scene` is the Phaser Scene; `this.scene.scene` is its ScenePlugin
 // (start/restart/isActive).
 
-import { GAME_CONFIG, PLAYER_CONFIG, MATCH_CONFIG, TEAM_NAMES } from '../config.js';
+import { GAME_CONFIG, PLAYER_CONFIG, MATCH_CONFIG, TEAM_NAMES, BALANCE_TALLY_CONFIG } from '../config.js';
 import { getTeamColors } from './TeamColors.js';
 import { ARENA } from './Maps.js';
 import { MATCH_STATE } from './MatchState.js';
 import { NetSession } from './NetSession.js';
 import { audio } from './AudioSystem.js';
+import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 import { recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from './Stats.js';
 
 export class RoundFlow {
@@ -400,7 +401,12 @@ export class RoundFlow {
                     // itself may not have time to show here, so pass the newly-
                     // unlocked achievements along for GameOverScene to surface.
                     const flawless = youWon && !scene._seat1DiedThisMatch;
-                    recordMatch(youWon, MATCH_STATE.classes[1], flawless);
+                    // Holiday W-30: 1P against the Hard bot also counts
+                    // in the human balance tally, by both classes.
+                    const tallies = MATCH_STATE.mode === BALANCE_TALLY_CONFIG.mode
+                        && RUNTIME_SETTINGS.aiDifficulty === BALANCE_TALLY_CONFIG.difficulty;
+                    recordMatch(youWon, MATCH_STATE.classes[1], flawless,
+                        tallies ? MATCH_STATE.classes[2] : null);
                     const newlyUnlocked = checkAchievements();
 
                     scene.leaving = true;

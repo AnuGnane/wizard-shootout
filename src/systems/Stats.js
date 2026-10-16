@@ -16,6 +16,15 @@ const ELEMENT_KEYS = ['arcane', 'fire', 'ice', 'earth', 'lightning'];
 // Well Rounded / the Bone staff unlock exactly like the original 5 classes.
 const STATS_CLASS_KEYS = ['arcanist', 'pyromancer', 'cryomancer', 'stonecaller', 'stormcaller', 'warden', 'trickster'];
 
+function emptyBalanceTally() {
+    const tally = {};
+    for (const mine of STATS_CLASS_KEYS) {
+        tally[mine] = {};
+        for (const bot of STATS_CLASS_KEYS) tally[mine][bot] = { wins: 0, losses: 0 };
+    }
+    return tally;
+}
+
 export const STATS = {
     gamesPlayed: 0,
     matchWins: 0,
@@ -40,6 +49,11 @@ export const STATS = {
         arcanist: 0, pyromancer: 0, cryomancer: 0, stonecaller: 0, stormcaller: 0,
         warden: 0, trickster: 0,
     },
+
+    // Holiday W-30 — human balance tally: 1P matches against the Hard bot
+    // only (see recordMatch), by your class then the bot's class.
+    // balanceTally[mine][bot] = { wins, losses }.
+    balanceTally: emptyBalanceTally(),
 
     // Phase 9b — PvE co-op wave survival. Plain counters alongside the rest of
     // the profile (unlike the daily's isolated sub-record) because a survival
@@ -115,6 +129,24 @@ export function loadStats() {
             const value = saved.matchWinsByClass[classKey];
             if (typeof value === 'number' && Number.isFinite(value)) {
                 STATS.matchWinsByClass[classKey] = value;
+            }
+        }
+    }
+
+    // Holiday W-30: stats saved before the tally existed have no
+    // balanceTally and keep the all-zero default.
+    if (saved.balanceTally && typeof saved.balanceTally === 'object') {
+        for (const mine of STATS_CLASS_KEYS) {
+            const row = saved.balanceTally[mine];
+            if (!row || typeof row !== 'object') continue;
+            for (const bot of STATS_CLASS_KEYS) {
+                const cell = row[bot];
+                if (!cell || typeof cell !== 'object') continue;
+                for (const k of ['wins', 'losses']) {
+                    if (typeof cell[k] === 'number' && Number.isFinite(cell[k])) {
+                        STATS.balanceTally[mine][bot][k] = cell[k];
+                    }
+                }
             }
         }
     }
@@ -210,8 +242,12 @@ export function recordRound(youWon) {
     saveStats();
 }
 
-export function recordMatch(youWon, yourClassKey, flawless) {
+// Holiday W-30: `tallyBotClass` is the bot's class when the match counts in
+// balanceTally (RoundFlow decides: 1P against the Hard bot), else null.
+export function recordMatch(youWon, yourClassKey, flawless, tallyBotClass = null) {
     STATS.gamesPlayed++;
+    const cell = tallyBotClass && STATS.balanceTally[yourClassKey]?.[tallyBotClass];
+    if (cell) cell[youWon ? 'wins' : 'losses']++;
     if (youWon) {
         STATS.matchWins++;
         STATS.currentStreak++;

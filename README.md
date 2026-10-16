@@ -226,6 +226,9 @@ have the same arena.
 
 - **Stats + achievements** — local profile tracks wins, streaks, and
   per-element kills; achievements pop as toasts.
+- **Balance tally** — 1P matches against the Hard bot are counted by your
+  class and the bot's; STATS shows each class's win rate and `[ COPY TALLY ]`
+  copies it as the tables in `docs/balance.md` ("Human playtest").
 - **Wardrobe** — robe and staff palettes unlock from your stats. Because
   sprites are procedural, cosmetics cost nothing to add.
 - **Music** — a procedural chiptune loop that ramps in intensity at match
