@@ -2218,11 +2218,12 @@ try {
             const cdp = await ctx.newCDPSession(phone);
             await toSettings(phone);
             const lay = await layout(phone);
-            // The phone-only VIBRATION row (W-14) has no desktop twin; every
-            // other text must sit exactly where the desktop draws it.
+            // The phone-only VIBRATION (W-14) and TOUCH LAYOUT (W-32) rows
+            // have no desktop twin; every other text must sit exactly where
+            // the desktop draws it.
             const yOf = (f) => f.slice(f.lastIndexOf(',') + 1);
-            const vib = lay.frames.find((f) => f.startsWith('Vibration'));
-            const phoneOnly = (f) => f.startsWith('PHONE@') || (!!vib && yOf(f) === yOf(vib));
+            const onlyRows = ['Vibration', 'Touch Layout'].map((n) => lay.frames.find((f) => f.startsWith(n))).filter(Boolean);
+            const phoneOnly = (f) => f.startsWith('PHONE@') || onlyRows.some((o) => yOf(f) === yOf(o));
             const r = { bad: lay.bad, moved: lay.frames.filter((f) => !phoneOnly(f) && !deskLayout.frames.includes(f)) };
             if (vp.width === 844) {
                 // Burn Duration's row: its [-]/[+] and value, and a point
@@ -2709,6 +2710,117 @@ try {
         check('lite effects: under AUTO 40 ms frames turn the round lite and the pause screen says so; 16 ms frames do not',
             !auto.fastSlow && !auto.startedLite && auto.lite && auto.auto && note === cfg.pauseNote,
             JSON.stringify({ ...auto, note }));
+        await ctx.close();
+    }
+
+    // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
+    // phone Settings shows TOUCH LAYOUT and saves LEFT; a 1P round then has
+    // the joystick bottom-right and FIRE bottom-left (ORB to its right, PWR
+    // above it). A touch on FIRE fires, a drag on the right half moves, a
+    // touch on the left half off the buttons grabs no joystick; the first-
+    // round tips sit over the mirrored controls; no HUD text or tip overlaps
+    // a control.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('left-handed pageerror: ' + e.message));
+        const cdp = await ctx.newCDPSession(pg);
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+        await pg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+        const row = await pg.evaluate(() => {
+            const s = window.__game.scene.getScene('SettingsScene');
+            const c = s.controls.find((x) => x.key === 'touchLayout');
+            if (!c) return null;
+            const seen = [c.choice.text];
+            c.choice.emit('pointerdown'); seen.push(c.choice.text);
+            s.applySettings();
+            return { seen, runtime: window.__settings.touchLayout };
+        });
+        check('left-handed: Settings on a touch phone shows TOUCH LAYOUT and saves LEFT',
+            !!row && row.seen.join(' ') === '[RIGHT] [LEFT]' && row.runtime === 'left', JSON.stringify(row));
+        await pg.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScene('SettingsScene').scene.start('GameScene');
+        });
+        await pg.waitForFunction(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s && window.__game.scene.isActive('GameScene') && s.touchControls && s.touchTips && s.touchHud;
+        }, null, { timeout: 8000 });
+        await pg.waitForTimeout(300);
+        const L = await pg.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            const tc = s.touchControls;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const box = (x, y, r) => ({ left: x - r, top: y - r, right: x + r, bottom: y + r });
+            const controls = {
+                joystick: box(tc.joy.homeX, tc.joy.homeY, tc.joy.radius),
+                FIRE: box(tc.buttons.shoot.x, tc.buttons.shoot.y, tc.buttons.shoot.radius),
+                ORB: box(tc.buttons.runeShoot.x, tc.buttons.runeShoot.y, tc.buttons.runeShoot.radius),
+                PWR: box(tc.buttons.ability.x, tc.buttons.ability.y, tc.buttons.ability.radius),
+            };
+            const bounds = (t) => { const b = t.getBounds(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
+            const hud = Object.entries(s.touchHud.texts()).filter(([, t]) => t && t.active && t.visible && t.text)
+                .map(([n, t]) => [n, bounds(t)]);
+            const tips = Object.fromEntries(Object.entries(s.touchTips.texts).map(([n, t]) => [n, bounds(t)]));
+            return {
+                mirrored: tc.mirrored, controls, hud, tips,
+                fire: { x: c.left + tc.buttons.shoot.x * k, y: c.top + tc.buttons.shoot.y * k },
+                right: { x: c.left + 0.7 * c.width, y: c.top + 0.45 * c.height },
+                leftOff: { x: c.left + 0.3 * c.width, y: c.top + 0.45 * c.height },
+                k,
+            };
+        });
+        const C = L.controls;
+        const mid = 512;
+        check('left-handed: joystick bottom-right, FIRE bottom-left with ORB to its right and PWR above it',
+            L.mirrored && C.joystick.left > mid && C.FIRE.right < mid && C.ORB.left > C.FIRE.right
+                && C.PWR.bottom < C.FIRE.top && Math.abs((C.PWR.left + C.PWR.right) / 2 - (C.FIRE.left + C.FIRE.right) / 2) < C.FIRE.right - C.FIRE.left,
+            JSON.stringify(C));
+        const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+        const st = () => pg.evaluate(() => {
+            const tc = window.__game.scene.getScene('GameScene').touchControls;
+            const x = tc.getState();
+            return { shoot: x.shoot, dirs: ['up', 'down', 'left', 'right'].filter((d) => x[d]).join('+') || 'none', joy: tc.joyPointerId !== null };
+        });
+        await touch('touchStart', [{ x: L.fire.x, y: L.fire.y, id: 1 }]);
+        await pg.waitForTimeout(50);
+        const fired = await st();
+        await touch('touchEnd', []);
+        await touch('touchStart', [{ x: L.right.x, y: L.right.y, id: 1 }]);
+        await touch('touchMove', [{ x: L.right.x + 60, y: L.right.y, id: 1 }]);
+        await pg.waitForTimeout(50);
+        const moved = await st();
+        await touch('touchEnd', []);
+        await touch('touchStart', [{ x: L.leftOff.x, y: L.leftOff.y, id: 1 }]);
+        await touch('touchMove', [{ x: L.leftOff.x + 60, y: L.leftOff.y, id: 1 }]);
+        await pg.waitForTimeout(50);
+        const leftHalf = await st();
+        await touch('touchEnd', []);
+        check('left-handed: a touch bottom-left fires, a drag on the right half moves, the left half grabs no joystick',
+            fired.shoot && moved.dirs === 'right' && moved.joy && !leftHalf.joy && leftHalf.dirs === 'none',
+            JSON.stringify({ fired, moved, leftHalf }));
+        const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        const T = L.tips;
+        const joyX = (C.joystick.left + C.joystick.right) / 2;
+        const tipsPlaced = Math.abs((T.move.left + T.move.right) / 2 - joyX) < 2
+            && ['shoot', 'runeShoot', 'ability'].every((n) => T[n].left >= C.ORB.right - 0.5 && T[n].right < C.joystick.left);
+        const overlaps = [];
+        for (const [n, b] of [...L.hud, ...Object.entries(T)]) {
+            for (const [cn, q] of Object.entries(C)) if (hit(b, q)) overlaps.push(`${n}/${cn}`);
+        }
+        for (const [n, b] of L.hud) for (const [tn, t] of Object.entries(T)) if (hit(b, t)) overlaps.push(`${n}/tip ${tn}`);
+        check('left-handed: tips sit over the mirrored controls; no HUD text or tip overlaps a control',
+            tipsPlaced && overlaps.length === 0, JSON.stringify({ tipsPlaced, overlaps, move: T.move, fireTip: T.shoot }));
         await ctx.close();
     }
 

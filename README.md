@@ -128,7 +128,9 @@ a seat in any mode; left stick / d-pad to move, face buttons to shoot, orb,
 and cast. On **touch devices**, 1P mode shows a virtual joystick plus FIRE /
 ORB / PWR (signature) buttons and a pause button. The joystick drops under your
 thumb wherever you touch the left half of the screen; the buttons keep a
-thumb-sized minimum however small the phone. Hold the phone sideways — upright,
+thumb-sized minimum however small the phone. Left-handed? Settings →
+**Touch Layout: LEFT** mirrors them: joystick on the right half, FIRE / ORB /
+PWR bottom-left. Hold the phone sideways — upright,
 the game asks you to turn it and pauses a running round. Switching away mid-round (another
 app, the lock screen, another browser tab) pauses it too, so you come back to
 the pause menu, not live action.

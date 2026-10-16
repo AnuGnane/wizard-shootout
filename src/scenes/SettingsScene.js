@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
-import { MATCH_CONFIG, FX_CONFIG } from '../config.js';
+import { MATCH_CONFIG, FX_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
 import { canVibrate } from '../systems/Haptics.js';
 
 // Runtime settings that can be modified
@@ -43,6 +43,10 @@ export const RUNTIME_SETTINGS = {
 
     // Holiday W-31 — 'auto' | 'full' | 'lite' (FX_CONFIG, systems/Effects.js).
     effects: 'auto',
+
+    // Holiday W-32 — 'right' | 'left': the left-handed touch layout mirrors
+    // the joystick and FIRE/ORB/PWR (TouchControls). Touch devices only.
+    touchLayout: 'right',
 
     // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
     mutGiantShots: false,   // 1.8x projectile scale + physics body
@@ -127,6 +131,7 @@ export class SettingsScene extends Phaser.Scene {
         this.yPos += 20;
         this.addSectionHeader('DEVICE');
         this.addChoice('Effects', 'effects', FX_CONFIG.levels);
+        if (isTouchDevice(this)) this.addChoice('Touch Layout', 'touchLayout', TOUCH_CONFIG.layouts);
         if (canVibrate()) this.addToggle('Vibration', 'vibration');
 
         // === RIGHT COLUMN ===

@@ -70,15 +70,16 @@ export class TouchTips {
         const { homeX, homeY, radius } = c.joy;
         this.texts.move.setOrigin(0.5, 1).setPosition(homeX, homeY - radius - gap);
 
-        // FIRE, ORB and PWR: one right-aligned column left of the cluster,
-        // bottom-aligned with it, top to bottom in the order PWR, FIRE, ORB
-        // (the buttons' own top-to-bottom order).
+        // FIRE, ORB and PWR: one column on the inner side of the cluster
+        // (right-aligned left of it; left-aligned right of it in W-32's
+        // left-handed layout), bottom-aligned with it, top to bottom in the
+        // order PWR, FIRE, ORB (the buttons' own top-to-bottom order).
         const { shoot, runeShoot, ability } = c.buttons;
-        const right = runeShoot.x - runeShoot.radius - gap;
+        const edge = c.mirrored ? runeShoot.x + runeShoot.radius + gap : runeShoot.x - runeShoot.radius - gap;
         let bottom = shoot.y + shoot.radius;
         for (const key of ['runeShoot', 'shoot', 'ability']) {
             const t = this.texts[key];
-            t.setOrigin(1, 1).setPosition(right, bottom);
+            t.setOrigin(c.mirrored ? 0 : 1, 1).setPosition(edge, bottom);
             bottom -= t.height + gap;
         }
 

@@ -2,7 +2,7 @@
 // try/catch since private browsing (and some locked-down environments) can
 // throw just from touching localStorage.
 
-import { FX_CONFIG } from '../config.js';
+import { FX_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { CLASS_KEYS } from './Classes.js';
 
 const STORAGE_KEY = 'wizard-shootout-settings-v1';
@@ -72,6 +72,9 @@ export function loadSettings(settings) {
     if (FX_CONFIG.levels.includes(saved.effects)) {
         settings.effects = saved.effects;
     }
+    if (TOUCH_CONFIG.layouts.includes(saved.touchLayout)) {
+        settings.touchLayout = saved.touchLayout;
+    }
     for (const key of MUTATOR_KEYS) {
         if (typeof saved[key] === 'boolean') {
             settings[key] = saved[key];
@@ -111,6 +114,7 @@ export function saveSettings(settings) {
     payload.colorblindTeams = settings.colorblindTeams;
     payload.vibration = settings.vibration;
     payload.effects = settings.effects;
+    payload.touchLayout = settings.touchLayout;
     for (const key of MUTATOR_KEYS) {
         payload[key] = settings[key];
     }
