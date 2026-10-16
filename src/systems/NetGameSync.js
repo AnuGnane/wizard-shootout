@@ -10,7 +10,7 @@
 // called, so a local match is byte-identical to one without this module.
 
 import Phaser from 'phaser';
-import { GAME_CONFIG, ELEMENT_TYPES, TOUCH_CONFIG } from '../config.js';
+import { GAME_CONFIG, ELEMENT_TYPES, NET_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { Player, KeyboardInput } from '../entities/Player.js';
 import { GamepadInput, CompositeInput } from './GamepadInput.js';
 import { ARENA } from './Maps.js';
@@ -637,12 +637,32 @@ export class NetGameSync {
         });
     }
 
+    // Holiday W-35: the connection dropped to 'disconnected' (lost) or came
+    // back within the grace. While it is down, "CONNECTION LOST -
+    // RECONNECTING" sits centred under the top bar, at least
+    // TOUCH_CONFIG.hudMinCss CSS px; input and snapshots keep flowing as
+    // ever, so the round plays on. Named 'netBlipText' (smoke suite).
+    onNetBlip(lost) {
+        const scene = this.scene;
+        if (this._blipText) { this._blipText.destroy(); this._blipText = null; }
+        if (!lost || this._peerLeft || !scene.sys || !scene.sys.displayList) return;
+        const { label, y, basePx, padding, fill, bg } = NET_CONFIG.blip;
+        const display = scene.scale.displaySize;
+        const k = display && display.width ? display.width / GAME_CONFIG.width : 1;
+        const px = Math.max(basePx, Math.ceil(TOUCH_CONFIG.hudMinCss / (k > 0 ? k : 1)));
+        this._blipText = scene.add.text(GAME_CONFIG.width / 2, y, label, {
+            font: `bold ${px}px monospace`, fill, backgroundColor: bg, padding,
+        }).setOrigin(0.5).setDepth(50);
+        this._blipText.name = 'netBlipText';
+    }
+
     // Peer disconnected mid-match. Halt the sync loop, show a message, and bounce
     // back to the menu — never throw. Idempotent (guarded by _peerLeft).
     onNetClose() {
         const scene = this.scene;
         if (this._peerLeft) return;
         this._peerLeft = true;
+        if (this._blipText) { this._blipText.destroy(); this._blipText = null; }
         scene.roundOver = true; // freeze the update loop (both roles)
 
         if (!scene.scene || !scene.scene.isActive || !scene.scene.isActive()) return;

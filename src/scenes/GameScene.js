@@ -234,6 +234,8 @@ export class GameScene extends Phaser.Scene {
             if (conn) {
                 conn.onMessage = (m) => this.netSync.onNetMessage(m);
                 conn.onClose = () => this.netSync.onNetClose();
+                // Holiday W-35: a blip shows a line and the round plays on.
+                conn.onBlip = (lost) => this.netSync.onNetBlip(lost);
             }
         }
 
