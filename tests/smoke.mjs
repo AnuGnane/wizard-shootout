@@ -913,6 +913,90 @@ try {
             await stopNet(phone);
             await phone.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 }).catch(() => {});
         }
+
+        // 3g2. An Online match survives a blip (holiday W-35): a real
+        // NetConnection over a fake RTCPeerConnection whose connectionState
+        // the test sets, the grace cut to 300 ms through window.__net. A
+        // 'disconnected' shows CONNECTION LOST - RECONNECTING (at least
+        // hudMinCss CSS px) and the round plays on; back to 'connected', the
+        // line goes and nothing closes; 'disconnected' past the grace ends
+        // the match through onNetClose, once.
+        {
+            const setState = (state) => phone.evaluate((state) => {
+                const pc = window.__blipPc;
+                pc.connectionState = state;
+                pc.dispatchEvent(new Event('connectionstatechange'));
+            }, state);
+            const look = () => phone.evaluate(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                const t = s.children.list.find((o) => o.name === 'netBlipText');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                return {
+                    line: t ? t.text : null,
+                    css: t ? parseFloat(t.style.fontSize) * k : 0,
+                    running: window.__game.scene.isActive('GameScene') && !s.roundOver,
+                    closes: window.__blipCloses,
+                };
+            });
+            await phone.evaluate(() => {
+                const { NetConnection, NetSession, setDisconnectGrace } = window.__net;
+                setDisconnectGrace(300);
+                class FakePc extends EventTarget {
+                    constructor() { super(); this.connectionState = 'connected'; window.__blipPc = this; }
+                    close() {}
+                }
+                const real = window.RTCPeerConnection;
+                window.RTCPeerConnection = FakePc;
+                const conn = new NetConnection('host');
+                conn._createPc();
+                window.RTCPeerConnection = real;
+                conn.channel = { readyState: 'open', send: () => {}, close: () => {} };
+                NetSession.connection = conn;
+                NetSession.role = 'host';
+                NetSession.connected = true;
+                const M = window.__match;
+                M.online = true; M.isDailyChallenge = false;
+                M.mode = '2p';
+                M.seatTypes = { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            });
+            const ready = await netReady(phone, 'host');
+            let lost = null, back = null, after = null, ended = null;
+            if (ready) {
+                await phone.evaluate(() => {
+                    window.__blipCloses = 0;
+                    const sync = window.__game.scene.getScene('GameScene').netSync;
+                    const orig = sync.onNetClose.bind(sync);
+                    sync.onNetClose = () => { window.__blipCloses += 1; orig(); };
+                });
+                await setState('disconnected');
+                await phone.waitForTimeout(100);
+                lost = await look();
+                await setState('connected');
+                back = await look();
+                await phone.waitForTimeout(400);
+                after = await look();
+                await setState('disconnected');
+                await phone.waitForTimeout(700);
+                ended = await phone.evaluate(() => window.__blipCloses);
+            }
+            check('phone online: a blip shows CONNECTION LOST - RECONNECTING and the round plays on; back in time, nothing closes',
+                ready && lost?.line === 'CONNECTION LOST - RECONNECTING' && lost.css >= 10 - 1e-6 && lost.running && lost.closes === 0
+                    && back?.line === null && back.running && after?.closes === 0 && after.running,
+                `ready=${ready} lost=${JSON.stringify(lost)} back=${JSON.stringify(back)} after grace=${JSON.stringify(after)}`);
+            check('phone online: disconnected past the grace ends the match once', ended === 1, `onNetClose calls=${ended}`);
+            await phone.evaluate(() => window.__net.setDisconnectGrace(8000));
+            await phone.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 }).catch(() => {});
+            await phone.evaluate(() => {
+                const { NetSession } = window.__net;
+                NetSession.connection = null; NetSession.role = null; NetSession.connected = false;
+                window.__match.online = false;
+            });
+        }
         await ctx.close();
 
         // Desktop: the same guest start on the main (no touch) page builds

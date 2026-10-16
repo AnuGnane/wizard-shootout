@@ -207,6 +207,22 @@ export const BACK_BUTTON_CONFIG = {
     buffer: 2,
 };
 
+// Holiday W-35 — an Online match survives a blip (systems/NetConnection.js).
+// WebRTC's 'disconnected' is the transient state a phone enters on a Wi-Fi
+// to cellular handoff or a short app switch; the connection waits
+// disconnectGraceMs for it to come back before ending the match ('failed'
+// and a closed channel still end it at once). While it waits, GameScene
+// shows blip.label centred just under the top bar, at least
+// TOUCH_CONFIG.hudMinCss CSS px on a phone (blip.basePx game px otherwise).
+export const NET_CONFIG = {
+    disconnectGraceMs: 8000,
+    blip: {
+        label: 'CONNECTION LOST - RECONNECTING',
+        y: 76, basePx: 14, padding: { x: 10, y: 4 },
+        fill: '#ffcc66', bg: '#1a1a2e',
+    },
+};
+
 // Holiday W-22 — fresh build on the phone (systems/AppUpdate.js). Once a new
 // deploy's service worker has taken over a running app, the menu shows the
 // reload button (game px, centre; top left, clear of the title, the wizards

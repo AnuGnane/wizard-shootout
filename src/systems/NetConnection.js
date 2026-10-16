@@ -11,6 +11,7 @@
 // ICE_SERVERS below) so strict-NAT peers have a shot without us running any
 // server of our own.
 
+import { NET_CONFIG } from '../config.js';
 import { NetSession } from './NetSession.js';
 
 // Best-effort third-party infrastructure, deliberately chosen because this game
@@ -109,6 +110,10 @@ async function decodeCode(code) {
     return JSON.parse(b64decode(text)); // legacy (pre-Phase-10) uncompressed code
 }
 
+// How long a 'disconnected' connection may take to come back (holiday
+// W-35); the smoke suite shortens it through window.__net.setDisconnectGrace.
+let disconnectGraceMs = NET_CONFIG.disconnectGraceMs;
+
 export class NetConnection {
     // role: 'host' | 'guest'
     constructor(role) {
@@ -116,6 +121,7 @@ export class NetConnection {
         this.pc = null;
         this.channel = null;
         this._closed = false;
+        this._blipTimer = null;
 
         // Caller-assignable callbacks. Default to no-ops so send/close/events
         // are always safe even before the caller wires anything up.
@@ -123,9 +129,23 @@ export class NetConnection {
         this.onMessage = () => {};
         this.onClose = () => {};
         this.onError = () => {};
+        // onBlip(true) when the connection drops to 'disconnected', and
+        // onBlip(false) if it is back to 'connected' within the grace.
+        this.onBlip = () => {};
     }
 
     // ---- internal setup ---------------------------------------------------
+
+    // True while a 'disconnected' waits out its grace (holiday W-35).
+    isBlipping() {
+        return !!this._blipTimer;
+    }
+
+    _clearBlip() {
+        if (!this._blipTimer) return;
+        clearTimeout(this._blipTimer);
+        this._blipTimer = null;
+    }
 
     _createPc() {
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -133,10 +153,21 @@ export class NetConnection {
             if (this._closed) return;
             const state = pc.connectionState;
             if (state === 'failed') {
+                this._clearBlip();
                 this.onError(new Error('connection failed'));
                 this.onClose();
             } else if (state === 'disconnected') {
-                this.onClose();
+                // Holiday W-35: usually a blip (a phone switching networks
+                // or apps); give it disconnectGraceMs to come back.
+                if (this._blipTimer) return;
+                this._blipTimer = setTimeout(() => {
+                    this._blipTimer = null;
+                    if (!this._closed) this.onClose();
+                }, disconnectGraceMs);
+                this.onBlip(true);
+            } else if (state === 'connected' && this._blipTimer) {
+                this._clearBlip();
+                this.onBlip(false);
             }
         });
         this.pc = pc;
@@ -162,6 +193,7 @@ export class NetConnection {
             this.onMessage(obj);
         });
         channel.addEventListener('close', () => {
+            this._clearBlip();
             if (!this._closed) this.onClose();
         });
         channel.addEventListener('error', (ev) => {
@@ -244,6 +276,7 @@ export class NetConnection {
     close() {
         if (this._closed) return;
         this._closed = true;
+        this._clearBlip();
         if (this.channel) {
             try { this.channel.close(); } catch (err) { /* already gone */ }
             this.channel = null;
@@ -259,5 +292,9 @@ export class NetConnection {
 // prove loopback transport without any real network. Tree-shaken out of a
 // production build (import.meta.env.DEV is false there).
 if (import.meta.env && import.meta.env.DEV) {
-    window.__net = { NetConnection, NetSession };
+    window.__net = {
+        NetConnection,
+        NetSession,
+        setDisconnectGrace: (ms) => { disconnectGraceMs = ms; },
+    };
 }
