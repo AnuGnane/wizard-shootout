@@ -69,3 +69,31 @@ Row class's win rate against the column class, both seat orders combined.
 | Four Chambers | 2814 | 52% | 0 | 3.9s |
 | Bastions | 2772 | 50% | 0 | 6.5s |
 
+
+## Human playtest
+
+Anu's own 1P matches against the Hard bot, counted on the phone (holiday W-30): STATS → `[ COPY TALLY ]` copies these two tables, filled, to paste into `HOLIDAY.md`'s Inbox. Only 1P matches with the bot on Hard count, as the harness above is Hard vs Hard; 2P, Party, Survival, Online, Daily and Easy/Normal bots do not. This section is written by hand, so a fresh `npm run balance` drops it; git history keeps it.
+
+How to read it: a class is judged once it has 20 or more matches. Inside 42 to 58 percent (the harness band) it is fine; outside it, it is a candidate for the next balance pass, checked against the harness matchups before any number changes. Under 20 matches, say nothing yet.
+
+| Class | Win rate | Wins | Losses | Matches |
+|---|---:|---:|---:|---:|
+| Arcanist | - | 0 | 0 | 0 |
+| Pyromancer | - | 0 | 0 | 0 |
+| Cryomancer | - | 0 | 0 | 0 |
+| Stonecaller | - | 0 | 0 | 0 |
+| Stormcaller | - | 0 | 0 | 0 |
+| Warden | - | 0 | 0 | 0 |
+| Trickster | - | 0 | 0 | 0 |
+
+Your class (row) against the bot's (column), wins-losses.
+
+| vs | Arcanist | Pyromancer | Cryomancer | Stonecaller | Stormcaller | Warden | Trickster |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **Arcanist** | · | · | · | · | · | · | · |
+| **Pyromancer** | · | · | · | · | · | · | · |
+| **Cryomancer** | · | · | · | · | · | · | · |
+| **Stonecaller** | · | · | · | · | · | · | · |
+| **Stormcaller** | · | · | · | · | · | · | · |
+| **Warden** | · | · | · | · | · | · | · |
+| **Trickster** | · | · | · | · | · | · | · |

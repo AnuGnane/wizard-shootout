@@ -247,6 +247,28 @@ export const SHARE_CONFIG = {
     },
 };
 
+// Holiday W-30 — the human balance tally (Stats.js `balanceTally`, the
+// BALANCE block on StatsScene). Only 1P matches against this bot difficulty
+// count, since the self-play harness band (docs/balance.md) was measured
+// Hard vs Hard; a class's rate is read once it has `minMatches` matches.
+export const BALANCE_TALLY_CONFIG = {
+    mode: '1p',
+    difficulty: 'hard',
+    bandLow: 42, bandHigh: 58,   // percent, the same band as `npm run balance`
+    minMatches: 20,
+    copyLabel: '[ COPY TALLY ]',
+    shareLabel: '[ SHARE TALLY ]',
+    copiedLabel: '[ COPIED ]',
+    heading: 'BALANCE - 1P VS HARD BOT',
+    titleY: 546, rowY: 580, colW: 132,
+    colors: { inBand: '#66dd88', outBand: '#ff8866', few: '#8888aa' },
+    button: {
+        x: 832, y: 666,   // right of [ BACK ] on its row
+        font: '16px monospace', padding: { x: 12, y: 8 },
+        fill: '#ffffff', hover: '#66ccff', bg: '#2a4d66',
+    },
+};
+
 // Phase 6e / holiday W-4 — on-screen touch controls (1P mode on a touch
 // device; see systems/TouchControls.js). Sizes are minimums in CSS pixels, so
 // the controls stay thumb-sized however far Phaser's FIT scaling shrinks the

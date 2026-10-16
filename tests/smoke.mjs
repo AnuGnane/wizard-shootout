@@ -2538,6 +2538,95 @@ try {
             JSON.stringify({ buttons: b.buttons, daily: b.daily, copied: b.copied }));
     }
 
+    // 3y. Holiday W-30: the human balance tally. On a fresh profile, two 1P
+    // matches (first to 1) against the Hard bot, an Arcanist win and an
+    // Arcanist loss against a Warden, land in STATS.balanceTally; a third on
+    // Normal does not. StatsScene's [ COPY TALLY ] copies the tally as the
+    // markdown tables of docs/balance.md's "Human playtest" section.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 1024, height: 700 } });
+        await ctx.addInitScript(() => {
+            window.__copied = [];
+            delete Navigator.prototype.share;
+            if (navigator.clipboard) navigator.clipboard.writeText = (t) => { window.__copied.push(t); return Promise.resolve(); };
+        });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('tally pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene') && window.__stats, null, { timeout: 20000 });
+        const playMatch = async (difficulty, seat1Wins) => {
+            await pg.evaluate((difficulty) => {
+                window.__settings.aiDifficulty = difficulty;
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'warden', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 1;
+                const active = window.__game.scene.getScenes(true)[0];
+                active.scene.start('GameScene');
+            }, difficulty);
+            await pg.waitForFunction(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                return s && window.__game.scene.isActive('GameScene') && s.player1 && s.player2;
+            }, null, { timeout: 8000 });
+            await pg.waitForTimeout(1200);
+            await pg.evaluate((seat1Wins) => {
+                const s = window.__game.scene.getScene('GameScene');
+                const victim = seat1Wins ? s.player2 : s.player1;
+                victim.lastHitBy = { by: seat1Wins ? 1 : 2, element: 'arcane' };
+                victim.takeDamage(1000);
+            }, seat1Wins);
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameOverScene'), null, { timeout: 8000 });
+        };
+        await playMatch('hard', true);
+        await playMatch('hard', false);
+        await playMatch('normal', true);
+        const tally = await pg.evaluate(() => ({
+            cell: { ...window.__stats.balanceTally.arcanist.warden },
+            total: Object.values(window.__stats.balanceTally).reduce((n, row) =>
+                n + Object.values(row).reduce((m, c) => m + c.wins + c.losses, 0), 0),
+            games: window.__stats.gamesPlayed,
+        }));
+        check('balance tally: a Hard 1P win and loss count by both classes, a Normal match does not',
+            tally.cell.wins === 1 && tally.cell.losses === 1 && tally.total === 2 && tally.games === 3,
+            JSON.stringify(tally));
+        await pg.evaluate(() => window.__game.scene.getScene('GameOverScene').scene.start('StatsScene'));
+        await pg.waitForFunction(() => window.__game.scene.isActive('StatsScene') && window.__game.scene.getScene('StatsScene').tallyBtn, null, { timeout: 5000 });
+        const btn = await pg.evaluate(() => {
+            const b = window.__game.scene.getScene('StatsScene').tallyBtn;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            return { label: b.text, x: c.left + b.x * k, y: c.top + b.y * k };
+        });
+        await pg.mouse.click(btn.x, btn.y);
+        await pg.waitForTimeout(150);
+        const copied = await pg.evaluate(() => ({
+            text: window.__copied[0] || '',
+            label: window.__game.scene.getScene('StatsScene').tallyBtn.text,
+        }));
+        // Parse the tables back: every row has the header's column count, the
+        // Arcanist row reads 50.0% 1 1 2, and Arcanist vs Warden reads 1-1.
+        const tables = [];
+        for (const line of copied.text.split('\n')) {
+            if (!line.startsWith('|')) { if (tables.length && tables[tables.length - 1].length) tables.push([]); continue; }
+            if (!tables.length) tables.push([]);
+            tables[tables.length - 1].push(line.slice(1, -1).split('|').map((c) => c.trim()));
+        }
+        const [perClass = [], matchups = []] = tables.filter((t) => t.length);
+        const wellFormed = [perClass, matchups].every((t) => t.length === 9 && t.every((r) => r.length === t[0].length));
+        const arc = perClass.find((r) => r[0] === 'Arcanist') || [];
+        const arcRow = matchups.find((r) => r[0] === '**Arcanist**') || [];
+        const wardenCol = (matchups[0] || []).indexOf('Warden');
+        check('balance tally: [ COPY TALLY ] copies the tally as the docs/balance.md markdown tables',
+            btn.label === '[ COPY TALLY ]' && copied.label === '[ COPIED ]' && wellFormed
+                && arc.slice(1).join(' ') === '50.0% 1 1 2' && arcRow[wardenCol] === '1-1',
+            JSON.stringify({ label: btn.label, after: copied.label, arc, cell: arcRow[wardenCol], rows: tables.map((t) => t.length) }));
+        await ctx.close();
+    }
+
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
         if (!window.__net || !window.__net.NetConnection) return { err: 'window.__net missing' };
