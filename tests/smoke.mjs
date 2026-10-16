@@ -985,7 +985,7 @@ try {
                 ended = await phone.evaluate(() => window.__blipCloses);
             }
             check('phone online: a blip shows CONNECTION LOST - RECONNECTING and the round plays on; back in time, nothing closes',
-                ready && lost?.line === 'CONNECTION LOST - RECONNECTING' && lost.css >= 9.9 && lost.running && lost.closes === 0
+                ready && lost?.line === 'CONNECTION LOST - RECONNECTING' && lost.css >= 10 - 1e-6 && lost.running && lost.closes === 0
                     && back?.line === null && back.running && after?.closes === 0 && after.running,
                 `ready=${ready} lost=${JSON.stringify(lost)} back=${JSON.stringify(back)} after grace=${JSON.stringify(after)}`);
             check('phone online: disconnected past the grace ends the match once', ended === 1, `onNetClose calls=${ended}`);

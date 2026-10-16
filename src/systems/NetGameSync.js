@@ -645,7 +645,7 @@ export class NetGameSync {
     onNetBlip(lost) {
         const scene = this.scene;
         if (this._blipText) { this._blipText.destroy(); this._blipText = null; }
-        if (!lost || this._peerLeft || !scene.sys || !scene.sys.displayList) return;
+        if (!lost || this._peerLeft || !scene.sys || !scene.sys.isActive()) return;
         const { label, y, basePx, padding, fill, bg } = NET_CONFIG.blip;
         const display = scene.scale.displaySize;
         const k = display && display.width ? display.width / GAME_CONFIG.width : 1;

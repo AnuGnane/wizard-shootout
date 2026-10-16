@@ -207,11 +207,6 @@ export const BACK_BUTTON_CONFIG = {
     buffer: 2,
 };
 
-// Holiday W-22 — fresh build on the phone (systems/AppUpdate.js). Once a new
-// deploy's service worker has taken over a running app, the menu shows the
-// reload button (game px, centre; top left, clear of the title, the wizards
-// and the FULL SCREEN toggle in the top right). The footer's build version
-// sits in the bottom-right corner (right-aligned at x).
 // Holiday W-35 — an Online match survives a blip (systems/NetConnection.js).
 // WebRTC's 'disconnected' is the transient state a phone enters on a Wi-Fi
 // to cellular handoff or a short app switch; the connection waits
@@ -228,6 +223,11 @@ export const NET_CONFIG = {
     },
 };
 
+// Holiday W-22 — fresh build on the phone (systems/AppUpdate.js). Once a new
+// deploy's service worker has taken over a running app, the menu shows the
+// reload button (game px, centre; top left, clear of the title, the wizards
+// and the FULL SCREEN toggle in the top right). The footer's build version
+// sits in the bottom-right corner (right-aligned at x).
 export const APP_UPDATE_CONFIG = {
     button: {
         label: '[ NEW VERSION - TAP TO RELOAD ]',

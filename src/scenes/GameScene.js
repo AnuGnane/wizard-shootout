@@ -236,6 +236,11 @@ export class GameScene extends Phaser.Scene {
                 conn.onClose = () => this.netSync.onNetClose();
                 // Holiday W-35: a blip shows a line and the round plays on.
                 conn.onBlip = (lost) => this.netSync.onNetBlip(lost);
+                // A round restarted mid-blip keeps the line up (on the first
+                // update: the scene only counts as active once create() ends).
+                this.events.once('update', () => {
+                    if (conn.isBlipping && conn.isBlipping()) this.netSync.onNetBlip(true);
+                });
             }
         }
 

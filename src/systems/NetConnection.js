@@ -136,6 +136,11 @@ export class NetConnection {
 
     // ---- internal setup ---------------------------------------------------
 
+    // True while a 'disconnected' waits out its grace (holiday W-35).
+    isBlipping() {
+        return !!this._blipTimer;
+    }
+
     _clearBlip() {
         if (!this._blipTimer) return;
         clearTimeout(this._blipTimer);
@@ -188,6 +193,7 @@ export class NetConnection {
             this.onMessage(obj);
         });
         channel.addEventListener('close', () => {
+            this._clearBlip();
             if (!this._closed) this.onClose();
         });
         channel.addEventListener('error', (ev) => {
