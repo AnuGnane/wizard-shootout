@@ -217,6 +217,9 @@ export const BACK_BUTTON_CONFIG = {
 // Holiday W-36: offlineText is OnlineScene's status line when navigator.onLine
 // is false at HOST, JOIN or on arrival, and the reason _signalFallback gives
 // when the phone goes offline mid-flow.
+// Holiday W-38: on a touch device with navigator.clipboard.readText, JOIN puts
+// a [ PASTE ] button between the room-code box and JOIN ROOM; the three
+// widths (game px) replace the box's 250 and JOIN ROOM's 158 in that row.
 export const NET_CONFIG = {
     disconnectGraceMs: 8000,
     offlineText: 'no connection - Online needs the internet; 1P, Daily and Survival play offline',
@@ -224,6 +227,11 @@ export const NET_CONFIG = {
         label: 'CONNECTION LOST - RECONNECTING',
         y: 76, basePx: 14, padding: { x: 10, y: 4 },
         fill: '#ffcc66', bg: '#1a1a2e',
+    },
+    paste: {
+        label: 'PASTE',
+        emptyText: 'nothing to paste - type the code',
+        inputW: 180, buttonW: 92, joinW: 132, gap: 8,
     },
 };
 

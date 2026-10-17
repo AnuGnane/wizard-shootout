@@ -69,6 +69,18 @@ export function normalizeRoomCode(text) {
     return out;
 }
 
+// The first room code in a pasted text (holiday W-38), so a whole chat message
+// ("Join my ... - code ABCDE - https://...") pastes clean: the first run of
+// exactly ROOM_CODE_LENGTH alphabet characters as written (codes are shared
+// in capitals, so lowercase words like "match" are passed over), else the
+// first such run ignoring case. '' when there is none.
+export function findRoomCode(text) {
+    const runs = (s) => s.split(new RegExp('[^' + ROOM_CODE_ALPHABET + ']+'));
+    const src = String(text || '');
+    const exact = (r) => r.length === ROOM_CODE_LENGTH;
+    return runs(src).find(exact) || runs(src.toUpperCase()).find(exact) || '';
+}
+
 export function isValidRoomCode(code) {
     return normalizeRoomCode(code).length === ROOM_CODE_LENGTH;
 }

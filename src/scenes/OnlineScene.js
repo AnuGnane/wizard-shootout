@@ -10,8 +10,8 @@ import { NET_CLASS_POOL, coerceNetClass } from '../systems/NetGameSync.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
-import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../systems/NetSignal.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode, findRoomCode } from '../systems/NetSignal.js';
+import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 import { SHARE_CONFIG, NET_CONFIG } from '../config.js';
 import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
@@ -570,8 +570,18 @@ export class OnlineScene extends Phaser.Scene {
 
         // Primary: room code entry.
         this._label("ROOM CODE from your friend:", COL_X, 224);
-        this.roomInput = this._roomCodeInput(COL_X, 246, 250);
-        this._button('JOIN ROOM', COL_X + 262, 246, 158, () => this._joinByRoomCode(), 56);
+        if (this._canPaste()) {
+            // Holiday W-38: PASTE between the box and JOIN ROOM, on a phone.
+            const P = NET_CONFIG.paste;
+            this.roomInput = this._roomCodeInput(COL_X, 246, P.inputW);
+            this.pasteButton = this._button(P.label, COL_X + P.inputW + P.gap, 246, P.buttonW,
+                () => this._pasteRoomCode(), 56);
+            this._button('JOIN ROOM', COL_X + COL_W - P.joinW, 246, P.joinW, () => this._joinByRoomCode(), 56);
+        } else {
+            this.pasteButton = null;
+            this.roomInput = this._roomCodeInput(COL_X, 246, 250);
+            this._button('JOIN ROOM', COL_X + 262, 246, 158, () => this._joinByRoomCode(), 56);
+        }
         this.roomStatus = this._label('5 characters, letters and numbers.', COL_X, 312, COL_W, '#ffdd44');
 
         // Fallback: the manual code exchange, always present.
@@ -587,6 +597,27 @@ export class OnlineScene extends Phaser.Scene {
         this._label('Your reply, for them to scan:', QR_X, 224, QR_W);
         this.qrCanvas = this._qrCanvas(QR_X, 246);
         this.qrNote = this._label('appears once you have a reply.', QR_X, 578, QR_W, '#7f8ab8');
+    }
+
+    // A touch device whose browser can read the clipboard (Android Chrome;
+    // iOS Safari shows its own paste prompt). Desktop keeps ctrl-V.
+    _canPaste() {
+        return isTouchDevice(this) && !!(navigator.clipboard && navigator.clipboard.readText);
+    }
+
+    // Fill the room-code box from the clipboard through its own input path.
+    // The player still taps JOIN ROOM.
+    _pasteRoomCode() {
+        // iOS's paste prompt can stay open while the player leaves JOIN.
+        const stale = () => !this.sys.isActive() || this.role !== 'guest';
+        const empty = () => { if (!stale()) this.statusText.setText(NET_CONFIG.paste.emptyText); };
+        navigator.clipboard.readText().then((text) => {
+            if (stale()) return;
+            const code = findRoomCode(text);
+            if (!code || !this.roomInput) { empty(); return; }
+            this.roomInput.value = code;
+            this.roomInput.dispatchEvent(new Event('input'));
+        }).catch(empty);
     }
 
     _joinByRoomCode() {

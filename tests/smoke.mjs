@@ -70,6 +70,9 @@
 //      shares the room code and the page's address and the Daily card's
 //      button shares its score; without it Online keeps only COPY and the
 //      Daily button copies the line instead (W-29),
+//   3y. with navigator.clipboard.readText stubbed on a phone, JOIN's
+//      [ PASTE ] fills the room-code box from a chat line and a refused
+//      read says so; a desktop has no PASTE (W-38),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -2696,6 +2699,60 @@ try {
             !b.buttons.includes('SHARE') && b.buttons.includes('COPY') && b.daily === '[ COPY RESULT ]'
                 && b.copied.length === 1 && b.copied[0].includes('won 3-1') && !b.shared.length,
             JSON.stringify({ buttons: b.buttons, daily: b.daily, copied: b.copied }));
+    }
+
+    // 3y. Holiday W-38: paste the room code with one tap. On an 844x390 touch
+    // context with navigator.clipboard.readText stubbed, JOIN shows [ PASTE ];
+    // a clipboard holding a chat line fills the box with just the code and
+    // leaves the flow where it was (JOIN ROOM not tapped, no signalling here);
+    // a refused read says so on the status line. A desktop has no button.
+    // PASTE is as tall as JOIN ROOM beside it.
+    {
+        const stub = (clip) => {
+            if (!navigator.clipboard) return;
+            navigator.clipboard.readText = () => (clip === null
+                ? Promise.reject(new Error('denied')) : Promise.resolve(clip));
+        };
+        const run = async (clip, touch) => {
+            const ctx = await browser.newContext(touch
+                ? { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }
+                : { viewport: { width: 1024, height: 700 } });
+            await ctx.addInitScript(stub, clip);
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('paste pageerror: ' + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('OnlineScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('OnlineScene'), null, { timeout: 5000 });
+            await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').startJoin());
+            await pg.waitForTimeout(200);
+            const before = await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').statusText.text);
+            const buttons = await pg.evaluate(() => [...document.querySelectorAll('button')].map((b) => b.textContent));
+            let tall = 0, joinTall = 0;
+            if (buttons.includes('PASTE')) {
+                const b = pg.getByRole('button', { name: 'PASTE', exact: true });
+                tall = (await b.boundingBox()).height;
+                joinTall = (await pg.getByRole('button', { name: 'JOIN ROOM', exact: true }).boundingBox()).height;
+                await b.tap();
+                await pg.waitForTimeout(150);
+            }
+            const after = await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('OnlineScene');
+                return { value: document.querySelector('[data-room-input]').value, status: s.statusText.text, role: s.role };
+            });
+            await ctx.close();
+            return { buttons, tall, joinTall, before, ...after };
+        };
+        const ok = await run('join me: ABCDE', true);
+        const no = await run(null, true);
+        const desk = await run('join me: ABCDE', false);
+        check('paste: PASTE on a phone fills the room code from a chat line and leaves JOIN ROOM to the player',
+            ok.buttons.includes('PASTE') && ok.tall > 0 && ok.tall === ok.joinTall && ok.value === 'ABCDE'
+                && ok.status === ok.before && ok.role === 'guest',
+            JSON.stringify(ok));
+        check('paste: a refused clipboard read says so on the status line',
+            no.value === '' && no.status === 'nothing to paste - type the code', JSON.stringify(no));
+        check('paste: a desktop has no PASTE button', !desk.buttons.includes('PASTE'), JSON.stringify(desk.buttons));
     }
 
     // 3x2. Holiday W-36: no connection, said at once. An init script stubs
