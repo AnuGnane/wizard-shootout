@@ -608,8 +608,11 @@ export class OnlineScene extends Phaser.Scene {
     // Fill the room-code box from the clipboard through its own input path.
     // The player still taps JOIN ROOM.
     _pasteRoomCode() {
-        const empty = () => this.statusText.setText(NET_CONFIG.paste.emptyText);
+        // iOS's paste prompt can stay open while the player leaves JOIN.
+        const stale = () => !this.sys.isActive() || this.role !== 'guest';
+        const empty = () => { if (!stale()) this.statusText.setText(NET_CONFIG.paste.emptyText); };
         navigator.clipboard.readText().then((text) => {
+            if (stale()) return;
             const code = findRoomCode(text);
             if (!code || !this.roomInput) { empty(); return; }
             this.roomInput.value = code;
