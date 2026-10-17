@@ -2031,6 +2031,13 @@ try {
         await reached(() => window.__game.scene.isActive('OnlineScene'));
         await phone.evaluate(() => window.__game.scene.getScene('OnlineScene').startJoin());
         await phone.waitForTimeout(200);
+        // Holiday W-40: the code boxes keep the phone keyboard honest.
+        const attrs = (sel, names) => phone.evaluate(([s, ns]) => {
+            const n = document.querySelector(s);
+            return n ? Object.fromEntries(ns.map((a) => [a, n.getAttribute(a)])) : null;
+        }, [sel, names]);
+        const roomAttrs = await attrs('[data-room-input]', ['autocapitalize', 'autocorrect', 'inputmode', 'enterkeyhint', 'spellcheck']);
+        const areaAttrs = await attrs('textarea:not([readonly])', ['autocapitalize', 'autocorrect', 'spellcheck']);
         for (const [sel, text] of [['input[data-room-input]', 'ABCDE'], ['textarea:not([readonly])', 'hostcode']]) {
             const r = await field(sel, text); if (r) bad.push('join ' + r);
         }
@@ -2040,6 +2047,13 @@ try {
         await reached(() => window.__game.scene.isActive('MapEditorScene'));
         await phone.evaluate(() => window.__game.scene.getScene('MapEditorScene').openNameEditor());
         await phone.waitForTimeout(150);
+        const nameAttrs = await attrs('input[data-map-name]', ['autocorrect', 'enterkeyhint', 'autocapitalize']);
+        check('phone keyboard: room code opens in capitals, no autocorrect, text keyboard, GO; code textareas and the map name are not autocorrected (W-40)',
+            roomAttrs?.autocapitalize === 'characters' && roomAttrs.autocorrect === 'off' && roomAttrs.inputmode === 'text'
+                && roomAttrs.enterkeyhint === 'go' && roomAttrs.spellcheck === 'false'
+                && areaAttrs?.autocapitalize === 'off' && areaAttrs.autocorrect === 'off' && areaAttrs.spellcheck === 'false'
+                && nameAttrs?.autocorrect === 'off' && nameAttrs.enterkeyhint === 'done' && nameAttrs.autocapitalize === null,
+            JSON.stringify({ roomAttrs, areaAttrs, nameAttrs }));
         { const r = await field('input[data-map-name]', 'Zz'); if (r) bad.push('editor ' + r); }
         check('phone gestures: Online code boxes and the editor name field stay selectable and typeable',
             bad.length === 0, bad.length ? bad.join('; ') : 'room input, join code textarea, editor name');
