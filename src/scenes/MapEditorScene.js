@@ -714,6 +714,9 @@ export class MapEditorScene extends Phaser.Scene {
         input.value = this.mapName;
         input.maxLength = MAX_NAME_LENGTH;
         input.dataset.mapName = '1';
+        // Names keep their capitals and words, but no autocorrect (holiday W-40).
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('enterkeyhint', 'done');
         Object.assign(input.style, {
             position: 'absolute',
             left: '292px',

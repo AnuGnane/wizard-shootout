@@ -10,7 +10,7 @@ import { NET_CLASS_POOL, coerceNetClass } from '../systems/NetGameSync.js';
 import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
-import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode, findRoomCode } from '../systems/NetSignal.js';
+import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode, findRoomCode, ROOM_CODE_ALPHABET } from '../systems/NetSignal.js';
 import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 import { SHARE_CONFIG, NET_CONFIG } from '../config.js';
@@ -317,6 +317,10 @@ export class OnlineScene extends Phaser.Scene {
         const el = document.createElement('textarea');
         el.readOnly = readonly;
         if (placeholder) el.placeholder = placeholder;
+        // A pasted code is never "corrected" by the phone keyboard (holiday W-40).
+        el.setAttribute('autocapitalize', 'off');
+        el.setAttribute('autocorrect', 'off');
+        el.spellcheck = false;
         Object.assign(el.style, {
             position: 'absolute',
             left: x + 'px',
@@ -391,6 +395,12 @@ export class OnlineScene extends Phaser.Scene {
         el.maxLength = 5;
         el.autocomplete = 'off';
         el.spellcheck = false;
+        // The phone keyboard opens in capitals with no suggestions and a GO
+        // key (holiday W-40); a digits-only alphabet gets the number pad.
+        el.setAttribute('autocapitalize', 'characters');
+        el.setAttribute('autocorrect', 'off');
+        el.setAttribute('inputmode', /[A-Z]/.test(ROOM_CODE_ALPHABET) ? 'text' : 'numeric');
+        el.setAttribute('enterkeyhint', 'go');
         el.dataset.roomInput = '1';
         Object.assign(el.style, {
             position: 'absolute',
