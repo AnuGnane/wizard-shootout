@@ -214,8 +214,12 @@ export const BACK_BUTTON_CONFIG = {
 // and a closed channel still end it at once). While it waits, GameScene
 // shows blip.label centred just under the top bar, at least
 // TOUCH_CONFIG.hudMinCss CSS px on a phone (blip.basePx game px otherwise).
+// Holiday W-36: offlineText is OnlineScene's status line when navigator.onLine
+// is false at HOST, JOIN or on arrival, and the reason _signalFallback gives
+// when the phone goes offline mid-flow.
 export const NET_CONFIG = {
     disconnectGraceMs: 8000,
+    offlineText: 'no connection - Online needs the internet; 1P, Daily and Survival play offline',
     blip: {
         label: 'CONNECTION LOST - RECONNECTING',
         y: 76, basePx: 14, padding: { x: 10, y: 4 },
