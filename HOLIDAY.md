@@ -111,6 +111,7 @@ When this queue is empty the slot is free; Anu may point it at `AnuGnane/prospec
 Notes from Anu's phone land here, newest last.
 
 - 2026-10-17: go for v1.0 (Anu).
+  - 2026-10-17 04:56 UTC (orchestrator): the 04:00 run's sandbox refused the tag push, so the orchestrator tagged `origin/main` head 45e9d0a as `v1.0.0` and pushed it on Anu's go. Release workflow green; https://github.com/AnuGnane/wizard-shootout/releases/tag/v1.0.0 has `wizard-shootout-v1.0.0-html5.zip`. Left for the next run under W-18: tick the box here and the ROADMAP sub-line in a PR merged under **Merging**. Do not retag.
 
 - 2026-10-15: **go** for v1.0. Anu's word, relayed from the orchestrator session; W-18 is unblocked. (Not a playtest note.)
   - Answered by W-18 (Launch), ready since this note by its own rule; no new package (holiday-queues, 2026-10-15).
