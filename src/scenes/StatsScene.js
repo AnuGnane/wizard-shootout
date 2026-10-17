@@ -96,6 +96,8 @@ export class StatsScene extends Phaser.Scene {
             this.storageNote = this.add.text(width / 2, height - 34 - STORAGE_CONFIG.statsDy, STORAGE_CONFIG.statsNote, {
                 font: `${px}px monospace`,
                 fill: STORAGE_CONFIG.fill,
+                align: 'center',
+                wordWrap: { width: STORAGE_CONFIG.maxWidthPx },
             }).setOrigin(0.5);
         }
 

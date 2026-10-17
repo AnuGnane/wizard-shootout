@@ -500,6 +500,7 @@ export class MapEditorScene extends Phaser.Scene {
     updateStatus() {
         const valid = this.problems.length === 0;
         this.statusText.setFontSize(STATUS_FONT_PX);
+        this.statusText.setWordWrapWidth(null);
         this.statusText.setText(valid ? 'VALID' : this.problems[0]);
         this.statusText.setColor(valid ? '#66ff66' : '#ff6666');
 
@@ -513,6 +514,7 @@ export class MapEditorScene extends Phaser.Scene {
     // Temporary message in the status line; the live verdict comes back after.
     flashStatus(message, color = '#ffdd44', hold = STATUS_HOLD) {
         this.statusText.setFontSize(STATUS_FONT_PX);
+        this.statusText.setWordWrapWidth(null);
         this.statusText.setText(message);
         this.statusText.setColor(color);
         if (this._statusTimer) this._statusTimer.remove();
@@ -542,6 +544,7 @@ export class MapEditorScene extends Phaser.Scene {
             this.flashStatus(STORAGE_CONFIG.editorNote, STORAGE_CONFIG.fill, STORAGE_CONFIG.holdMs);
             this.statusText.setFontSize(Math.max(STORAGE_CONFIG.minFontPx,
                 Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(this))));
+            this.statusText.setWordWrapWidth(STORAGE_CONFIG.maxWidthPx).setAlign('center');
             return;
         }
         this.flashStatus(`saved "${this.mapName}"`, '#66ff66');

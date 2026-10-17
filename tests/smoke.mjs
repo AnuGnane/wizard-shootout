@@ -3198,8 +3198,9 @@ try {
     // STORAGE_CONFIG.editorNote in the status line and the saved label says
     // so, and the Stats screen shows statsNote; without the stub, the save
     // confirms as before and neither note is on screen.
-    for (const fail of [true, false]) {
-        const ctx = await browser.newContext({ viewport: { width: 1024, height: 700 } });
+    for (const [fail, vw, vh] of [[true, 1024, 700], [false, 1024, 700], [true, 568, 320]]) {
+        const touch = vw < 1024 ? { hasTouch: true, isMobile: true } : {};
+        const ctx = await browser.newContext({ viewport: { width: vw, height: vh }, ...touch });
         if (fail) {
             await ctx.addInitScript(() => {
                 Storage.prototype.setItem = function () {
@@ -3220,17 +3221,19 @@ try {
             e.mapName = 'W42 smoke';
             const problems = e.problems.slice();
             e.saveMap();
-            return { problems, status: e.statusText.text, saved: e.savedText.text };
+            return { problems, status: e.statusText.text, saved: e.savedText.text, w: Math.round(e.statusText.width) };
         });
         await pg.evaluate(() => window.__game.scene.getScene('MapEditorScene').scene.start('StatsScene'));
         await pg.waitForFunction(() => window.__game.scene.isActive('StatsScene'), null, { timeout: 5000 });
         await pg.waitForTimeout(100);
         const statsNote = await pg.evaluate(() => window.__game.scene.getScene('StatsScene').storageNote?.text || null);
+        const statsW = await pg.evaluate(() => Math.round(window.__game.scene.getScene('StatsScene').storageNote?.width || 0));
         const cfg = STORAGE_CONFIG;
         if (fail) {
-            check('storage note: a map saved while storage refuses the write says it is not saved, and Stats says so too (W-42)',
-                ed.problems.length === 0 && ed.status === cfg.editorNote && ed.saved === cfg.savedLabel && statsNote === cfg.statsNote,
-                JSON.stringify({ ...ed, statsNote }));
+            check(`storage note: a map saved while storage refuses the write says it is not saved, and Stats says so too, within the canvas at ${vw}x${vh} (W-42)`,
+                ed.problems.length === 0 && ed.status === cfg.editorNote && ed.saved === cfg.savedLabel && statsNote === cfg.statsNote
+                    && ed.w <= 1024 && statsW <= 1024,
+                JSON.stringify({ ...ed, statsNote, statsW }));
         } else {
             check('storage note: a map saved normally confirms as before, with no storage note (W-42)',
                 ed.problems.length === 0 && ed.status === 'saved "W42 smoke"' && ed.saved === 'saved' && statsNote === null,
