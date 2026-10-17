@@ -24,6 +24,7 @@ import { saveSettings } from '../systems/Storage.js';
 import { recordKill, recordShot, recordDamage, checkAchievements } from '../systems/Stats.js';
 import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 import { fx, FxMonitor } from '../systems/Effects.js';
+import * as WakeLock from '../systems/WakeLock.js';
 
 const SCENE_EVENTS = [
     'playerShoot', 'createFireWall', 'createIceWall', 'createTempWall',
@@ -140,6 +141,7 @@ export class GameScene extends Phaser.Scene {
         // genuine scene shutdown (quit to menu, match over) needs its own
         // teardown since createPlayers() won't run again until next time.
         this.events.once('shutdown', () => {
+            WakeLock.release();
             if (this.touchControls) {
                 this.touchControls.destroy();
                 this.touchControls = null;
@@ -296,7 +298,13 @@ export class GameScene extends Phaser.Scene {
         if (this.leaving || this._pauseQueued) return;
         if (this.scene.isPaused() || !this.scene.isActive()) return;
         this._pauseQueued = true;
-        this.events.once('resume', () => { this._pauseQueued = false; });
+        // Holiday W-37: a paused round lets the phone sleep; resuming wakes
+        // the lock again where the round has touch controls.
+        WakeLock.release();
+        this.events.once('resume', () => {
+            this._pauseQueued = false;
+            if (this.touchControls) WakeLock.hold();
+        });
         this.scene.launch('PauseScene');
         this.scene.pause();
     }
@@ -1411,6 +1419,8 @@ export class GameScene extends Phaser.Scene {
         // Holiday W-13: wherever seat 1 has touch controls, grow the HUD to a
         // legible CSS size and lay it out around them (2P/party never do).
         if (this.touchControls) this.touchHud = new TouchHud(this);
+        // Holiday W-37: a touch round keeps the screen awake (never desktop).
+        if (this.touchControls) WakeLock.hold();
     }
 
     // Today's two-player HUD, verbatim. Only reached when playerCount <= 2.
