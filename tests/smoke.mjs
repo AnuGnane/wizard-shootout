@@ -3138,6 +3138,60 @@ try {
         await ctx.close();
     }
 
+    // 3z2. Holiday W-41: Reduce Motion means LITE at once. With matchMedia
+    // stubbed (by an init script) to match prefers-reduced-motion, a round
+    // on EFFECTS: AUTO is lite before any frame-time sample (no monitor) and
+    // the pause screen reads the reduce-motion note; unstubbed, AUTO starts
+    // full with its monitor as before.
+    for (const reduce of [true, false]) {
+        const ctx = await browser.newContext({ viewport: { width: 1024, height: 700 } });
+        if (reduce) {
+            await ctx.addInitScript(() => {
+                const real = window.matchMedia.bind(window);
+                window.matchMedia = (q) => (/prefers-reduced-motion:\s*reduce/.test(q)
+                    ? { matches: true, media: q, onchange: null, addListener() {}, removeListener() {},
+                        addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; } }
+                    : real(q));
+            });
+        }
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('reduced-motion pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene') && window.__fx, null, { timeout: 20000 });
+        await pg.evaluate(() => {
+            window.__settings.effects = 'auto';
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScenes(true)[0].scene.start('GameScene');
+        });
+        await pg.waitForFunction(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return s && window.__game.scene.isActive('GameScene') && s.player1 && s.player2;
+        }, null, { timeout: 8000 });
+        const st = await pg.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return { lite: s.fxLite, monitor: !!s.fxMonitor, auto: s.fxAutoLite };
+        });
+        await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+        await pg.waitForFunction(() => window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 });
+        const note = await pg.evaluate(() => window.__game.scene.getScene('PauseScene').fxNote?.text || null);
+        const cfg = await pg.evaluate(() => window.__fx.FX_CONFIG);
+        if (reduce) {
+            check('reduce motion: under AUTO the round is lite from the start, with no monitor, and the pause note says reduce motion (W-41)',
+                st.lite === true && !st.monitor && !st.auto && note === cfg.pauseNoteReduced, JSON.stringify({ ...st, note }));
+        } else {
+            check('reduce motion: without it, AUTO starts full with its monitor and no pause note (W-41)',
+                st.lite === false && st.monitor && note === null, JSON.stringify({ ...st, note }));
+        }
+        await ctx.close();
+    }
+
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
     // phone Settings shows TOUCH LAYOUT and saves LEFT; a 1P round then has
     // the joystick bottom-right and FIRE bottom-left (ORB to its right, PWR
