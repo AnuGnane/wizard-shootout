@@ -110,6 +110,8 @@ When this queue is empty the slot is free; Anu may point it at `AnuGnane/prospec
 
 Notes from Anu's phone land here, newest last.
 
+- 2026-10-17: go for v1.0 (Anu).
+
 - 2026-10-15: **go** for v1.0. Anu's word, relayed from the orchestrator session; W-18 is unblocked. (Not a playtest note.)
   - Answered by W-18 (Launch), ready since this note by its own rule; no new package (holiday-queues, 2026-10-15).
   - Reordered 2026-10-16 (holiday-queues): **Launch** now sits above **Phase 11** in the Queue, so W-18 is the first package a run takes; the phone-half packages keep deploying to Pages after the tag as before.
