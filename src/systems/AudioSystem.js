@@ -35,6 +35,7 @@ class AudioSystem {
         this._musicVol = 0.15;          // bus target gain — sits under SFX
         this._musicTimerId = null;      // setInterval id for the scheduler
         this._musicStartCount = 0;      // dev/test aid: bumps only when a NEW interval is created
+        this._pageHidden = false;       // W-39: no scheduler while the page is hidden
         this._nextNoteTime = 0;         // ctx.currentTime of the next unscheduled beat
         this._musicChordIndex = 0;
         this._musicBeatInChord = 0;
@@ -50,7 +51,35 @@ class AudioSystem {
             for (const type of ['pointerup', 'touchend', 'keydown']) {
                 window.addEventListener(type, wake, { capture: true, passive: true });
             }
+            // Holiday W-39: Android keeps a running context playing from the
+            // lock screen or behind another app. Looking away suspends it and
+            // stops the scheduler (_musicOn, the intent, is kept); coming back
+            // restarts both without a tap, since the page has had its gesture
+            // (the wake listener above stays the fallback when it has not).
+            document.addEventListener('visibilitychange', () => {
+                this._pageHidden = document.visibilityState !== 'visible';
+                if (this._pageHidden) this._sleep();
+                else this._wakeFromHidden();
+            });
         }
+    }
+
+    _sleep() {
+        if (this._musicTimerId) {
+            clearInterval(this._musicTimerId);
+            this._musicTimerId = null;
+        }
+        if (this.ctx && this.ctx.state !== 'closed') {
+            Promise.resolve(this.ctx.suspend()).catch(() => {});
+        }
+    }
+
+    _wakeFromHidden() {
+        if (!this.ctx) return;
+        if (this._musicOn) this._ensureScheduler();
+        // Always resume: a quick look away can come back before suspend()
+        // has settled, while state still reads 'running'.
+        if (this.ctx.state !== 'closed') Promise.resolve(this.ctx.resume()).catch(() => {});
     }
 
     unlock() {
@@ -129,7 +158,7 @@ class AudioSystem {
     // no-ops entirely if the AudioContext doesn't exist yet (unlock() calls
     // this again once it does).
     _ensureScheduler() {
-        if (!this.ctx || this._musicTimerId) return;
+        if (!this.ctx || this._musicTimerId || this._pageHidden) return;
         this._nextNoteTime = this.ctx.currentTime + 0.05;
         this._musicChordIndex = 0;
         this._musicBeatInChord = 0;
