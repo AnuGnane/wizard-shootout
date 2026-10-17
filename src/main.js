@@ -18,7 +18,8 @@ import { installBackButton } from './systems/BackButton.js';
 import { watchForUpdates } from './systems/AppUpdate.js';
 import { watchInstallPrompt } from './systems/InstallPrompt.js';
 import { loadSettings } from './systems/Storage.js';
-import { loadCustomMaps } from './systems/CustomMaps.js';
+import { loadCustomMaps, getCustomMaps } from './systems/CustomMaps.js';
+import { isInstalledApp } from './systems/Fullscreen.js';
 import { MATCH_STATE } from './systems/MatchState.js';
 import * as KeyBindings from './systems/KeyBindings.js';
 // Side-effect import: loads the persisted stats profile immediately (and, in
@@ -31,6 +32,13 @@ loadSettings(RUNTIME_SETTINGS);
 // Phase 9a: register any maps built in the editor before the first scene runs,
 // so MapSelect's card list and pickMap's combined index see them immediately.
 loadCustomMaps();
+// Holiday W-42: ask the browser to keep this site's storage (Chrome grants it
+// to installed apps; Safari has no such call) once there is something worth
+// keeping. The answer is ignored and a refusal never surfaces as an error.
+if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function'
+    && (isInstalledApp() || getCustomMaps().length > 0)) {
+    try { navigator.storage.persist().catch(() => {}); } catch (e) { /* ignored */ }
+}
 audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
 audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
 

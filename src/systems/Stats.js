@@ -9,6 +9,8 @@
 // view only (see GameScene's hooks) — kills/deaths/orbs/damage/round-wins/
 // match-wins are all "yours", giving one coherent profile across 1P/2P/party.
 
+import { noteWriteFailure, noteWriteOk } from './Storage.js';
+
 const STORAGE_KEY = 'wizard-shootout-stats-v1';
 
 const ELEMENT_KEYS = ['arcane', 'fire', 'ice', 'earth', 'lightning'];
@@ -193,8 +195,11 @@ export function loadStats() {
 export function saveStats() {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(STATS));
+        noteWriteOk();
     } catch (e) {
-        // ignored — see loadSettings's comment in Storage.js for rationale
+        // see loadSettings's comment in Storage.js for rationale; the Stats
+        // screen says so (holiday W-42)
+        noteWriteFailure(e);
     }
 }
 

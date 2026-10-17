@@ -284,6 +284,24 @@ export const SHARE_CONFIG = {
 // measures its frame time over `auto.windowMs` (after `auto.skipMs` of
 // start-up frames) and goes lite for the rest of the round when the average
 // exceeds `auto.frameMs` (25 ms is below 40 fps). Never back mid-round.
+// Holiday W-42: a save that did not stick is said. When a localStorage write
+// fails (private browsing, storage full), the map editor's save shows
+// editorNote in its status line instead of the confirmation (held holdMs),
+// its saved label reads savedLabel, and the Stats screen shows statsNote
+// statsDy game px above its [ BACK ]. Text is at least TOUCH_CONFIG.hudMinCss
+// CSS px on a phone and never below minFontPx game px; it wraps past
+// maxWidthPx.
+export const STORAGE_CONFIG = {
+    editorNote: 'not saved - storage is full or private browsing; this map goes when the page closes',
+    statsNote: 'not saved - storage is full or private browsing; stats go when the page closes',
+    savedLabel: 'not saved (storage)',
+    holdMs: 6000,
+    statsDy: 46,
+    maxWidthPx: 1000,   // wraps to a second line only where hudMinCss would overrun the canvas
+    minFontPx: 13,
+    fill: '#ff8866',
+};
+
 export const FX_CONFIG = {
     full: {
         deathShards: 14, dashSparks: 6, blinkDots: 8, idleSparkles: true,

@@ -124,9 +124,31 @@ export function saveSettings(settings) {
 
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        noteWriteOk();
     } catch (e) {
         // Private browsing / quota exceeded — settings just won't persist.
+        noteWriteFailure(e);
     }
+}
+
+// Holiday W-42: every guarded localStorage write reports here, so a save
+// that did not stick can be said on screen. One flag for the whole game; a
+// successful write clears it. writeFailed() is null, or { quota } when the
+// last write failed (quota: the storage is full rather than refused).
+let writeFailure = null;
+
+export function noteWriteFailure(e) {
+    const quota = !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+        || e.code === 22 || e.code === 1014);
+    writeFailure = { quota };
+}
+
+export function noteWriteOk() {
+    writeFailure = null;
+}
+
+export function writeFailed() {
+    return writeFailure;
 }
 
 // Holiday W-16: whether the first-round touch tips have been shown. Its own
@@ -145,7 +167,9 @@ export function saveTouchTipsSeen(seen) {
     try {
         if (seen) localStorage.setItem(TOUCH_TIPS_KEY, 'seen');
         else localStorage.removeItem(TOUCH_TIPS_KEY);
+        noteWriteOk();
     } catch (e) {
         // Private browsing: the tips just show again next time.
+        noteWriteFailure(e);
     }
 }
