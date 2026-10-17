@@ -2758,6 +2758,89 @@ try {
             JSON.stringify({ live, drop }));
     }
 
+    // 3x3. Holiday W-37: the screen stays awake. An init script stubs
+    // navigator.wakeLock with a request that records its calls and returns a
+    // sentinel whose release records too. On a phone, HOST requests once and
+    // leaving the ONLINE screen releases it; a touch 1P round requests once,
+    // the touch pause releases and resuming requests again. A desktop round
+    // requests nothing.
+    {
+        const stub = () => {
+            window.__wake = { requests: 0, releases: 0 };
+            Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: {
+                request: () => {
+                    window.__wake.requests++;
+                    const s = new EventTarget();
+                    s.release = () => { window.__wake.releases++; s.dispatchEvent(new Event('release')); return Promise.resolve(); };
+                    return Promise.resolve(s);
+                },
+            } });
+        };
+        const wake = (pg) => pg.evaluate(() => ({ ...window.__wake }));
+        const touchRound = () => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+        };
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(stub);
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('wakelock pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const menu = await wake(pg);
+        await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('OnlineScene'));
+        await pg.waitForFunction(() => window.__game.scene.isActive('OnlineScene'), null, { timeout: 5000 });
+        await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').startHost());
+        await pg.waitForTimeout(200);
+        const hosting = await wake(pg);
+        await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').goBack());
+        await pg.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 });
+        await pg.waitForTimeout(100);
+        const left = await wake(pg);
+        await pg.evaluate(() => { window.__wake = { requests: 0, releases: 0 }; });
+        await pg.evaluate(touchRound);
+        await pg.waitForFunction(() => window.__game.scene.getScene('GameScene')?.touchControls, null, { timeout: 8000 });
+        await pg.waitForTimeout(200);
+        const round = await wake(pg);
+        await pg.evaluate(() => window.__game.scene.getScene('GameScene').touchControls.onPause());
+        await pg.waitForFunction(() => window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 });
+        await pg.waitForTimeout(100);
+        const paused = await wake(pg);
+        await pg.evaluate(() => {
+            window.__game.scene.stop('PauseScene');
+            window.__game.scene.getScene('GameScene').scene.resume();
+        });
+        await pg.waitForTimeout(200);
+        const resumed = await wake(pg);
+        await ctx.close();
+
+        const desk = await browser.newContext({ viewport: { width: 1024, height: 700 } });
+        await desk.addInitScript(stub);
+        const dp = await desk.newPage();
+        dp.on('pageerror', (e) => errors.push('wakelock desktop pageerror: ' + e.message));
+        await dp.goto(url, { waitUntil: 'networkidle' });
+        await dp.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await dp.evaluate(touchRound);
+        await dp.waitForFunction(() => window.__game.scene.isActive('GameScene'), null, { timeout: 8000 });
+        await dp.waitForTimeout(300);
+        const desktop = { ...(await wake(dp)), touch: await dp.evaluate(() => !!window.__game.scene.getScene('GameScene').touchControls) };
+        await desk.close();
+        check('wake lock: on a phone HOST requests the screen once and leaving ONLINE releases it; the menu holds none',
+            menu.requests === 0 && hosting.requests === 1 && hosting.releases === 0 && left.requests === 1 && left.releases === 1,
+            JSON.stringify({ menu, hosting, left }));
+        check('wake lock: a touch round requests once, the touch pause releases, resuming requests again; a desktop round requests nothing',
+            round.requests === 1 && round.releases === 0 && paused.releases === 1 && resumed.requests === 2
+                && !desktop.touch && desktop.requests === 0,
+            JSON.stringify({ round, paused, resumed, desktop }));
+    }
+
     // 3y. Holiday W-30: the human balance tally. On a fresh profile, two 1P
     // matches (first to 1) against the Hard bot, an Arcanist win and an
     // Arcanist loss against a Warden, land in STATS.balanceTally; a third on

@@ -15,6 +15,7 @@ import { ensureTapTarget } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 import { SHARE_CONFIG, NET_CONFIG } from '../config.js';
 import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
+import * as WakeLock from '../systems/WakeLock.js';
 
 // Online 1v1 lobby. Stage 1 built the transport + code-exchange UI; stage 2a
 // wires the successful connection straight into a live match: the HOST picks
@@ -161,6 +162,12 @@ export class OnlineScene extends Phaser.Scene {
         if (this._isOffline()) this.statusText.setText(NET_CONFIG.offlineText);
 
         this.events.once('shutdown', this._shutdown, this);
+    }
+
+    // Holiday W-37: from HOST or JOIN until the scene shuts down, a phone
+    // waiting on the other side does not dim and lock (touch devices only).
+    _holdAwake() {
+        if (('ontouchstart' in window) || navigator.maxTouchPoints > 0) WakeLock.hold();
     }
 
     _isOffline() {
@@ -457,6 +464,7 @@ export class OnlineScene extends Phaser.Scene {
     startHost() {
         if (this._blockedOffline()) return;
         audio.uiClick();
+        this._holdAwake();
         this._resetConnection();
         this.role = 'host';
         this._setActiveMode('host');
@@ -551,6 +559,7 @@ export class OnlineScene extends Phaser.Scene {
     startJoin() {
         if (this._blockedOffline()) return;
         audio.uiClick();
+        this._holdAwake();
         this._resetConnection();
         this.role = 'guest';
         this._setActiveMode('join');
@@ -1104,6 +1113,7 @@ export class OnlineScene extends Phaser.Scene {
         this.scale.off('resize', this._layoutOverlay, this);
         window.removeEventListener('offline', this._onOffline);
         window.removeEventListener('online', this._onOnline);
+        WakeLock.release();
         this._closeSignal();
 
         // Only close the connection if it wasn't handed off to NetSession —
