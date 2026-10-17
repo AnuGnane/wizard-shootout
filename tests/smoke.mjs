@@ -66,6 +66,9 @@
 //      with a doubled cursor ring, two taps a tile apart paint two tiles, a
 //      tap on each grown tool button selects its tool and no grown hit areas
 //      intersect; a desktop click paints with the 1-tile cursor (W-28),
+//   3w. with the music running on a phone, the page going hidden suspends
+//      the AudioContext and stops the scheduler; visible again resumes both
+//      with no tap (W-39),
 //   3x. with navigator.share stubbed, [ SHARE ] on a hosted Online room
 //      shares the room code and the page's address and the Daily card's
 //      button shares its score; without it Online keeps only COPY and the
@@ -2620,6 +2623,55 @@ try {
         check('editor on a desktop: a click paints the tile with the 1-tile ring and no tool button grew',
             d1.cells[3][5] === '#' && d1.cursor.on && Math.round(d1.cursor.w) === 22 && d0.tools.every((t) => !t.grew),
             `cell=${d1.cells[3][5]} ring=${JSON.stringify(d1.cursor)} grew=${d0.tools.filter((t) => t.grew).map((t) => t.key).join(',') || 'none'}`);
+    }
+
+    // 3w. Holiday W-39: sound stops when the phone looks away. AudioContext
+    // is wrapped by an init script that counts suspend() and resume() on the
+    // game's own context (window.__audio.ctx); with
+    // the music running, the page going hidden suspends the context once and
+    // clears the scheduler's interval, and coming back resumes it once and
+    // starts a new interval, with no tap.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(() => {
+            // Counted per context: Phaser's sound manager has its own.
+            const Real = window.AudioContext;
+            window.AudioContext = class CountingAudioContext extends Real {
+                suspend() { this.calls.suspend++; return super.suspend(); }
+                resume() { this.calls.resume++; return super.resume(); }
+                get calls() { return (this._calls ||= { suspend: 0, resume: 0 }); }
+            };
+            window.webkitAudioContext = window.AudioContext;
+        });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('look-away pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const read = () => pg.evaluate(() => ({
+            ...window.__audio.ctx.calls, timer: !!window.__audio._musicTimerId, starts: window.__audio._musicStartCount,
+        }));
+        const setHidden = (hidden) => pg.evaluate((hidden) => {
+            Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+            Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+            document.dispatchEvent(new Event('visibilitychange'));
+        }, hidden);
+        await pg.evaluate(() => { window.__audio.unlock(); window.__audio.startMusic(); });
+        await pg.waitForTimeout(200);
+        await pg.evaluate(() => { window.__audio.ctx._calls = { suspend: 0, resume: 0 }; });
+        const before = await read();
+        await setHidden(true);
+        await pg.waitForTimeout(300);
+        const away = await read();
+        await setHidden(false);
+        await pg.waitForTimeout(300);
+        const back = await read();
+        await ctx.close();
+        check('look away: hidden suspends the AudioContext once and stops the music scheduler',
+            before.timer && away.suspend === 1 && away.resume === 0 && !away.timer,
+            JSON.stringify({ before, away }));
+        check('look away: visible again resumes it once and starts a new scheduler, no tap',
+            back.resume === 1 && back.suspend === 1 && back.timer && back.starts === away.starts + 1,
+            JSON.stringify({ away, back }));
     }
 
     // 3x. Holiday W-29: the phone's share sheet. An init script records
