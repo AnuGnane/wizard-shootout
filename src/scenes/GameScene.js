@@ -24,6 +24,7 @@ import { saveSettings } from '../systems/Storage.js';
 import { recordKill, recordShot, recordDamage, checkAchievements } from '../systems/Stats.js';
 import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 import { fx, FxMonitor } from '../systems/Effects.js';
+import { prefersReducedMotion } from '../systems/ReducedMotion.js';
 import * as WakeLock from '../systems/WakeLock.js';
 
 const SCENE_EVENTS = [
@@ -87,9 +88,12 @@ export class GameScene extends Phaser.Scene {
         // Holiday W-31: the saved EFFECTS level, fresh each round. Under AUTO
         // the round starts full and a slow run of frames turns it lite for
         // the rest of the round (fxAutoLite tells the pause screen why).
-        this.fxLite = RUNTIME_SETTINGS.effects === 'lite';
+        // Holiday W-41: under AUTO, a phone set to reduce motion is lite from
+        // the first frame and needs no monitor (fxReducedMotion says why).
+        this.fxReducedMotion = RUNTIME_SETTINGS.effects === 'auto' && prefersReducedMotion();
+        this.fxLite = RUNTIME_SETTINGS.effects === 'lite' || this.fxReducedMotion;
         this.fxAutoLite = false;
-        this.fxMonitor = RUNTIME_SETTINGS.effects === 'auto'
+        this.fxMonitor = RUNTIME_SETTINGS.effects === 'auto' && !this.fxReducedMotion
             ? new FxMonitor(() => { this.fxLite = true; this.fxAutoLite = true; })
             : null;
 

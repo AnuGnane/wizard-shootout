@@ -24,10 +24,12 @@ export class PauseScene extends Phaser.Scene {
             fill: '#ffffff',
         }).setOrigin(0.5).setDepth(101).setStroke('#000000', 6);
 
-        // Holiday W-31: say so when AUTO turned this round's effects lite.
+        // Holiday W-31: say so when AUTO turned this round's effects lite
+        // (W-41: or Reduce Motion did).
         const game = this.scene.get('GameScene');
-        if (game && game.fxAutoLite) {
-            this.fxNote = this.add.text(width / 2, height / 2 - 100, FX_CONFIG.pauseNote, {
+        if (game && (game.fxAutoLite || game.fxReducedMotion)) {
+            const note = game.fxReducedMotion ? FX_CONFIG.pauseNoteReduced : FX_CONFIG.pauseNote;
+            this.fxNote = this.add.text(width / 2, height / 2 - 100, note, {
                 font: 'bold 18px monospace',
                 fill: '#ffcc66',
             }).setOrigin(0.5).setDepth(101).setStroke('#000000', 4);

@@ -298,6 +298,7 @@ export const FX_CONFIG = {
     auto: { skipMs: 500, windowMs: 2000, frameMs: 25, maxFrameMs: 100 },
     levels: ['auto', 'full', 'lite'],   // Settings cycles in this order
     pauseNote: 'EFFECTS: LITE (auto)',
+    pauseNoteReduced: 'EFFECTS: LITE (reduce motion)',   // W-41: AUTO + prefers-reduced-motion
 };
 
 // Holiday W-30 — the human balance tally (Stats.js `balanceTally`, the
