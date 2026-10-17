@@ -528,7 +528,8 @@ export class OnlineScene extends Phaser.Scene {
                 this.answerPaste.value = answerCode;
                 this.conn.acceptAnswer(answerCode).catch((err) => this._fail(err));
             })
-            .catch((err) => this._signalFallback(this._signalMessage(err)));
+            // A socket already dropped (W-36's offline fallback) says no more.
+            .catch((err) => { if (this.signal === signal) this._signalFallback(this._signalMessage(err)); });
     }
 
     _hostConnect() {
@@ -610,7 +611,8 @@ export class OnlineScene extends Phaser.Scene {
                 this.roomStatus.textContent = 'reply sent — connecting…';
                 this.statusText.setText('connecting…');
             })
-            .catch((err) => this._signalFallback(this._signalMessage(err)));
+            // A socket already dropped (W-36's offline fallback) says no more.
+            .catch((err) => { if (this.signal === signal) this._signalFallback(this._signalMessage(err)); });
     }
 
     _guestGenerate() {
