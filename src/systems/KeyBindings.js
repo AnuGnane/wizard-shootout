@@ -8,6 +8,7 @@
 
 import Phaser from 'phaser';
 import { CONTROLS } from '../config.js';
+import { noteWriteFailure, noteWriteOk } from './Storage.js';
 
 const STORAGE_KEY = 'wizard-shootout-keybindings-v1';
 
@@ -69,8 +70,10 @@ function load() {
 function persist() {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+        noteWriteOk();
     } catch (e) {
         // Private browsing / quota exceeded - bindings just won't persist.
+        noteWriteFailure(e);
     }
 }
 

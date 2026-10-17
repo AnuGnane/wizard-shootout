@@ -16,6 +16,7 @@
 
 import { MAP_DEFS, registerExtraMaps, validateMap } from './Maps.js';
 import { THEMES, DEFAULT_THEME } from './Themes.js';
+import { noteWriteFailure, noteWriteOk } from './Storage.js';
 
 const STORAGE_KEY = 'wizard-shootout-custom-maps-v1';
 
@@ -53,9 +54,12 @@ function persist() {
     if (!hasStorage()) return;
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(customs));
+        noteWriteOk();
     } catch (e) {
         // Private browsing / quota exceeded — the map just won't survive a
-        // reload. Same rationale as Storage.js's saveSettings.
+        // reload. Same rationale as Storage.js's saveSettings; the editor
+        // says so (holiday W-42).
+        noteWriteFailure(e);
     }
 }
 

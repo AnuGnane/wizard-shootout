@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
-import { ELEMENT_COLORS, BALANCE_TALLY_CONFIG } from '../config.js';
+import { ELEMENT_COLORS, BALANCE_TALLY_CONFIG, STORAGE_CONFIG, TOUCH_CONFIG } from '../config.js';
+import { writeFailed } from '../systems/Storage.js';
 import { STATS, ACHIEVEMENTS } from '../systems/Stats.js';
 import { audio } from '../systems/AudioSystem.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { ensureTapTarget, cssPerGamePx } from '../systems/TouchMenu.js';
 import { balanceRows, balanceMarkdown, formatRate } from '../systems/BalanceTally.js';
 import { canShare, shareOrCopy } from '../systems/Share.js';
 
@@ -87,6 +88,16 @@ export class StatsScene extends Phaser.Scene {
         });
 
         this.drawBalance(width);
+
+        // Holiday W-42: the profile's last write did not stick; say so.
+        this.storageNote = null;
+        if (writeFailed()) {
+            const px = Math.max(STORAGE_CONFIG.minFontPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(this)));
+            this.storageNote = this.add.text(width / 2, height - 34 - STORAGE_CONFIG.statsDy, STORAGE_CONFIG.statsNote, {
+                font: `${px}px monospace`,
+                fill: STORAGE_CONFIG.fill,
+            }).setOrigin(0.5);
+        }
 
         // Back button + ESC, matching SettingsScene's convention.
         const backBtn = this.add.text(width / 2, height - 34, '[ BACK ]', {

@@ -9,7 +9,8 @@ import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
 import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx } from '../systems/TouchMenu.js';
-import { TOUCH_CONFIG } from '../config.js';
+import { TOUCH_CONFIG, STORAGE_CONFIG } from '../config.js';
+import { writeFailed } from '../systems/Storage.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 
 // Phase 9a — Map Editor. A pointer-driven grid editor for custom battle maps:
@@ -35,6 +36,7 @@ const GRID_CY = 330;
 const COL_X = 30;         // left tool column
 const BAR_Y = 604;        // bottom button row
 const STATUS_Y = 566;
+const STATUS_FONT_PX = 15;
 const STATUS_HOLD = 1500; // ms a transient status message sticks before the verdict returns
 
 const TOOLS = [
@@ -104,7 +106,7 @@ export class MapEditorScene extends Phaser.Scene {
         this.createButtonBar(width);
 
         this.statusText = this.add.text(width / 2, STATUS_Y, '', {
-            font: 'bold 15px monospace',
+            font: `bold ${STATUS_FONT_PX}px monospace`,
             fill: '#66ff66',
         }).setOrigin(0.5);
 
@@ -487,14 +489,17 @@ export class MapEditorScene extends Phaser.Scene {
         }
         this.sizeText.setText(`size: ${this.cols} x ${this.rows}`);
         const saved = customMapIndex(this.mapName) !== -1;
-        this.savedText.setText(saved
-            ? (this.dirty ? 'saved copy exists (edited)' : 'saved')
-            : 'not saved yet');
+        this.savedText.setText(saved && writeFailed()
+            ? STORAGE_CONFIG.savedLabel
+            : saved
+                ? (this.dirty ? 'saved copy exists (edited)' : 'saved')
+                : 'not saved yet');
         this.menuNav.refresh();
     }
 
     updateStatus() {
         const valid = this.problems.length === 0;
+        this.statusText.setFontSize(STATUS_FONT_PX);
         this.statusText.setText(valid ? 'VALID' : this.problems[0]);
         this.statusText.setColor(valid ? '#66ff66' : '#ff6666');
 
@@ -506,11 +511,12 @@ export class MapEditorScene extends Phaser.Scene {
     }
 
     // Temporary message in the status line; the live verdict comes back after.
-    flashStatus(message, color = '#ffdd44') {
+    flashStatus(message, color = '#ffdd44', hold = STATUS_HOLD) {
+        this.statusText.setFontSize(STATUS_FONT_PX);
         this.statusText.setText(message);
         this.statusText.setColor(color);
         if (this._statusTimer) this._statusTimer.remove();
-        this._statusTimer = this.time.delayedCall(STATUS_HOLD, () => {
+        this._statusTimer = this.time.delayedCall(hold, () => {
             this._statusTimer = null;
             this.updateStatus();
         });
@@ -531,6 +537,13 @@ export class MapEditorScene extends Phaser.Scene {
         }
         this.dirty = false;
         this.refreshLabels();
+        // Holiday W-42: the write was swallowed, so say the map is not kept.
+        if (writeFailed()) {
+            this.flashStatus(STORAGE_CONFIG.editorNote, STORAGE_CONFIG.fill, STORAGE_CONFIG.holdMs);
+            this.statusText.setFontSize(Math.max(STORAGE_CONFIG.minFontPx,
+                Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(this))));
+            return;
+        }
         this.flashStatus(`saved "${this.mapName}"`, '#66ff66');
     }
 
