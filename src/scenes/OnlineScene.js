@@ -13,7 +13,7 @@ import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../systems/NetSignal.js';
 import { ensureTapTarget } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
-import { SHARE_CONFIG } from '../config.js';
+import { SHARE_CONFIG, NET_CONFIG } from '../config.js';
 import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
 
 // Online 1v1 lobby. Stage 1 built the transport + code-exchange UI; stage 2a
@@ -152,7 +152,41 @@ export class OnlineScene extends Phaser.Scene {
 
         this.input.keyboard.once('keydown-ESC', () => this.goBack());
 
+        // Holiday W-36: no connection is said at once, not after the room
+        // service times out. Both listeners go in _shutdown.
+        this._onOffline = () => this._wentOffline();
+        this._onOnline = () => this._cameOnline();
+        window.addEventListener('offline', this._onOffline);
+        window.addEventListener('online', this._onOnline);
+        if (this._isOffline()) this.statusText.setText(NET_CONFIG.offlineText);
+
         this.events.once('shutdown', this._shutdown, this);
+    }
+
+    _isOffline() {
+        return navigator.onLine === false;
+    }
+
+    // At HOST or JOIN: say it, start nothing, keep the two buttons.
+    _blockedOffline() {
+        if (!this._isOffline()) return false;
+        audio.uiClick();
+        this.statusText.setText(NET_CONFIG.offlineText);
+        return true;
+    }
+
+    // Mid-flow the room service is the casualty; the manual code path stays.
+    _wentOffline() {
+        if (!this._alive) return;
+        if (this.signal) this._signalFallback(NET_CONFIG.offlineText);
+        else if (!this.role) this.statusText.setText(NET_CONFIG.offlineText);
+    }
+
+    _cameOnline() {
+        if (!this._alive) return;
+        if (this.statusText.text === NET_CONFIG.offlineText) {
+            this.statusText.setText('Choose HOST or JOIN to begin.');
+        }
     }
 
     // ESC, and the phone's Back button (holiday W-20).
@@ -421,6 +455,7 @@ export class OnlineScene extends Phaser.Scene {
     // ---- HOST flow --------------------------------------------------------
 
     startHost() {
+        if (this._blockedOffline()) return;
         audio.uiClick();
         this._resetConnection();
         this.role = 'host';
@@ -513,6 +548,7 @@ export class OnlineScene extends Phaser.Scene {
     // ---- JOIN flow --------------------------------------------------------
 
     startJoin() {
+        if (this._blockedOffline()) return;
         audio.uiClick();
         this._resetConnection();
         this.role = 'guest';
@@ -1064,6 +1100,8 @@ export class OnlineScene extends Phaser.Scene {
     _shutdown() {
         this._alive = false;
         this.scale.off('resize', this._layoutOverlay, this);
+        window.removeEventListener('offline', this._onOffline);
+        window.removeEventListener('online', this._onOnline);
         this._closeSignal();
 
         // Only close the connection if it wasn't handed off to NetSession —

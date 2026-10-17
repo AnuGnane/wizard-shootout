@@ -2698,6 +2698,66 @@ try {
             JSON.stringify({ buttons: b.buttons, daily: b.daily, copied: b.copied }));
     }
 
+    // 3x2. Holiday W-36: no connection, said at once. An init script stubs
+    // navigator.onLine and window.WebSocket (recording each construction).
+    // Offline, ONLINE says so on arrival and HOST shows the line and opens no
+    // WebSocket; an 'online' event clears it. Online, HOST opens the room
+    // service as today, and an 'offline' event mid-flow hands _signalFallback
+    // the same words.
+    {
+        const stub = () => {
+            window.__online = false;
+            window.__ws = [];
+            Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => window.__online });
+            // Only the room service's sockets ('mqtt') are stubbed; Vite's
+            // own HMR socket goes to the real constructor.
+            const Real = window.WebSocket;
+            class Fake extends EventTarget {
+                constructor(u) { super(); window.__ws.push(u); this.readyState = 0; }
+                send() {}
+                close() {}
+            }
+            window.WebSocket = function (u, proto) {
+                return proto === 'mqtt' ? new Fake(u) : new Real(u, proto);
+            };
+        };
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(stub);
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('offline pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('OnlineScene'));
+        await pg.waitForFunction(() => window.__game.scene.isActive('OnlineScene'), null, { timeout: 5000 });
+        const state = () => pg.evaluate(() => {
+            const s = window.__game.scene.getScene('OnlineScene');
+            return { status: s.statusText.text, role: s.role, ws: window.__ws.length,
+                room: s.roomStatus ? s.roomStatus.textContent : null,
+                buttons: !!(s.hostBtn.active && s.joinBtn.active) };
+        });
+        const arrive = await state();
+        await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').startHost());
+        await pg.waitForTimeout(300);
+        const host = await state();
+        await pg.evaluate(() => { window.__online = true; window.dispatchEvent(new Event('online')); });
+        const back = await state();
+        await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').startHost());
+        await pg.waitForFunction(() => window.__ws.length > 0, null, { timeout: 5000 }).catch(() => {});
+        const live = await state();
+        await pg.evaluate(() => { window.__online = false; window.dispatchEvent(new Event('offline')); });
+        const drop = await state();
+        await ctx.close();
+        const line = 'no connection - Online needs the internet';
+        check('offline: ONLINE says no connection on arrival and at HOST, opens no WebSocket, keeps HOST/JOIN; online clears it',
+            arrive.status.startsWith(line) && host.status.startsWith(line) && host.ws === 0 && host.role === null
+                && host.buttons && back.status === 'Choose HOST or JOIN to begin.',
+            JSON.stringify({ arrive: arrive.status, host, back: back.status }));
+        check('offline: online, HOST opens the room service; going offline mid-flow falls back to the manual code with the same words',
+            live.role === 'host' && live.ws === 1 && !!drop.room && drop.room.startsWith(line)
+                && drop.status.startsWith('Room codes unavailable'),
+            JSON.stringify({ live, drop }));
+    }
+
     // 3y. Holiday W-30: the human balance tally. On a fresh profile, two 1P
     // matches (first to 1) against the Hard bot, an Arcanist win and an
     // Arcanist loss against a Warden, land in STATS.balanceTally; a third on
