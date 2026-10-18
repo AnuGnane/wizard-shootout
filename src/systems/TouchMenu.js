@@ -12,7 +12,7 @@
 // as they were. The cap sees the screen as built by its first frame; a
 // control added later (OnlineScene's lobby cards) does not move it.
 
-import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
+import { GAME_CONFIG, TOUCH_CONFIG, STORAGE_CONFIG } from '../config.js';
 
 // CSS pixels per game pixel right now (FIT keeps the aspect ratio).
 export function cssPerGamePx(scene) {
@@ -164,6 +164,18 @@ export function relayoutTapTargets(scene) {
 export function isTouchDevice(scene) {
     return scene.sys.game.device.input.touch
         || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+}
+
+// The smallest menu text that reads on this screen: hudMinCss CSS px, and
+// never below STORAGE_CONFIG.minFontPx game px (holiday W-42's rule).
+export function menuFontFloor(scene) {
+    return Math.max(STORAGE_CONFIG.minFontPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(scene)));
+}
+
+// Holiday W-50: a menu text's font size in game px. `basePx` on a desktop;
+// on a touch device, grown to menuFontFloor() where it would fall below it.
+export function menuFontPx(scene, basePx) {
+    return isTouchDevice(scene) ? Math.max(basePx, menuFontFloor(scene)) : basePx;
 }
 
 // A footer hint: `keys` on a desktop, `touch` on a touch device.

@@ -3,7 +3,7 @@ import { ELEMENT_COLORS, BALANCE_TALLY_CONFIG, STORAGE_CONFIG, TOUCH_CONFIG } fr
 import { writeFailed } from '../systems/Storage.js';
 import { STATS, ACHIEVEMENTS } from '../systems/Stats.js';
 import { audio } from '../systems/AudioSystem.js';
-import { ensureTapTarget, cssPerGamePx } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx, menuFontFloor } from '../systems/TouchMenu.js';
 import { balanceRows, balanceMarkdown, formatRate } from '../systems/BalanceTally.js';
 import { canShare, shareOrCopy } from '../systems/Share.js';
 
@@ -23,7 +23,15 @@ export class StatsScene extends Phaser.Scene {
 
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
-        this.add.text(width / 2, 32, 'YOUR STATS', {
+        // Holiday W-50: on a touch device every text under 14 game px grows
+        // to menuFontPx()'s floor, and the rows below the stat columns flow
+        // from the measured heights (TOUCH_CONFIG.menuRows.stats) instead of
+        // the desktop's fixed y. A desktop draws exactly as before.
+        this.touch = isTouchDevice(this);
+        const R = TOUCH_CONFIG.menuRows.stats;
+        const fpx = (base) => menuFontPx(this, base);
+
+        this.add.text(width / 2, this.touch ? R.titleY : 32, 'YOUR STATS', {
             font: 'bold 32px monospace',
             fill: '#5599ff',
         }).setOrigin(0.5);
@@ -48,51 +56,73 @@ export class StatsScene extends Phaser.Scene {
             ['Damage Dealt', s.damageDealt],
         ];
 
-        this.drawStatColumn(width / 2 - 260, 90, leftLines);
-        this.drawStatColumn(width / 2 + 40, 90, rightLines);
+        const statsY = this.touch ? R.statsY : 90;
+        const statGap = this.touch ? R.statGap : 26;
+        this.drawStatColumn(width / 2 - 260, statsY, leftLines, statGap);
+        let y = this.drawStatColumn(width / 2 + 40, statsY, rightLines, statGap) + R.gap;
 
         // Per-element kill counts, colored by element (same palette as HUD/orbs).
-        this.add.text(width / 2, 236, 'KILLS BY ELEMENT', {
-            font: 'bold 12px monospace',
+        // On a phone, one line each ("fire 3"), so the grown labels fit a row.
+        const elemHead = this.add.text(width / 2, this.touch ? y : 236, 'KILLS BY ELEMENT', {
+            font: `bold ${fpx(12)}px monospace`,
             fill: '#8888aa',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5, this.touch ? 0 : 0.5);
+        y = elemHead.y + elemHead.height;
 
-        const elemStartX = width / 2 - ((ELEMENT_KEYS.length - 1) * 90) / 2;
+        const elemColW = this.touch ? R.elemColW : 90;
+        const elemStartX = width / 2 - ((ELEMENT_KEYS.length - 1) * elemColW) / 2;
+        let elemBottom = y;
         ELEMENT_KEYS.forEach((el, i) => {
             const color = '#' + ELEMENT_COLORS[el].toString(16).padStart(6, '0');
-            this.add.text(elemStartX + i * 90, 260, `${el}\n${s.killsByElement[el]}`, {
-                font: '12px monospace',
-                fill: color,
-                align: 'center',
-            }).setOrigin(0.5);
+            const t = this.add.text(elemStartX + i * elemColW, this.touch ? y : 260,
+                `${el}${this.touch ? ' ' : '\n'}${s.killsByElement[el]}`, {
+                    font: `${fpx(12)}px monospace`,
+                    fill: color,
+                    align: 'center',
+                }).setOrigin(0.5, this.touch ? 0 : 0.5);
+            elemBottom = Math.max(elemBottom, t.y + t.height);
         });
+        y = elemBottom + R.gap;
 
         // Achievements grid: 4 columns, one row per 4 achievements.
-        this.add.text(width / 2, 300, 'ACHIEVEMENTS', {
+        const achHead = this.add.text(width / 2, this.touch ? y : 300, 'ACHIEVEMENTS', {
             font: 'bold 16px monospace',
             fill: '#ffdd44',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5, this.touch ? 0 : 0.5);
+        y = achHead.y + achHead.height + R.gap / 2;
 
         const cols = 4;
-        const cellW = 232;
+        const cellW = this.touch ? R.cellW : 232;
         const cellH = 66;
         const gridStartX = width / 2 - (cols * cellW) / 2;
         const gridStartY = 326;
 
-        ACHIEVEMENTS.forEach((ach, i) => {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const cx = gridStartX + col * cellW + cellW / 2;
-            const cy = gridStartY + row * cellH + cellH / 2;
-            this.drawAchievementCell(cx, cy, cellW - 10, cellH - 8, ach);
-        });
+        if (this.touch) {
+            // A row is as tall as its tallest cell's name and wrapped text.
+            for (let first = 0; first < ACHIEVEMENTS.length; first += cols) {
+                const cells = ACHIEVEMENTS.slice(first, first + cols).map((ach, col) =>
+                    this.drawAchievementText(gridStartX + col * cellW + cellW / 2, y + R.cellPad, cellW - 10, ach, fpx));
+                const h = Math.max(...cells.map((c) => c.bottom)) - y + R.cellPad;
+                cells.forEach((c) => this.drawAchievementBox(c.cx, y + h / 2, cellW - 10, h - 4, c.ach, c.texts));
+                y += h;
+            }
+            y += R.gap;
+        } else {
+            ACHIEVEMENTS.forEach((ach, i) => {
+                const col = i % cols;
+                const row = Math.floor(i / cols);
+                const cx = gridStartX + col * cellW + cellW / 2;
+                const cy = gridStartY + row * cellH + cellH / 2;
+                this.drawAchievementCell(cx, cy, cellW - 10, cellH - 8, ach);
+            });
+        }
 
-        this.drawBalance(width);
+        this.drawBalance(width, this.touch ? y : null, fpx);
 
         // Holiday W-42: the profile's last write did not stick; say so.
         this.storageNote = null;
         if (writeFailed()) {
-            const px = Math.max(STORAGE_CONFIG.minFontPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(this)));
+            const px = menuFontFloor(this);
             this.storageNote = this.add.text(width / 2, height - 34 - STORAGE_CONFIG.statsDy, STORAGE_CONFIG.statsNote, {
                 font: `${px}px monospace`,
                 fill: STORAGE_CONFIG.fill,
@@ -121,23 +151,48 @@ export class StatsScene extends Phaser.Scene {
     // its match count; green inside the harness band once a class has
     // enough matches, orange outside it, grey before. The button copies
     // (or shares) the tally as docs/balance.md's markdown tables.
-    drawBalance(width) {
+    //
+    // Holiday W-50: with `top` (a touch device) the tally flows from that y
+    // at menuFontPx() size, one line per class under its short name
+    // (BALANCE_TALLY_CONFIG.shortNames), TOUCH_CONFIG.menuRows.stats.tallyCols
+    // to a row, since seven grown two-line columns overrun the canvas.
+    drawBalance(width, top = null, fpx = (base) => base) {
         const cfg = BALANCE_TALLY_CONFIG;
-        this.add.text(width / 2, cfg.titleY, cfg.heading, {
-            font: 'bold 12px monospace',
+        const R = TOUCH_CONFIG.menuRows.stats;
+        const head = this.add.text(width / 2, top === null ? cfg.titleY : top, cfg.heading, {
+            font: `bold ${fpx(12)}px monospace`,
             fill: '#8888aa',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5, top === null ? 0.5 : 0);
 
         const rows = balanceRows();
-        const startX = width / 2 - ((rows.length - 1) * cfg.colW) / 2;
         const colors = { in: cfg.colors.inBand, out: cfg.colors.outBand, few: cfg.colors.few };
-        rows.forEach((r, i) => {
-            this.add.text(startX + i * cfg.colW, cfg.rowY, `${r.name}\n${formatRate(r.rate)} (${r.matches})`, {
-                font: '12px monospace',
-                fill: colors[r.band],
-                align: 'center',
-            }).setOrigin(0.5);
-        });
+        if (top === null) {
+            const startX = width / 2 - ((rows.length - 1) * cfg.colW) / 2;
+            rows.forEach((r, i) => {
+                this.add.text(startX + i * cfg.colW, cfg.rowY, `${r.name}\n${formatRate(r.rate)} (${r.matches})`, {
+                    font: '12px monospace',
+                    fill: colors[r.band],
+                    align: 'center',
+                }).setOrigin(0.5);
+            });
+        } else {
+            let y = head.y + head.height;
+            for (let first = 0; first < rows.length; first += R.tallyCols) {
+                const line = rows.slice(first, first + R.tallyCols);
+                const startX = width / 2 - ((line.length - 1) * R.tallyColW) / 2;
+                let h = 0;
+                line.forEach((r, i) => {
+                    const t = this.add.text(startX + i * R.tallyColW, y,
+                        `${cfg.shortNames[r.key] || r.name} ${formatRate(r.rate)} (${r.matches})`, {
+                            font: `${fpx(12)}px monospace`,
+                            fill: colors[r.band],
+                        }).setOrigin(0.5, 0);
+                    h = Math.max(h, t.height);
+                });
+                y += h;
+            }
+            this.tallyBottom = y;
+        }
 
         const b = cfg.button;
         const btn = this.add.text(b.x, b.y, canShare() ? cfg.shareLabel : cfg.copyLabel, {
@@ -169,19 +224,48 @@ export class StatsScene extends Phaser.Scene {
         this.scene.start('MenuScene');
     }
 
-    drawStatColumn(x, y, lines) {
+    // Returns the y under the column's last line.
+    drawStatColumn(x, y, lines, gap = 26) {
         let yPos = y;
+        let bottom = y;
         for (const [label, value] of lines) {
             this.add.text(x, yPos, `${label}:`, {
                 font: '15px monospace',
                 fill: '#aaaacc',
             });
-            this.add.text(x + 210, yPos, `${value}`, {
+            const t = this.add.text(x + 210, yPos, `${value}`, {
                 font: 'bold 15px monospace',
                 fill: '#ffffff',
             }).setOrigin(1, 0);
-            yPos += 26;
+            bottom = yPos + t.height;
+            yPos += gap;
         }
+        return bottom;
+    }
+
+    // Holiday W-50, a touch device: an achievement's name and wrapped text
+    // at menuFontPx() size, stacked from `top`; the box goes behind them
+    // once the row's height is known (drawAchievementBox).
+    drawAchievementText(cx, top, w, ach, fpx) {
+        const unlocked = !!STATS.unlocked[ach.id];
+        const name = this.add.text(cx, top, unlocked ? `★ ${ach.name}` : ach.name, {
+            font: `bold ${fpx(13)}px monospace`,
+            fill: unlocked ? '#ffdd44' : '#666677',
+        }).setOrigin(0.5, 0);
+        const desc = this.add.text(cx, name.y + name.height, ach.desc, {
+            font: `${fpx(10)}px monospace`,
+            fill: unlocked ? '#ccccdd' : '#4a4a5a',
+            wordWrap: { width: w - 4 },
+            align: 'center',
+        }).setOrigin(0.5, 0);
+        return { cx, ach, texts: [name, desc], bottom: desc.y + desc.height };
+    }
+
+    drawAchievementBox(cx, cy, w, h, ach, texts) {
+        const unlocked = !!STATS.unlocked[ach.id];
+        const bg = this.add.rectangle(cx, cy, w, h, unlocked ? 0x2a2510 : 0x1a1a2a, 0.9);
+        bg.setStrokeStyle(1, unlocked ? 0xffdd44 : 0x333355, 1);
+        texts.forEach((t) => this.children.bringToTop(t));
     }
 
     drawAchievementCell(cx, cy, w, h, ach) {

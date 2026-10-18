@@ -5,8 +5,9 @@ import {
     BINDABLE_ACTIONS, getBindings, setBinding, resetBindings,
     findBinding, keyLabel, keyNameFromCode,
 } from '../systems/KeyBindings.js';
+import { TOUCH_CONFIG } from '../config.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
 import { saveTouchTipsSeen } from '../systems/Storage.js';
 
 const ACTION_LABELS = {
@@ -43,8 +44,11 @@ export class ControlsScene extends Phaser.Scene {
             fill: '#5599ff',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, 76, 'Click a binding, then press a key  ·  ESC cancels', {
-            font: '13px monospace',
+        // Holiday W-50: grown to menuFontPx() on a touch device, a little
+        // higher so it clears PLAYER 1 / PLAYER 2.
+        const touch = isTouchDevice(this);
+        this.add.text(width / 2, touch ? TOUCH_CONFIG.menuRows.controls.hintY : 76, 'Click a binding, then press a key  ·  ESC cancels', {
+            font: `${menuFontPx(this, 13)}px monospace`,
             fill: '#8888aa',
         }).setOrigin(0.5);
 
