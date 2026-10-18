@@ -236,7 +236,8 @@ export class GameOverScene extends Phaser.Scene {
 
         // Holiday W-48: the shared line names the winner and every team's
         // score in the order the card draws them.
-        const shareSeats = isParty ? [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off') : [1, 2];
+        const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
+        const shareSeats = isParty ? activeSeats : [1, 2];
         this.resultShareText = fillShare(SHARE_CONFIG.match, {
             winner: winnerName,
             scores: shareSeats.map((n) => `${seatName(n)} ${this.scores[n]}`).join(', '),
@@ -245,7 +246,6 @@ export class GameOverScene extends Phaser.Scene {
         // Final score. 1P/2P show the classic "a - b"; party lists only the
         // active seats, each in its team color.
         if (isParty) {
-            const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
             const segGap = 150;
             const startX = width / 2 - ((activeSeats.length - 1) * segGap) / 2;
             activeSeats.forEach((n, i) => {
