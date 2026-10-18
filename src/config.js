@@ -386,12 +386,27 @@ export const TOUCH_CONFIG = {
     // between the flowing blocks under them, the element row's spacing, an
     // achievement cell's width and inner padding, and the balance tally's
     // classes per row and their spacing. CONTROLS: the hint line's y.
+    // MAP SELECT and WARDROBE (holiday W-51): below.
     menuRows: {
         stats: {
             titleY: 26, statsY: 50, statGap: 22, gap: 6, elemColW: 190,
             cellW: 254, cellPad: 4, tallyCols: 4, tallyColW: 250,
         },
         controls: { hintY: 74 },
+        // MAP SELECT (holiday W-51): a card's inner margin at its foot, the
+        // gap between the custom tag and the size note on one line, and the
+        // gap between the thumbnail and the theme name.
+        mapSelect: { pad: 3, tagGap: 10, thumbGap: 2 },
+        // WARDROBE (holiday W-51): the preview disc's y, radius and sprite
+        // scale, the gap between flowing blocks, each row's swatch spacing
+        // (TOUCH_CONFIG.wardrobe below is the desktop's), wide enough for a
+        // grown name and a two-line hint, the hint's wrap inset from that
+        // spacing, and the least half-height of a swatch's hit area (the
+        // desktop ring's 46 / 2).
+        wardrobe: {
+            previewY: 128, previewR: 52, previewScale: 2.4, gap: 8, robeSpacing: 160, staffSpacing: 170,
+            hintInset: 6, minHalfHit: 23,
+        },
     },
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
     // Wardrobe swatches (holiday W-27): the game-px spacing of each row's

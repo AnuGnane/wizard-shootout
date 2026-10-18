@@ -7,7 +7,8 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { THEMES } from '../systems/Themes.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { addBackButton, backHint } from '../systems/TouchMenu.js';
+import { addBackButton, backHint, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
+import { TOUCH_CONFIG } from '../config.js';
 
 const CARD_W = 225;
 const CARD_H = 155;
@@ -78,6 +79,13 @@ export class MapSelectScene extends Phaser.Scene {
         const startX = (width - gridW) / 2 + CARD_W / 2;
         const startY = 215;
 
+        // The shrink-to-fit scale (applied below), known before the cards are
+        // drawn so a touch card can size its print against it (holiday W-51).
+        const bandTop = startY - CARD_H / 2;
+        const bandBottom = height - 48;
+        const fit = Math.min(1, (width - 24) / gridW, (bandBottom - bandTop) / gridH);
+        this.cardFit = fit;
+
         this.cardLayer = this.add.container(0, 0);
 
         // Phase 8 — grid focus nav across the map thumbnails: left/right/up/
@@ -100,9 +108,6 @@ export class MapSelectScene extends Phaser.Scene {
         // centered and tucked under the header no matter how many cards there
         // are. The focus highlight reads world bounds, so it follows along —
         // it just needs a refresh once the transform is final.
-        const bandTop = startY - CARD_H / 2;
-        const bandBottom = height - 48;
-        const fit = Math.min(1, (width - 24) / gridW, (bandBottom - bandTop) / gridH);
         if (fit < 1) {
             this.cardLayer.setScale(fit);
             this.cardLayer.setPosition((width / 2) * (1 - fit), bandTop * (1 - fit));
@@ -168,7 +173,19 @@ export class MapSelectScene extends Phaser.Scene {
         }
     }
 
+    // Holiday W-51: on a touch device the card's small print (theme, size
+    // note, custom tag) grows to menuFontPx() and the card stacks from its
+    // bottom edge up: the note (wrapped to a second line where it no longer
+    // fits the card), the name, the theme, then the thumbnail above them.
+    // Where custom maps shrink the card layer, the print grows by 1/fit so
+    // it still meets the floor on screen, and the theme line goes; the custom
+    // tag takes a line of its own, and the thumbnail shows only if it fits.
+    // A desktop draws exactly as before.
     createCard(x, y, card, row, col) {
+        if (isTouchDevice(this)) {
+            this.createTouchCard(x, y, card, row, col);
+            return;
+        }
         const objects = [];
 
         const bg = this.add.rectangle(x, y, CARD_W, CARD_H, 0x1a1a2e);
@@ -220,9 +237,91 @@ export class MapSelectScene extends Phaser.Scene {
         this.cardLayer.add(objects);
     }
 
+    createTouchCard(x, y, card, row, col) {
+        const R = TOUCH_CONFIG.menuRows.mapSelect;
+        const fpx = (base) => Math.ceil(menuFontPx(this, base) / this.cardFit);
+        const objects = [];
+
+        const bg = this.add.rectangle(x, y, CARD_W, CARD_H, 0x1a1a2e);
+        bg.setStrokeStyle(2, 0x3a3a5a);
+        bg.setInteractive({ useHandCursor: true });
+        objects.push(bg);
+
+        // The note, and the custom tag on its line, at the card's foot.
+        const foot = y + CARD_H / 2 - R.pad;
+        const custom = card.def && card.def.custom;
+        const inner = CARD_W - 2 * R.pad;
+        let tag = custom ? this.add.text(0, foot, 'custom', {
+            font: `${fpx(10)}px monospace`,
+            fill: '#ffdd44',
+        }).setOrigin(0, 1) : null;
+        const sub = this.add.text(0, foot, card.sub, {
+            font: `${fpx(11)}px monospace`,
+            fill: '#8888aa',
+            align: 'center',
+            wordWrap: { width: inner },
+        }).setOrigin(0, 1);
+        let top = sub.y - sub.height;
+        if (tag && tag.width + R.tagGap + sub.width <= inner) {
+            const lineW = tag.width + R.tagGap + sub.width;
+            tag.setX(x - lineW / 2);
+            sub.setX(x + lineW / 2 - sub.width);
+        } else {
+            sub.setX(x - sub.width / 2);
+            if (tag) {
+                tag.setPosition(x - tag.width / 2, top);
+                top -= tag.height;
+            }
+        }
+        objects.push(...(tag ? [tag, sub] : [sub]));
+
+        const name = this.add.text(x, top, card.name.toUpperCase(), {
+            font: 'bold 15px monospace',
+            fill: card.def ? '#ffffff' : '#66ff66',
+        }).setOrigin(0.5, 1);
+        objects.push(name);
+        top = name.y - name.height;
+
+        if (card.def) {
+            if (this.cardFit >= 1) {
+                const theme = this.add.text(x, top, THEMES[new GameMap(card.def, { mirror: RUNTIME_SETTINGS.mutMirrorMaps }).theme].name, {
+                    font: `${fpx(9)}px monospace`,
+                    fill: '#777799',
+                }).setOrigin(0.5, 1);
+                objects.push(theme);
+                top = theme.y - theme.height;
+            }
+            top -= R.thumbGap;
+            const thumbH = card.def.layout.length * THUMB_TILE;
+            if (top - thumbH >= y - CARD_H / 2 + R.pad) {
+                objects.push(...this.drawThumbnail(x, top - thumbH / 2, card.def, false));
+            }
+        } else {
+            objects.push(this.add.text(x, (y - CARD_H / 2 + top) / 2, '?', {
+                font: 'bold 52px monospace',
+                fill: '#66ff66',
+            }).setOrigin(0.5));
+        }
+
+        bg.on('pointerover', () => {
+            bg.setStrokeStyle(2, card.def ? 0x5599ff : 0x66ff66);
+            bg.setFillStyle(0x232340);
+        });
+        bg.on('pointerout', () => {
+            bg.setStrokeStyle(2, 0x3a3a5a);
+            bg.setFillStyle(0x1a1a2e);
+        });
+        const activate = () => this.startMatch(card.mapIndex);
+        bg.on('pointerdown', activate);
+        this.menuNav.add(bg, activate, { row, col });
+
+        this.cardLayer.add(objects);
+    }
+
     // Returns the objects it created so createCard can park them in the
-    // shrink-to-fit card layer.
-    drawThumbnail(cx, cy, def) {
+    // shrink-to-fit card layer. `withTheme` false leaves the theme name to
+    // the caller (a touch card places it itself).
+    drawThumbnail(cx, cy, def, withTheme = true) {
         const map = new GameMap(def, { mirror: RUNTIME_SETTINGS.mutMirrorMaps });
         const theme = THEMES[map.theme];
         const w = map.cols * THUMB_TILE;
@@ -261,6 +360,7 @@ export class MapSelectScene extends Phaser.Scene {
         // sits at card-local y+42 == cy+64 here (cy is already y-22); even
         // the tallest thumbnail (19 rows -> h/2=38) leaves a clear gap before
         // that, so this never overlaps the map name or the sub label below it.
+        if (!withTheme) return [g];
         const themeText = this.add.text(cx, y0 + h + 7, theme.name, {
             font: '9px monospace',
             fill: '#777799',

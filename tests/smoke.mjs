@@ -3745,6 +3745,105 @@ try {
             JSON.stringify({ dStats: dStats.sizes, dControls: dControls.sizes, hit: dStats.hit }));
     }
 
+    // 3aa0d. Holiday W-51: small print on MAP SELECT and WARDROBE. On a
+    // 568x320 touch phone every text drawn under 14 game px is at least
+    // hudMinCss CSS px tall (a card's grown print through the card layer's
+    // scale, also with seven custom maps shrinking it), no two texts' bounds
+    // intersect, all sit on the canvas and every map name is whole; on a
+    // 1280x720 desktop the small sizes are today's (pinned).
+    {
+        const look = async (pg, key) => {
+            await pg.evaluate((key) => {
+                const g = window.__game;
+                window.__match.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                g.scene.getScenes(true).forEach((sc) => sc.scene.stop());
+                g.scene.start(key, { mode: '1p' });
+            }, key);
+            await pg.waitForFunction((key) => window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await pg.waitForTimeout(300);
+            return pg.evaluate(({ key, min }) => {
+                const sc = window.__game.scene.getScene(key);
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = [];
+                const inCard = new Set();
+                const walk = (list, card) => list.forEach((o) => {
+                    if (o.type === 'Container') walk(o.list, true);
+                    else if (o.type === 'Text' && o.visible && o.text) {
+                        ts.push(o);
+                        if (card) inCard.add(o);
+                    }
+                });
+                walk(sc.children.list, false);
+                const px = (o) => parseFloat(o.style.fontSize);
+                const css = (o) => px(o) * o.getWorldTransformMatrix().d * k;
+                // A card's print other than the map name and the '?' is grown
+                // small print, so it must meet the floor through the layer's
+                // scale too.
+                const small = (o) => px(o) < 14 || (inCard.has(o) && o.text !== '?' && o.text !== o.text.toUpperCase());
+                const low = ts.filter((o) => small(o) && css(o) < min - 0.01).map((o) => o.text.slice(0, 16));
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 12)}|${ts[j].text.slice(0, 12)}`);
+                }
+                const off = ts.filter((o) => {
+                    const g = o.getBounds();
+                    return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700;
+                }).map((o) => o.text.slice(0, 12));
+                const size = (t) => { const o = ts.find((x) => x.text.startsWith(t)); return o ? px(o) : null; };
+                const texts = ts.map((o) => o.text);
+                return {
+                    low, hit, off, texts,
+                    sizes: key === 'MapSelectScene'
+                        ? { theme: size('Dungeon'), note: size('15x11'), random: size('new map') }
+                        : { name: size('Crimson'), hint: size('Win 3'), footer: size('Click an unlocked') },
+                };
+            }, { key, min: TOUCH_CONFIG.hudMinCss });
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('small print 2 pageerror: ' + e.message));
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const pMaps = await look(phone, 'MapSelectScene');
+        const pWard = await look(phone, 'WardrobeScene');
+        // Seven saved custom maps: 18 cards, so the card layer shrinks (5
+        // columns, fit under 1), and each card says "custom".
+        await phone.evaluate(async () => {
+            const { allMapDefs } = await import('/wizard-shootout/src/systems/Maps.js');
+            const base = allMapDefs()[0];
+            for (let i = 1; i <= 7; i++) {
+                window.__customMaps.saveCustomMap({ ...base, name: `W51 Map ${i}`, layout: base.layout.slice() });
+            }
+        });
+        const pCustom = await look(phone, 'MapSelectScene');
+        pCustom.fit = await phone.evaluate(() => window.__game.scene.getScene('MapSelectScene').cardFit);
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('small print 2 desktop pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const dMaps = await look(desk, 'MapSelectScene');
+        const dWard = await look(desk, 'WardrobeScene');
+        await desk.close();
+        // Every map card's name on the phone, whole, as the desktop draws it.
+        const mapNames = dMaps.texts.filter((t) => /^[A-Z][A-Z ]+$/.test(t) && t !== 'CHOOSE YOUR BATTLEGROUND');
+        const whole = mapNames.length >= 11 && mapNames.every((n) => pMaps.texts.includes(n));
+        const clean = (r) => r.low.length === 0 && r.hit.length === 0 && r.off.length === 0;
+        check('small print: at 568x320 MAP SELECT and WARDROBE text under 14 game px is at least hudMinCss CSS px, none overlaps, every map name whole',
+            clean(pMaps) && clean(pWard) && whole && pMaps.sizes.theme >= 14 && pWard.sizes.hint >= 14,
+            JSON.stringify({ maps: { ...pMaps, texts: undefined }, ward: { ...pWard, texts: undefined }, mapNames: mapNames.length, whole }));
+        const customNames = [1, 2, 3, 4, 5, 6, 7].map((i) => `W51 MAP ${i}`);
+        check('small print: with seven custom maps the shrunk MAP SELECT cards keep their print at hudMinCss CSS px, none overlaps, names whole',
+            pCustom.fit < 1 && clean(pCustom) && customNames.every((n) => pCustom.texts.includes(n))
+                && pCustom.texts.filter((t) => t === 'custom').length === 7,
+            JSON.stringify({ ...pCustom, texts: undefined, custom: pCustom.texts.filter((t) => t === 'custom').length }));
+        check('small print: a 1280x720 desktop keeps MAP SELECT and WARDROBE at today\'s sizes',
+            JSON.stringify(dMaps.sizes) === JSON.stringify({ theme: 9, note: 11, random: 11 })
+                && JSON.stringify(dWard.sizes) === JSON.stringify({ name: 12, hint: 10, footer: 13 }),
+            JSON.stringify({ maps: dMaps.sizes, ward: dWard.sizes }));
+    }
+
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
     // phone Settings shows TOUCH LAYOUT and saves LEFT; a 1P round then has
     // the joystick bottom-right and FIRE bottom-left (ORB to its right, PWR

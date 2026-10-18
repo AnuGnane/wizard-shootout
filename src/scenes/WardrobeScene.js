@@ -9,7 +9,7 @@ import {
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 import { STATS } from '../systems/Stats.js';
 import { TOUCH_CONFIG } from '../config.js';
-import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx, cssPerGamePx } from '../systems/TouchMenu.js';
 
 // Phase 6c — the Wardrobe: preview + equip the seat-1 (blue team) cosmetics.
 // Two rows of swatches (robe base + staff material); unlocked ones are
@@ -41,31 +41,47 @@ export class WardrobeScene extends Phaser.Scene {
             fill: '#aaaacc',
         }).setOrigin(0.5);
 
+        // Holiday W-50/W-51: on a touch device every text under 14 game px
+        // grows to menuFontPx()'s floor, the preview shrinks and the rows
+        // flow from measured heights (TOUCH_CONFIG.menuRows.wardrobe), each
+        // swatch's name and hint under its grown hit area. A desktop draws
+        // exactly as before.
+        this.touch = isTouchDevice(this);
+        const R = TOUCH_CONFIG.menuRows.wardrobe;
+
         // Preview: a backing disc for contrast, then the large wizard sprite.
-        this.add.circle(width / 2, 165, 96, 0x1a1a2e).setStrokeStyle(2, 0x333355, 1);
-        this.preview = this.add.image(width / 2, 165, 'wizard_blue').setScale(4.5);
+        const previewY = this.touch ? R.previewY : 165;
+        const previewR = this.touch ? R.previewR : 96;
+        this.add.circle(width / 2, previewY, previewR, 0x1a1a2e).setStrokeStyle(2, 0x333355, 1);
+        this.preview = this.add.image(width / 2, previewY, 'wizard_blue').setScale(this.touch ? R.previewScale : 4.5);
 
         this.swatches = [];
+        // Half a grown swatch hit area's height (W-27's menuMinCss), never
+        // under the desktop ring's.
+        this.halfHit = Math.max(R.minHalfHit, TOUCH_CONFIG.menuMinCss / cssPerGamePx(this) / 2);
+        let y = previewY + previewR + R.gap;
 
         // --- ROBE row ---
-        this.add.text(width / 2, 268, 'ROBE', {
+        const robeHead = this.add.text(width / 2, this.touch ? y : 268, 'ROBE', {
             font: 'bold 16px monospace',
             fill: '#ffdd44',
-        }).setOrigin(0.5);
-        this.buildRow('robe', ROBE_OPTIONS, width, 315);
+        }).setOrigin(0.5, this.touch ? 0 : 0.5);
+        y = robeHead.y + robeHead.height;
+        y = this.buildRow('robe', ROBE_OPTIONS, width, this.touch ? y + this.halfHit : 315) + R.gap;
 
         // --- STAFF row ---
-        this.add.text(width / 2, 408, 'STAFF', {
+        const staffHead = this.add.text(width / 2, this.touch ? y : 408, 'STAFF', {
             font: 'bold 16px monospace',
             fill: '#ffdd44',
-        }).setOrigin(0.5);
-        this.buildRow('staff', STAFF_OPTIONS, width, 455);
+        }).setOrigin(0.5, this.touch ? 0 : 0.5);
+        y = staffHead.y + staffHead.height;
+        y = this.buildRow('staff', STAFF_OPTIONS, width, this.touch ? y + this.halfHit : 455) + R.gap;
 
-        this.add.text(width / 2, 560,
+        this.add.text(width / 2, this.touch ? y : 560,
             'Click an unlocked swatch to equip. Locked swatches show how to earn them.', {
-            font: '13px monospace',
+            font: `${menuFontPx(this, 13)}px monospace`,
             fill: '#8888aa',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5, this.touch ? 0 : 0.5);
 
         // Back button + ESC, matching StatsScene's convention.
         const backBtn = this.add.text(width / 2, height - 40, '[ BACK ]', {
@@ -95,13 +111,16 @@ export class WardrobeScene extends Phaser.Scene {
         this.refreshHighlights();
     }
 
+    // Returns the y under the row's lowest label.
     buildRow(slot, options, width, yRect) {
-        const { robeSpacing, staffSpacing } = TOUCH_CONFIG.wardrobe;
+        const { robeSpacing, staffSpacing } = this.touch ? TOUCH_CONFIG.menuRows.wardrobe : TOUCH_CONFIG.wardrobe;
         const spacing = slot === 'robe' ? robeSpacing : staffSpacing;
         const startX = width / 2 - ((options.length - 1) * spacing) / 2;
+        let bottom = yRect;
         options.forEach((option, i) => {
-            this.makeSwatch(startX + i * spacing, yRect, slot, option);
+            bottom = Math.max(bottom, this.makeSwatch(startX + i * spacing, yRect, slot, option, spacing));
         });
+        return bottom;
     }
 
     // The display color of a swatch: a 'class' robe shows the previewed class
@@ -113,7 +132,8 @@ export class WardrobeScene extends Phaser.Scene {
         return option.color;
     }
 
-    makeSwatch(x, yRect, slot, option) {
+    // Returns the y under its lowest label.
+    makeSwatch(x, yRect, slot, option, spacing) {
         const unlocked = isUnlocked(option, STATS);
         const color = this.swatchColor(slot, option);
 
@@ -123,23 +143,25 @@ export class WardrobeScene extends Phaser.Scene {
         const rect = this.add.rectangle(x, yRect, 54, 38, color);
         if (!unlocked) rect.setAlpha(0.28);
 
-        this.add.text(x, yRect + 32, option.name, {
-            font: '12px monospace',
+        const name = this.add.text(x, this.touch ? yRect + this.halfHit : yRect + 32, option.name, {
+            font: `${menuFontPx(this, 12)}px monospace`,
             fill: unlocked ? '#ccccdd' : '#666677',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5, this.touch ? 0 : 0.5);
+        let bottom = name.y + name.height * (1 - name.originY);
 
         if (!unlocked) {
             // A small lock mark on the swatch, plus the earn-hint beneath.
             this.add.text(x, yRect, '■', {
-                font: '10px monospace',
+                font: `${menuFontPx(this, 10)}px monospace`,
                 fill: '#111120',
             }).setOrigin(0.5).setAlpha(0);  // placeholder keeps spacing stable
-            this.add.text(x, yRect + 48, option.hint, {
-                font: '10px monospace',
+            const hint = this.add.text(x, this.touch ? bottom : yRect + 48, option.hint, {
+                font: `${menuFontPx(this, 10)}px monospace`,
                 fill: '#ccaa66',
                 align: 'center',
-                wordWrap: { width: (slot === 'robe' ? 120 : 138) },
+                wordWrap: { width: this.touch ? spacing - TOUCH_CONFIG.menuRows.wardrobe.hintInset : (slot === 'robe' ? 120 : 138) },
             }).setOrigin(0.5, 0);
+            bottom = hint.y + hint.height;
         } else {
             rect.setInteractive({ useHandCursor: true });
             rect.on('pointerdown', () => this.onSwatchClick(slot, option.id));
@@ -150,6 +172,7 @@ export class WardrobeScene extends Phaser.Scene {
         }
 
         this.swatches.push({ slot, id: option.id, border, unlocked, rect: unlocked ? rect : null });
+        return bottom;
     }
 
     // Size each unlocked swatch's ring to its grown hit area (never smaller
