@@ -353,6 +353,12 @@ export const BALANCE_TALLY_CONFIG = {
     copiedLabel: '[ COPIED ]',
     heading: 'BALANCE - 1P VS HARD BOT',
     titleY: 546, rowY: 580, colW: 132,
+    // Holiday W-50: the tally's names on a touch device, where each class is
+    // one grown line and four share a row (TOUCH_CONFIG.menuRows.stats).
+    shortNames: {
+        arcanist: 'Arcan', pyromancer: 'Pyro', cryomancer: 'Cryo', stonecaller: 'Stone',
+        stormcaller: 'Storm', warden: 'Ward', trickster: 'Trick',
+    },
     colors: { inBand: '#66dd88', outBand: '#ff8866', few: '#8888aa' },
     button: {
         x: 832, y: 666,   // right of [ BACK ] on its row
@@ -374,6 +380,19 @@ export const TOUCH_CONFIG = {
     // Menu screens (holiday W-5): the smallest tap target, in CSS px, for the
     // controls that leave a screen. Grows the hit area only, never the label.
     menuMinCss: 44,
+    // Holiday W-50: menu text under 14 game px grows to hudMinCss CSS px on a
+    // touch device (TouchMenu's menuFontPx), and these rows make room for it
+    // (game px). STATS: title and stat-column y, the stat rows' gap, the gap
+    // between the flowing blocks under them, the element row's spacing, an
+    // achievement cell's width and inner padding, and the balance tally's
+    // classes per row and their spacing. CONTROLS: the hint line's y.
+    menuRows: {
+        stats: {
+            titleY: 26, statsY: 50, statGap: 22, gap: 6, elemColW: 190,
+            cellW: 254, cellPad: 4, tallyCols: 4, tallyColW: 250,
+        },
+        controls: { hintY: 74 },
+    },
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
     // Wardrobe swatches (holiday W-27): the game-px spacing of each row's
     // swatch centres. Each swatch's hit area grows to menuMinCss under the
