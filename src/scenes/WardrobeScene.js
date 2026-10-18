@@ -58,7 +58,7 @@ export class WardrobeScene extends Phaser.Scene {
         this.swatches = [];
         // Half a grown swatch hit area's height (W-27's menuMinCss), never
         // under the desktop ring's.
-        this.halfHit = Math.max(23, TOUCH_CONFIG.menuMinCss / cssPerGamePx(this) / 2);
+        this.halfHit = Math.max(R.minHalfHit, TOUCH_CONFIG.menuMinCss / cssPerGamePx(this) / 2);
         let y = previewY + previewR + R.gap;
 
         // --- ROBE row ---
@@ -159,7 +159,7 @@ export class WardrobeScene extends Phaser.Scene {
                 font: `${menuFontPx(this, 10)}px monospace`,
                 fill: '#ccaa66',
                 align: 'center',
-                wordWrap: { width: this.touch ? spacing - 6 : (slot === 'robe' ? 120 : 138) },
+                wordWrap: { width: this.touch ? spacing - TOUCH_CONFIG.menuRows.wardrobe.hintInset : (slot === 'robe' ? 120 : 138) },
             }).setOrigin(0.5, 0);
             bottom = hint.y + hint.height;
         } else {
