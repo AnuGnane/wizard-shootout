@@ -447,13 +447,19 @@ export function encodeQR(text, opts = {}) {
  * @param {HTMLCanvasElement} canvas
  * @param {string} text
  * @param {object} [opts] { ec, scale (px per module), margin (quiet-zone
- *                          modules, min 4 per spec), dark, light, maxVersion }
- * @returns the encodeQR result
+ *                          modules, min 4 per spec), dark, light, maxVersion,
+ *                          fit (px: grow the scale to fill this width, never
+ *                          below `scale`), maxScale (fit's cap) }
+ * @returns the encodeQR result plus the scale it was drawn at
  */
 export function drawQR(canvas, text, opts = {}) {
-    const scale = Math.max(1, Math.floor(opts.scale || 4));
+    let scale = Math.max(1, Math.floor(opts.scale || 4));
     const margin = Math.max(4, Math.floor(opts.margin === undefined ? 4 : opts.margin));
     const qr = encodeQR(text, opts);
+    if (opts.fit) {
+        const fill = Math.floor(opts.fit / (qr.size + margin * 2));
+        scale = Math.max(scale, Math.min(fill, Math.floor(opts.maxScale || fill)));
+    }
 
     const px = (qr.size + margin * 2) * scale;
     canvas.width = px;
@@ -469,7 +475,7 @@ export function drawQR(canvas, text, opts = {}) {
             }
         }
     }
-    return qr;
+    return { ...qr, scale };
 }
 
 // Dev-only handle so the headless suite can encode/decode without a scene.
