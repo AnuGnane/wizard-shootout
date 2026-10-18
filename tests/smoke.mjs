@@ -1678,6 +1678,66 @@ try {
             `installed app=${!!appBtn} desktop=${!!deskBtn}`);
     }
 
+    // 3l3. Add to Home Screen on iOS, said how (holiday W-43): with
+    // navigator.standalone stubbed false (iOS WebKit's own property),
+    // maxTouchPoints 1 and an 844x390 viewport, the menu shows the note at
+    // least hudMinCss CSS px, clear of every other menu text and image, and
+    // no [ INSTALL ], both with no Fullscreen API (iPhone: no second Add to
+    // Home Screen in the footer) and with one (a 1024x768 iPad: the toggle
+    // beside it);
+    // at 568x320 too; stubbed true (the installed app), neither.
+    {
+        const ios = async (standalone, fsApi, width = 844, height = 390) => {
+            const ctx = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true });
+            await ctx.addInitScript(([sa, fs]) => {
+                Object.defineProperty(Navigator.prototype, 'standalone', { get: () => sa, configurable: true });
+                Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => 1, configurable: true });
+                if (!fs) Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => false, configurable: true });
+            }, [standalone, fsApi]);
+            const page = await ctx.newPage();
+            page.on('pageerror', (e) => errors.push('ios pageerror: ' + e.message));
+            page.on('console', (m) => { if (m.type() === 'error') errors.push('ios console.error: ' + m.text()); });
+            await page.goto(url, { waitUntil: 'networkidle' });
+            await page.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await page.waitForTimeout(150);
+            const r = await page.evaluate(() => {
+                const s = window.__game.scene.getScene('MenuScene');
+                const list = s.children.list;
+                const note = list.find((o) => o.name === 'installNote' && o.active);
+                const btn = list.find((o) => o.name === 'installButton' && o.active);
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                let hits = [];
+                if (note) {
+                    const a = note.getBounds();
+                    hits = list.filter((o) => o !== note && o.visible && (o.type === 'Text' || o.type === 'Image') && o.getBounds)
+                        .filter((o) => { const b = o.getBounds(); return b.width < 1024 && a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom; })
+                        .map((o) => o.text || o.texture?.key);
+                }
+                return {
+                    text: note ? note.text.replace(/\s+/g, ' ') : null,
+                    css: note ? parseFloat(note.style.fontSize) * k : 0,
+                    inside: note ? note.getBounds().x >= 0 && note.getBounds().right <= 1024 && note.getBounds().y >= 0 : false,
+                    bounds: note ? (({ x, y, right, bottom }) => ({ x, y, right, bottom }))(note.getBounds()) : null,
+                    hits, btn: !!btn, toggle: list.some((o) => o.name === 'fullscreenToggle'),
+                    footer: list.find((o) => o.type === 'Text' && o.y === 690 && o.originX === 0.5)?.text || '',
+                };
+            });
+            await ctx.close();
+            return r;
+        };
+        const ok = (r) => r.text === 'install: tap Share, then Add to Home Screen' && r.css >= 9.99 && r.inside
+            && r.hits.length === 0 && !r.btn && /start game/.test(r.footer) && !/Home Screen/.test(r.footer);
+        const phone = await ios(false, false);
+        const small = await ios(false, false, 568, 320);
+        check('iPhone: the menu says "tap Share, then Add to Home Screen" at hudMinCss, clear of the menu (844x390 and 568x320), with no [ INSTALL ] and no second Add to Home Screen',
+            ok(phone) && ok(small) && !phone.toggle, JSON.stringify({ phone, small }));
+        const pad = await ios(false, true, 1024, 768);
+        check('iOS with a Fullscreen API (1024x768 iPad): the note sits beside [ FULL SCREEN ], clear of it and the menu',
+            ok(pad) && pad.toggle, JSON.stringify(pad));
+        const app = await ios(true, false);
+        check('iOS installed app: no install note and no [ INSTALL ]', !app.text && !app.btn, JSON.stringify(app));
+    }
+
     // 3m. First-round touch tips (holiday W-16): on an 844x390 touch
     // viewport with fresh storage, a bot round shows the five tips, each at
     // least TOUCH_CONFIG.hudMinCss CSS px and clear of the touch controls and

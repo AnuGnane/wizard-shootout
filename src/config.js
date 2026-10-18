@@ -383,6 +383,15 @@ export const TOUCH_CONFIG = {
         x: 950, y: 112, label: '[ INSTALL ]',
         font: '16px monospace', padding: { x: 14, y: 6 },
         fill: '#8899cc', hover: '#aaccff', bg: '#1a1a2e',
+        // Holiday W-43: iOS never fires beforeinstallprompt, so there the
+        // menu says how instead: one line at hudMinCss CSS px (never below
+        // iosMinPx game px), right-aligned at iosRight along the top edge,
+        // above the title and the red wizard; where a full-screen toggle
+        // shows (iPad) it ends iosGap left of the toggle (room for the
+        // toggle to grow to [ EXIT FULL SCREEN ]).
+        iosText: 'install: tap Share, then Add to Home Screen',
+        iosFill: '#8899cc', iosMinPx: 13,
+        iosRight: 1012, iosY: 4, iosGap: 36,
     },
     // In-round HUD on a phone (holiday W-13): the smallest HUD text, in CSS
     // px, in the modes that get touch controls; labels shorten before any

@@ -7,14 +7,16 @@
 // exists, and keeps the deferred event. addInstallButton(scene) (MenuScene)
 // shows [ INSTALL ] under the full-screen toggle on a touch device that is
 // not the installed app; desktop Chromium fires the event too, so the touch
-// guard keeps the desktop menu as it was. iPhone Safari never fires it and
-// keeps W-15's Add to Home Screen footer. The tap's release calls prompt()
-// (a user gesture, like the full-screen request), and the button goes
-// whatever the choice; appinstalled clears it too. No event, no button.
+// guard keeps the desktop menu as it was. iOS never fires it, so there
+// (holiday W-43) addInstallButton shows a note saying how instead: Share,
+// then Add to Home Screen, in place of W-15's footer hint. The tap's
+// release calls prompt() (a user gesture, like the full-screen request),
+// and the button goes whatever the choice; appinstalled clears it too. No
+// event, no button.
 
 import { TOUCH_CONFIG } from '../config.js';
 import { isInstalledApp } from './Fullscreen.js';
-import { ensureTapTarget, isTouchDevice } from './TouchMenu.js';
+import { cssPerGamePx, ensureTapTarget, isTouchDevice } from './TouchMenu.js';
 
 let deferred = null;
 // Menus showing or waiting to show the button (at most the one MenuScene).
@@ -33,10 +35,30 @@ export function watchInstallPrompt() {
     });
 }
 
+// iOS (holiday W-43): navigator.standalone is defined only by iOS WebKit
+// browsers (every iOS browser, never Android or desktop) and is false until
+// the page runs as the installed app. Shown in all of them, not Safari
+// alone: iOS 16.4 and later let every browser add to the home screen.
+export function iosInstallNote(scene) {
+    return navigator.standalone === false && isTouchDevice(scene) && !isInstalledApp();
+}
+
+// The note: plain text, no touches, named 'installNote'; beside the
+// full-screen toggle if `toggle` is given.
+function addIosNote(scene, toggle) {
+    const { iosText, iosFill, iosMinPx, iosRight, iosY, iosGap } = TOUCH_CONFIG.installButton;
+    const px = Math.max(iosMinPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(scene)));
+    const right = toggle ? toggle.getBounds().x - iosGap : iosRight;
+    const note = scene.add.text(right, iosY, iosText, { font: `${px}px monospace`, fill: iosFill }).setOrigin(1, 0);
+    note.name = 'installNote';
+    return note;
+}
+
 // On MenuScene: the button now if the browser has offered an install, else
 // as soon as it does. `menuNav` gets it, so ENTER reaches it too. The button
 // is named 'installButton'.
-export function addInstallButton(scene, menuNav) {
+export function addInstallButton(scene, menuNav, toggle = null) {
+    if (iosInstallNote(scene)) { addIosNote(scene, toggle); return; }
     let btn = null;
     const hide = () => {
         if (!btn) return;
