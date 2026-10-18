@@ -15,6 +15,7 @@ import { WardrobeScene } from './scenes/WardrobeScene.js';
 import { OnlineScene } from './scenes/OnlineScene.js';
 import { audio } from './systems/AudioSystem.js';
 import { installBackButton } from './systems/BackButton.js';
+import { readJoinLink } from './systems/Share.js';
 import { watchForUpdates } from './systems/AppUpdate.js';
 import { watchInstallPrompt } from './systems/InstallPrompt.js';
 import { loadSettings } from './systems/Storage.js';
@@ -79,6 +80,10 @@ const config = {
 };
 
 const game = new Phaser.Game(config);
+
+// Holiday W-44: a shared ?join= link, read and cleared before the Back
+// button's history entries copy the URL.
+readJoinLink();
 
 // Holiday W-20: the phone's Back button does what ESC does on the active
 // screen instead of leaving the game (systems/BackButton.js).

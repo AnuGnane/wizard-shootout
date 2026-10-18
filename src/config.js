@@ -263,6 +263,9 @@ export const APP_UPDATE_CONFIG = {
 export const SHARE_CONFIG = {
     title: 'Wizard Shootout',
     room: 'Join my Wizard Shootout match - code {code} - {url}',
+    // Holiday W-44: the room line's {url} carries the code as ?join=CODE,
+    // so the guest's tap opens JOIN with the box filled.
+    joinParam: 'join',
     daily: 'Wizard Shootout daily {date}: {result} {score} - {best} - {url}',
     dailyBest: 'best today {n} rounds',
     dailyNoBest: 'not beaten yet today',

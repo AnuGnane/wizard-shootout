@@ -2881,6 +2881,59 @@ try {
         check('paste: a desktop has no PASTE button', !desk.buttons.includes('PASTE'), JSON.stringify(desk.buttons));
     }
 
+    // 3y2. Holiday W-44: a shared link opens JOIN with the code filled.
+    // /?join=ABCDE boots straight to OnlineScene at JOIN with ABCDE in the
+    // room-code box and the address bar cleared; /?join=zz (not a whole
+    // code) stays on the main menu; the host's SHARE line carries the link;
+    // a second ONLINE from the menu opens at the HOST/JOIN choice again.
+    {
+        const open = async (q) => {
+            const page = await browser.newPage();
+            page.on('pageerror', (e) => errors.push('join-link pageerror: ' + e.message));
+            page.on('console', (m) => { if (m.type() === 'error') errors.push('join-link console.error: ' + m.text()); });
+            const u = new URL(url);
+            u.search = q;
+            await page.goto(u.href, { waitUntil: 'networkidle' });
+            await page.waitForFunction(() => window.__game?.scene?.isActive('MenuScene') || window.__game?.scene?.isActive('OnlineScene'), null, { timeout: 20000 });
+            await page.waitForTimeout(400);
+            const r = await page.evaluate(() => {
+                const g = window.__game.scene;
+                const box = document.querySelector('[data-room-input]');
+                return {
+                    online: g.isActive('OnlineScene'), menu: g.isActive('MenuScene'),
+                    role: g.isActive('OnlineScene') ? g.getScene('OnlineScene').role : null,
+                    value: box ? box.value : null, search: window.location.search,
+                };
+            });
+            return { page, r };
+        };
+        const good = await open('?join=ABCDE');
+        // Back to the menu, then ONLINE as its button does: no JOIN this time.
+        const again = await good.page.evaluate(async () => {
+            const g = window.__game.scene;
+            g.getScene('OnlineScene').scene.start('MenuScene');
+            await new Promise((r) => setTimeout(r, 300));
+            g.getScene('MenuScene').scene.start('OnlineScene');
+            await new Promise((r) => setTimeout(r, 300));
+            return { online: g.isActive('OnlineScene'), role: g.getScene('OnlineScene').role };
+        });
+        const link = await good.page.evaluate(async () => {
+            const { joinLink, fillShare } = await import(new URL('src/systems/Share.js', document.baseURI).href);
+            const { SHARE_CONFIG } = await import(new URL('src/config.js', document.baseURI).href);
+            return { link: joinLink('ABCDE'), line: fillShare(SHARE_CONFIG.room, { code: 'ABCDE', url: joinLink('ABCDE') }) };
+        }).catch((e) => ({ err: String(e) }));
+        await good.page.close();
+        check('join link: /?join=ABCDE opens JOIN with ABCDE in the box and clears the address bar, once; the share line carries ?join=ABCDE',
+            good.r.online && good.r.role === 'guest' && good.r.value === 'ABCDE' && good.r.search === ''
+                && /\?join=ABCDE$/.test(link.link || '') && (link.line || '').endsWith(link.link)
+                && again.online && again.role === null,
+            JSON.stringify({ ...good.r, ...link, again }));
+        const bad = await open('?join=zz');
+        await bad.page.close();
+        check('join link: /?join=zz (not a whole code) stays on the main menu', bad.r.menu && !bad.r.online && bad.r.search === '',
+            JSON.stringify(bad.r));
+    }
+
     // 3x2. Holiday W-36: no connection, said at once. An init script stubs
     // navigator.onLine and window.WebSocket (recording each construction).
     // Offline, ONLINE says so on arrival and HOST shows the line and opens no

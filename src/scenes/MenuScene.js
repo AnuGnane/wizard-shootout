@@ -9,6 +9,7 @@ import { addFullscreenToggle, fullscreenOffer } from '../systems/Fullscreen.js';
 import { addUpdateButton, addVersionText } from '../systems/AppUpdate.js';
 import { addInstallButton, iosInstallNote } from '../systems/InstallPrompt.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
+import { takePendingJoin } from '../systems/Share.js';
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -255,6 +256,10 @@ export class MenuScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-THREE', () => this.startGame('party'));
         this.input.keyboard.on('keydown-FOUR', () => this.startGame('survival'));
         this.input.keyboard.once('keydown-SPACE', () => this.startGame('2p'));
+
+        // Holiday W-44: the page was opened from a shared ?join= link.
+        const join = takePendingJoin();
+        if (join) this.scene.start('OnlineScene', { join });
     }
 
     makeButton(x, y, label, bgColor, hoverColor, onClick, fontSize = '26px') {

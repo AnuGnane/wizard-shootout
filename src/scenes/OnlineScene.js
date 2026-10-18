@@ -14,7 +14,7 @@ import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode, findRo
 import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 import { SHARE_CONFIG, NET_CONFIG } from '../config.js';
-import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
+import { canShare, fillShare, joinLink, shareOrCopy } from '../systems/Share.js';
 import * as WakeLock from '../systems/WakeLock.js';
 
 // Online 1v1 lobby. Stage 1 built the transport + code-exchange UI; stage 2a
@@ -162,6 +162,22 @@ export class OnlineScene extends Phaser.Scene {
         if (this._isOffline()) this.statusText.setText(NET_CONFIG.offlineText);
 
         this.events.once('shutdown', this._shutdown, this);
+
+        // Holiday W-44: opened from a shared ?join= link (via MenuScene): JOIN
+        // with the code in the box, as if typed; the player taps JOIN ROOM.
+        // Taken once: Phaser keeps settings.data across a start() with no
+        // data, so a later ONLINE from the menu must not see it again.
+        const data = this.scene.settings.data;
+        const join = data?.join;
+        if (data) delete data.join;
+        if (join) {
+            this.startJoin();
+            if (this.roomInput) {
+                this.roomInput.value = join;
+                this.roomInput.dispatchEvent(new Event('input'));
+                this.roomInput.focus();
+            }
+        }
     }
 
     // Holiday W-37: from HOST or JOIN until the scene shuts down, a phone
@@ -1096,7 +1112,7 @@ export class OnlineScene extends Phaser.Scene {
             this.statusText.setText('no room code yet - use COPY for the code below.');
             return;
         }
-        shareOrCopy(fillShare(SHARE_CONFIG.room, { code: this.roomCode })).then((how) => {
+        shareOrCopy(fillShare(SHARE_CONFIG.room, { code: this.roomCode, url: joinLink(this.roomCode) })).then((how) => {
             if (!this._alive) return;
             if (how === 'shared') this.statusText.setText('shared!');
             else if (how === 'copied') this.statusText.setText('copied to clipboard!');
