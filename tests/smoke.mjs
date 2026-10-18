@@ -3041,6 +3041,14 @@ try {
             });
         };
         const up = await host(true);
+        // The room service drops out after publishing: back to the code.
+        const lost = await pg.evaluate(() => {
+            const s = window.__game.scene.getScene('OnlineScene');
+            s.signal.onLost();
+            const { encodeQR } = window.__qr;
+            return { caption: s.qrNote?.textContent,
+                isCode: !!s.qr && encodeQR(s.hostCode, { ec: 'L' }).modules.join('') === s.qr.modules.join('') };
+        });
         const down = await host(false);
         const pages = await pg.evaluate(() => {
             const c = document.createElement('canvas');
@@ -3051,8 +3059,9 @@ try {
         await ctx.close();
         check('host QR: with a room code it is the ?join= link and reads "scan to join"; with the broker down it is the connection code and reads "scan for the code"',
             !!up.code && up.roomCode === up.code && up.isLink && !up.isCode && up.caption === 'scan to join'
-                && !down.isLink && down.isCode && down.caption === 'scan for the code' && down.scale >= 3 && up.cssW <= 324,
-            JSON.stringify({ up, down }));
+                && !down.isLink && down.isCode && down.caption === 'scan for the code' && down.scale >= 3 && up.cssW <= 324
+                && lost.isCode && lost.caption === 'scan for the code',
+            JSON.stringify({ up, lost, down }));
         check('host QR: a 54-character Pages link is version 4 at M, drawn at 7 px per module inside QR_W',
             pages.version === 4 && pages.scale === 7 && pages.w <= 324, JSON.stringify(pages));
     }

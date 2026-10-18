@@ -469,15 +469,16 @@ export class OnlineScene extends Phaser.Scene {
     // Render `text` into the flow's QR canvas. A code too long for the panel is
     // not an error — the manual copy-paste path covers it. `caption` replaces
     // the version note; `ec` is the error-correction level (L for the long
-    // connection codes). The drawn result is kept as this.qr.
-    _showQR(text, { ec = 'L', caption = null } = {}) {
+    // connection codes); `fit` grows the modules to fill QR_W. The drawn
+    // result is kept as this.qr.
+    _showQR(text, { ec = 'L', caption = null, fit = false } = {}) {
         if (!this.qrCanvas) return;
         this.qr = null;
         try {
             const qr = drawQR(this.qrCanvas, text, {
                 ec,
                 scale: QR_SCALE,
-                fit: QR_W,
+                fit: fit ? QR_W : 0,
                 maxScale: NET_CONFIG.qr.maxScale,
                 margin: 4,
                 maxVersion: QR_MAX_VERSION,
@@ -501,8 +502,8 @@ export class OnlineScene extends Phaser.Scene {
     _showHostQR() {
         if (this.role !== 'host' || !this.hostCode) return;
         const q = NET_CONFIG.qr;
-        if (this.roomCode && this.signal) this._showQR(joinLink(this.roomCode), { ec: q.linkEc, caption: q.joinCaption });
-        else this._showQR(this.hostCode, { caption: q.codeCaption });
+        if (this.roomCode && this.signal) this._showQR(joinLink(this.roomCode), { ec: q.linkEc, caption: q.joinCaption, fit: true });
+        else this._showQR(this.hostCode, { caption: q.codeCaption, fit: true });
     }
 
     // ---- HOST flow --------------------------------------------------------
