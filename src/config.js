@@ -267,8 +267,12 @@ export const APP_UPDATE_CONFIG = {
 // browser has navigator.share, the Online host screen and the Daily result
 // card share one line of text; {code}, {date}, {result}, {score}, {best} and
 // {url} (the game's own address) are filled in. Without navigator.share the
-// Daily button copies the same line. dailyButton is the Daily card's button
-// (game px, centre; right of REMATCH, which spans about 395 to 630).
+// Daily button copies the same line. shareButton is the result card's button
+// (game px, centre; right of REMATCH, which spans about 395 to 630, and of
+// RUN IT BACK, about 360 to 665).
+// Holiday W-48: every result card shares. survival fills {waves}, {kills}
+// and {best} (survivalBest / survivalNoBest); match fills {winner} and
+// {scores}, each team's name and score in the card's order, comma-joined.
 export const SHARE_CONFIG = {
     title: 'Wizard Shootout',
     room: 'Join my Wizard Shootout match - code {code} - {url}',
@@ -280,7 +284,11 @@ export const SHARE_CONFIG = {
     dailyNoBest: 'not beaten yet today',
     shareLabel: '[ SHARE ]',
     copyLabel: '[ COPY RESULT ]',
-    dailyButton: {
+    survival: 'Wizard Shootout survival: {waves} waves, {kills} slain - {best} - {url}',
+    survivalBest: 'best {n} waves',
+    survivalNoBest: 'no best yet',
+    match: 'Wizard Shootout: {winner} won {scores} - {url}',
+    shareButton: {
         x: 800, y: 470,
         font: '18px monospace', padding: { x: 14, y: 8 },
         fill: '#ffffff', hover: '#66ccff', bg: '#2a4d66',

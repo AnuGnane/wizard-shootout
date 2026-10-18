@@ -89,7 +89,8 @@ export class GameOverScene extends Phaser.Scene {
 
         // Holiday W-29: the Daily card shares (or, without a share sheet,
         // copies) the day's line, after REMATCH in the focus order.
-        if (this.isDaily && !this.isSurvival) this.createDailyShare();
+        // Holiday W-48: every other card shares its own line the same way.
+        this.createShare(this.isDaily && !this.isSurvival ? this.dailyShareText() : this.resultShareText);
 
         // Menu button
         const menuBtn = this.add.text(width / 2, 545, '[ MAIN MENU ]', {
@@ -160,6 +161,12 @@ export class GameOverScene extends Phaser.Scene {
             fill: '#8888aa',
         }).setOrigin(0.5);
 
+        this.resultShareText = fillShare(SHARE_CONFIG.survival, {
+            waves: this.wavesSurvived,
+            kills: this.teamKills,
+            best: this.bestWave > 0 ? fillShare(SHARE_CONFIG.survivalBest, { n: this.bestWave }) : SHARE_CONFIG.survivalNoBest,
+        });
+
         const isRecord = this.wavesSurvived > 0 && this.wavesSurvived >= this.bestWave;
         this.add.text(width / 2, 405, isRecord ? `BEST: ${this.bestWave}  ★ new record` : `BEST: ${this.bestWave}`, {
             font: '16px monospace',
@@ -184,11 +191,10 @@ export class GameOverScene extends Phaser.Scene {
         // imported, so a colorblindTeams toggle takes effect immediately.
         const teamColors = getTeamColors();
         const winnerColor = '#' + teamColors[this.winner - 1].toString(16).padStart(6, '0');
-        const winnerName = isParty
-            ? TEAM_NAMES[this.winner - 1]
-            : (this.winner === 1
-                ? PLAYER_CONFIG.names.player1
-                : (MATCH_STATE.mode === '1p' ? 'BOT WIZARD' : PLAYER_CONFIG.names.player2));
+        const seatName = (n) => (isParty ? TEAM_NAMES[n - 1]
+            : (n === 1 ? PLAYER_CONFIG.names.player1
+                : (MATCH_STATE.mode === '1p' ? 'BOT WIZARD' : PLAYER_CONFIG.names.player2)));
+        const winnerName = seatName(this.winner);
 
         // Winner's wizard sprite. 1P/2P keep the plain blue/red wizard; party
         // shows the winner's actual class in their team color.
@@ -228,10 +234,18 @@ export class GameOverScene extends Phaser.Scene {
             repeat: -1,
         });
 
+        // Holiday W-48: the shared line names the winner and every team's
+        // score in the order the card draws them.
+        const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
+        const shareSeats = isParty ? activeSeats : [1, 2];
+        this.resultShareText = fillShare(SHARE_CONFIG.match, {
+            winner: winnerName,
+            scores: shareSeats.map((n) => `${seatName(n)} ${this.scores[n]}`).join(', '),
+        });
+
         // Final score. 1P/2P show the classic "a - b"; party lists only the
         // active seats, each in its team color.
         if (isParty) {
-            const activeSeats = [1, 2, 3, 4].filter(n => MATCH_STATE.seatTypes[n] !== 'off');
             const segGap = 150;
             const startX = width / 2 - ((activeSeats.length - 1) * segGap) / 2;
             activeSeats.forEach((n, i) => {
@@ -292,8 +306,8 @@ export class GameOverScene extends Phaser.Scene {
         });
     }
 
-    createDailyShare() {
-        const cfg = SHARE_CONFIG.dailyButton;
+    createShare(text) {
+        const cfg = SHARE_CONFIG.shareButton;
         const btn = this.add.text(cfg.x, cfg.y, canShare() ? SHARE_CONFIG.shareLabel : SHARE_CONFIG.copyLabel, {
             font: cfg.font,
             fill: cfg.fill,
@@ -303,7 +317,7 @@ export class GameOverScene extends Phaser.Scene {
         // The share sheet needs a user gesture: fire on the tap's release.
         const go = () => {
             audio.uiClick();
-            shareOrCopy(this.dailyShareText()).then((how) => {
+            shareOrCopy(text).then((how) => {
                 if (how === 'copied' && btn.scene) btn.setText('[ COPIED ]');
             });
         };
