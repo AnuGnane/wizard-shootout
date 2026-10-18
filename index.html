@@ -53,6 +53,21 @@
       bottom: env(safe-area-inset-bottom, 0px);
       left: env(safe-area-inset-left, 0px);
     }
+    /* Holiday W-47: the first load says it is loading. One line of text in
+       the page's font and palette (theme #1a1a2e, the manifest's colours)
+       while the bundle downloads; main.js removes it once Phaser is READY.
+       Without JavaScript it stays and says so. */
+    #boot-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #1a1a2e;
+      color: #e8e8f0;
+      font-size: 18px;
+      pointer-events: none;
+    }
     /* Rotate prompt: a phone held upright shrinks the 1024x700 canvas to a
        sliver. Mirrors TOUCH_CONFIG.rotateQuery in src/config.js (the game
        pauses a running round on the same query). */
@@ -88,7 +103,8 @@
   </style>
 </head>
 <body>
-  <div id="game-container"></div>
+  <div id="game-container"><p id="boot-loading" role="status"><span class="boot-js">loading…</span><noscript>Wizard Shootout needs JavaScript</noscript></p></div>
+  <noscript><style>#boot-loading .boot-js { display: none; }</style></noscript>
   <div id="rotate-prompt" role="alert"><div class="phone"></div><p>Turn your phone sideways to play</p></div>
   <script type="module" src="/src/main.js"></script>
 </body>

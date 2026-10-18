@@ -89,6 +89,11 @@ readJoinLink();
 // screen instead of leaving the game (systems/BackButton.js).
 installBackButton(game);
 
+// Holiday W-47: index.html's "loading…" line goes once the game is up.
+const dropLoading = () => document.getElementById('boot-loading')?.remove();
+if (game.isRunning) dropLoading();
+else game.events.once(Phaser.Core.Events.READY, dropLoading);
+
 // Handy for debugging from the browser console
 window.__game = game;
 window.__match = MATCH_STATE;
