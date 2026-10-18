@@ -84,6 +84,7 @@
 //      shows a reload button on the menu (never mid-round) once a newer
 //      worker takes over a page it already controlled (W-22),
 //      and the itch.io bundle in dist-itch/ boots from a subfolder in an iframe,
+//   6a2. the served index carries the "loading…" line, gone once the menu is up (W-47),
 //   7. the trailer's GIF encoder (scripts/gif.js) writes a GIF Chromium decodes.
 //
 // Self-contained: it starts its own dev server via the Vite Node API (so no
@@ -3669,6 +3670,19 @@ try {
             && pwa.icons.length >= 3 && pwa.icons.every((i) => i.ok) && pwa.icons.some((i) => i.purpose === 'maskable')
             && /javascript/.test(pwa.swType) && pwa.swHasFetch && pwa.headManifest && pwa.headApple,
         `display=${pwa.display} icons=${pwa.icons.map((i) => i.sizes + (i.ok ? '' : '!')).join(',')} sw=${pwa.swHasFetch}`);
+
+    // 6a2. Holiday W-47: the served index says "loading…" before the game
+    // boots (and "needs JavaScript" under <noscript>); once the menu is up
+    // the live page has no element with the line.
+    const boot = await page.evaluate(async () => {
+        const html = await (await fetch('index.html')).text();
+        const live = [...document.querySelectorAll('body *')].some((el) => /loading…/.test(el.textContent) && !el.querySelector('*'));
+        return { served: html.includes('loading…') && html.includes('needs JavaScript'),
+            gone: !document.getElementById('boot-loading') && !live,
+            menu: window.__game.scene.isActive('MenuScene') };
+    });
+    check('first load: the served index says loading…, and the line is gone once the menu is up',
+        boot.served && boot.gone && boot.menu, JSON.stringify(boot));
 
     // 6b. Production build: the worker installs, controls the page, and the
     // game boots and starts a bot round with the network switched off. Needs
