@@ -233,6 +233,15 @@ export const NET_CONFIG = {
         emptyText: 'nothing to paste - type the code',
         inputW: 180, buttonW: 92, joinW: 132, gap: 8,
     },
+    // Holiday W-46: the host's QR. With a room code it encodes the ?join=
+    // link (version 4 at level M) and grows to fill the QR column up to
+    // maxScale px per module; without one, the connection code as before.
+    qr: {
+        joinCaption: 'scan to join',
+        codeCaption: 'scan for the code',
+        linkEc: 'M',
+        maxScale: 8,
+    },
 };
 
 // Holiday W-22 — fresh build on the phone (systems/AppUpdate.js). Once a new

@@ -60,6 +60,8 @@ const AREA_H = 68;
 // at level L (858 bytes) comfortably covers a compressed connection code with
 // room to spare. Anything bigger wouldn't fit the panel — we say so and let
 // copy-paste take over rather than drawing a QR nothing can read.
+// Holiday W-46: a QR grows past QR_SCALE to fill QR_W (a short join link
+// draws far larger than a connection code), up to NET_CONFIG.qr.maxScale.
 const QR_SCALE = 3;
 const QR_MAX_VERSION = 20;
 
@@ -290,6 +292,8 @@ export class OnlineScene extends Phaser.Scene {
         this.flowEls = [];
         this.qrCanvas = null;
         this.qrNote = null;
+        this.qr = null;
+        this.hostCode = null;
         this.roomStatus = null;
         this.roomBox = null;
         this.roomInput = null;
@@ -463,26 +467,42 @@ export class OnlineScene extends Phaser.Scene {
     }
 
     // Render `text` into the flow's QR canvas. A code too long for the panel is
-    // not an error — the manual copy-paste path covers it.
-    _showQR(text) {
+    // not an error — the manual copy-paste path covers it. `caption` replaces
+    // the version note; `ec` is the error-correction level (L for the long
+    // connection codes). The drawn result is kept as this.qr.
+    _showQR(text, { ec = 'L', caption = null } = {}) {
         if (!this.qrCanvas) return;
+        this.qr = null;
         try {
             const qr = drawQR(this.qrCanvas, text, {
-                ec: 'L',
+                ec,
                 scale: QR_SCALE,
+                fit: QR_W,
+                maxScale: NET_CONFIG.qr.maxScale,
                 margin: 4,
                 maxVersion: QR_MAX_VERSION,
             });
+            this.qr = qr;
             // The canvas is sized in device pixels by drawQR; pin the CSS size
-            // so it lands in the layout at exactly QR_SCALE px per module.
+            // so it lands in the layout at exactly qr.scale px per module.
             this.qrCanvas.style.width = this.qrCanvas.width + 'px';
             this.qrCanvas.style.height = this.qrCanvas.height + 'px';
             this.qrCanvas.style.display = 'block';
-            if (this.qrNote) this.qrNote.textContent = `QR version ${qr.version} · scan with a phone camera`;
+            if (this.qrNote) this.qrNote.textContent = caption || `QR version ${qr.version} · scan with a phone camera`;
         } catch (err) {
             this.qrCanvas.style.display = 'none';
             if (this.qrNote) this.qrNote.textContent = 'Code too long for a QR — use COPY instead.';
         }
+    }
+
+    // Holiday W-46: the host's QR. While a room code is live it is the ?join=
+    // link (a phone camera opens JOIN with the code filled); otherwise the
+    // connection code, the guaranteed fallback.
+    _showHostQR() {
+        if (this.role !== 'host' || !this.hostCode) return;
+        const q = NET_CONFIG.qr;
+        if (this.roomCode && this.signal) this._showQR(joinLink(this.roomCode), { ec: q.linkEc, caption: q.joinCaption });
+        else this._showQR(this.hostCode, { caption: q.codeCaption });
     }
 
     // ---- HOST flow --------------------------------------------------------
@@ -526,7 +546,8 @@ export class OnlineScene extends Phaser.Scene {
         this.conn.createOffer().then((code) => {
             if (!this._alive || this.role !== 'host') return;
             this.offerArea.value = code;
-            this._showQR(code);
+            this.hostCode = code;
+            this._showHostQR();
             this.statusText.setText('waiting for a player…');
             this._openRoom(code);
         }).catch((err) => this._fail(err));
@@ -535,7 +556,7 @@ export class OnlineScene extends Phaser.Scene {
     // Try the room-code rendezvous. Every failure lands in _signalFallback,
     // which leaves the manual flow (already on screen) as the way in.
     _openRoom(offerCode) {
-        const signal = new NetSignal();
+        const signal = this._newSignal();
         this.signal = signal;
         signal.onLost = () => {
             if (this._alive && this.signal === signal && !this.handedOff) {
@@ -553,6 +574,7 @@ export class OnlineScene extends Phaser.Scene {
                 this.roomCode = code;
                 this.roomBox.textContent = code;
                 this.roomStatus.textContent = 'waiting for a player to join…';
+                this._showHostQR();
                 return signal.waitForAnswer();
             })
             .then((answerCode) => {
@@ -715,9 +737,15 @@ export class OnlineScene extends Phaser.Scene {
     _signalFallback(reason) {
         if (!this._alive) return;
         this._closeSignal();
+        this._showHostQR();
         if (this.roomBox) this.roomBox.textContent = '—';
         if (this.roomStatus) this.roomStatus.textContent = `${reason} — use the manual code below.`;
         this.statusText.setText('Room codes unavailable — the manual code still works.');
+    }
+
+    // The room service's client; the smoke suite swaps in a stub.
+    _newSignal() {
+        return new NetSignal();
     }
 
     _closeSignal() {

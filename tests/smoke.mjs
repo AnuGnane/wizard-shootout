@@ -73,6 +73,8 @@
 //      shares the room code and the page's address and the Daily card's
 //      button shares its score; without it Online keeps only COPY and the
 //      Daily button copies the line instead (W-29),
+//   3x2b. with the room service stubbed, the host's QR is the ?join= link
+//      while a room code is live and the connection code without one (W-46),
 //   3y. with navigator.clipboard.readText stubbed on a phone, JOIN's
 //      [ PASTE ] fills the room-code box from a chat line and a refused
 //      read says so; a desktop has no PASTE (W-38),
@@ -2993,6 +2995,66 @@ try {
             live.role === 'host' && live.ws === 1 && !!drop.room && drop.room.startsWith(line)
                 && drop.status.startsWith('Room codes unavailable'),
             JSON.stringify({ live, drop }));
+    }
+
+    // 3x2b. Holiday W-46: the host's QR opens JOIN. NetSignal is stubbed on
+    // the scene (_newSignal): a broker that publishes the room makes the QR
+    // the ?join= link for that code with "scan to join"; a broker that fails
+    // leaves it the connection code with "scan for the code". The payload is
+    // read from the modules drawQR returned (s.qr), not from pixels. A Pages
+    // link (54 characters) is version 4 at M and fills QR_W at 7 px/module.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('host QR pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('OnlineScene'));
+        await pg.waitForFunction(() => window.__game.scene.isActive('OnlineScene'), null, { timeout: 5000 });
+        const host = async (brokerUp) => {
+            await pg.evaluate((up) => {
+                const s = window.__game.scene.getScene('OnlineScene');
+                window.__hosted = [];
+                s._newSignal = () => ({
+                    onLost: null,
+                    connect: () => (up ? Promise.resolve() : Promise.reject(new Error('stub broker down'))),
+                    hostRoom: (code) => { window.__hosted.push(code); return Promise.resolve(); },
+                    waitForAnswer: () => new Promise(() => {}),
+                    close() {},
+                });
+                s.startHost();
+            }, brokerUp);
+            await pg.waitForFunction((up) => {
+                const s = window.__game.scene.getScene('OnlineScene');
+                return !!s.qr && (up ? !!s.roomCode && s.qrNote.textContent === 'scan to join'
+                    : /manual/.test(s.roomStatus?.textContent || ''));
+            }, brokerUp, { timeout: 15000 }).catch(() => {});
+            return pg.evaluate(() => {
+                const s = window.__game.scene.getScene('OnlineScene');
+                const { encodeQR } = window.__qr;
+                const code = window.__hosted[0] || null;
+                const link = code ? new URL('./', location.href).href + '?join=' + code : null;
+                const same = (text, ec) => !!s.qr && !!text && encodeQR(text, { ec }).modules.join('') === s.qr.modules.join('');
+                return { code, roomCode: s.roomCode, caption: s.qrNote?.textContent,
+                    isLink: same(link, 'M'), isCode: same(s.hostCode, 'L'), scale: s.qr?.scale,
+                    cssW: parseFloat(s.qrCanvas?.style.width) };
+            });
+        };
+        const up = await host(true);
+        const down = await host(false);
+        const pages = await pg.evaluate(() => {
+            const c = document.createElement('canvas');
+            const qr = window.__qr.drawQR(c, 'https://anugnane.github.io/wizard-shootout/?join=ABCDE', { ec: 'M', scale: 3, fit: 324, maxScale: 8 });
+            return { version: qr.version, scale: qr.scale, w: c.width };
+        });
+        await pg.evaluate(() => window.__game.scene.getScene('OnlineScene').goBack());
+        await ctx.close();
+        check('host QR: with a room code it is the ?join= link and reads "scan to join"; with the broker down it is the connection code and reads "scan for the code"',
+            !!up.code && up.roomCode === up.code && up.isLink && !up.isCode && up.caption === 'scan to join'
+                && !down.isLink && down.isCode && down.caption === 'scan for the code' && down.scale >= 3 && up.cssW <= 324,
+            JSON.stringify({ up, down }));
+        check('host QR: a 54-character Pages link is version 4 at M, drawn at 7 px per module inside QR_W',
+            pages.version === 4 && pages.scale === 7 && pages.w <= 324, JSON.stringify(pages));
     }
 
     // 3x3. Holiday W-37: the screen stays awake. An init script stubs
