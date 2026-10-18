@@ -3609,12 +3609,12 @@ try {
             await pg.waitForTimeout(300);
             // The float zone's far corner from the home: its right edge, just
             // under its top (game px), in CSS px.
-            const at = await pg.evaluate(() => {
+            const at = await pg.evaluate((zone) => {
                 const c = window.__game.canvas.getBoundingClientRect();
                 const k = c.width / 1024;
-                const gx = 1024 * 0.5 - 12, gy = 80 + 12;
+                const gx = 1024 * zone.maxX - 12, gy = zone.minY + 12;
                 return { gx, gy, x: c.left + gx * k, y: c.top + gy * k };
-            });
+            }, TOUCH_CONFIG.floatZone);
             const cdp = await ctx.newCDPSession(pg);
             await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
             await pg.waitForTimeout(60);
@@ -3654,7 +3654,7 @@ try {
         const floating = await round('floating');
         check('joystick mode: FLOATING drops the base under the same touch',
             !floating.fixed && floating.held && (floating.base.x !== floating.home.x || floating.base.y !== floating.home.y)
-                && Math.abs(floating.base.x - (1024 * 0.5 - 12)) < 1 && floating.released,
+                && Math.abs(floating.base.x - (1024 * TOUCH_CONFIG.floatZone.maxX - 12)) < 1 && floating.released,
             JSON.stringify(floating));
     }
 
