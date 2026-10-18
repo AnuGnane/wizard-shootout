@@ -7,7 +7,7 @@ import { getBindings, keyLabel } from '../systems/KeyBindings.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { addFullscreenToggle, fullscreenOffer } from '../systems/Fullscreen.js';
 import { addUpdateButton, addVersionText } from '../systems/AppUpdate.js';
-import { addInstallButton } from '../systems/InstallPrompt.js';
+import { addInstallButton, iosInstallNote } from '../systems/InstallPrompt.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 
 export class MenuScene extends Phaser.Scene {
@@ -219,9 +219,10 @@ export class MenuScene extends Phaser.Scene {
 
         // Holiday W-15: a phone browser gets a full-screen toggle in the top
         // right; where it has no Fullscreen API (iPhone Safari) the footer
-        // points at Add to Home Screen instead.
-        addFullscreenToggle(this, 'menu');
-        const hintText = fullscreenOffer(this) === 'hint'
+        // points at Add to Home Screen instead, unless W-43's iOS install
+        // note (top right) already says it.
+        this.fullscreenToggle = addFullscreenToggle(this, 'menu');
+        const hintText = fullscreenOffer(this) === 'hint' && !iosInstallNote(this)
             ? 'Add to Home Screen for full screen'
             : '1 / 2 / 3 / 4 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins';
 
@@ -245,8 +246,9 @@ export class MenuScene extends Phaser.Scene {
         addVersionText(this);
         addUpdateButton(this, this.menuNav);
         // Holiday W-34: [ INSTALL ] under the full-screen toggle where the
-        // browser offered an install (Android Chrome, not yet installed).
-        addInstallButton(this, this.menuNav);
+        // browser offered an install (Android Chrome, not yet installed);
+        // on iOS, W-43's note saying how.
+        addInstallButton(this, this.menuNav, this.fullscreenToggle);
 
         this.input.keyboard.on('keydown-ONE', () => this.startGame('1p'));
         this.input.keyboard.on('keydown-TWO', () => this.startGame('2p'));
