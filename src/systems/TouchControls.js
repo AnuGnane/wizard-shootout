@@ -36,6 +36,10 @@
 // that scales the joystick, FIRE, ORB and PWR (radius and minCss floor
 // alike), capped so the joystick and the FIRE/PWR column stay inside the
 // canvas height with their margins. The pause is not scaled.
+//
+// Holiday W-49 (fixed joystick): with `opts.fixedJoystick` the base stays at
+// its home; a touch anywhere in the float zone drives the thumb from there
+// instead of dropping the base under it.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -68,6 +72,7 @@ export class TouchControls {
         this.onHiddenChange = opts.onHiddenChange || null;
         this.mirrored = !!opts.mirrored;
         this.sizeScale = TOUCH_CONFIG.sizes[opts.size] || TOUCH_CONFIG.sizes.normal;
+        this.fixedJoystick = !!opts.fixedJoystick;
         this._destroyed = false;
         // Holiday W-24: true while a gamepad has put the controls away.
         this.hidden = false;
@@ -389,7 +394,8 @@ export class TouchControls {
 
         // Joystick: a touch on (a bit past) the resting base grabs it where
         // it is; any other touch in the float zone drops the base under the
-        // thumb, kept fully on the canvas.
+        // thumb, kept fully on the canvas, or, with a fixed joystick, drives
+        // the base where it rests.
         const { homeX, homeY, radius } = this.joy;
         const zone = TOUCH_CONFIG.floatZone;
         if (this._dist(x, y, homeX, homeY) <= radius * 1.25) {
@@ -397,10 +403,12 @@ export class TouchControls {
             this._updateJoystick(pointer);
         } else if (this._mx(x) <= GAME_CONFIG.width * zone.maxX && y >= zone.minY) {
             this.joyPointerId = pointer.id;
-            this._placeJoystick(
-                Math.min(Math.max(x, radius), GAME_CONFIG.width - radius),
-                Math.min(Math.max(y, radius), GAME_CONFIG.height - radius),
-            );
+            if (!this.fixedJoystick) {
+                this._placeJoystick(
+                    Math.min(Math.max(x, radius), GAME_CONFIG.width - radius),
+                    Math.min(Math.max(y, radius), GAME_CONFIG.height - radius),
+                );
+            }
             this._updateJoystick(pointer);
         }
     }

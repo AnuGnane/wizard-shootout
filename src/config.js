@@ -499,6 +499,12 @@ export const TOUCH_CONFIG = {
     sizes: { small: 0.85, normal: 1, large: 1.2 },
     // Its Settings choice, on TOUCH LAYOUT's line (game px from the column).
     sizeRow: { labelDx: 330, valueDx: 380 },
+    // Holiday W-49: Settings' JOYSTICK choices. 'floating' drops the base
+    // under a thumb that lands in the float zone; 'fixed' keeps the base at
+    // its home and drives it from any touch there. First is the default.
+    joystickModes: ['floating', 'fixed'],
+    // Its Settings choice, on EFFECTS' line (game px from the column).
+    joystickRow: { labelDx: 290, valueDx: 380 },
     floatZone: { maxX: 0.5, minY: 80 }, // minY clears the pause button's hit area on a phone
     // Portrait on a phone: the page shows a rotate prompt (index.html mirrors
     // this query in CSS) and a running round pauses.

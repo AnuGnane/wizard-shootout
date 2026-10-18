@@ -326,6 +326,7 @@ export class GameScene extends Phaser.Scene {
             onPause: () => this.openPause(),
             mirrored: RUNTIME_SETTINGS.touchLayout === 'left',
             size: RUNTIME_SETTINGS.touchSize,
+            fixedJoystick: RUNTIME_SETTINGS.joystickMode === 'fixed',
             // Holiday W-24: tips go with controls a gamepad puts away, unseen,
             // and come back with them.
             onHiddenChange: (hidden) => {
