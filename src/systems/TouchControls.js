@@ -31,6 +31,11 @@
 // to right, so the joystick sits bottom-right and floats on the right half,
 // and FIRE sits bottom-left with ORB to its right and PWR above it. Every x
 // is derived from the right-handed one through _mx(); the pause stays put.
+//
+// Holiday W-45 (touch size): `opts.size` names a TOUCH_CONFIG.sizes factor
+// that scales the joystick, FIRE, ORB and PWR (radius and minCss floor
+// alike), capped so the joystick and the FIRE/PWR column stay inside the
+// canvas height with their margins. The pause is not scaled.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -62,6 +67,7 @@ export class TouchControls {
         this.onPause = opts.onPause || null;
         this.onHiddenChange = opts.onHiddenChange || null;
         this.mirrored = !!opts.mirrored;
+        this.sizeScale = TOUCH_CONFIG.sizes[opts.size] || TOUCH_CONFIG.sizes.normal;
         this._destroyed = false;
         // Holiday W-24: true while a gamepad has put the controls away.
         this.hidden = false;
@@ -293,8 +299,15 @@ export class TouchControls {
         const radius = (cfg) => Math.max(cfg.radius, cfg.minCss / 2 / k);
         const margin = TOUCH_CONFIG.marginCss / k;
         const gap = TOUCH_CONFIG.gapCss / k;
+        // The chosen size, lowered where the grown joystick or the FIRE + PWR
+        // column would no longer fit the canvas height.
+        const base = { j: radius(TOUCH_CONFIG.joystick), f: radius(TOUCH_CONFIG.fire), s: radius(TOUCH_CONFIG.small) };
+        const room = H - 2 * margin;
+        const s = Math.min(this.sizeScale, room / (2 * base.j), (room - gap) / (2 * base.f + 2 * base.s));
+        this.appliedSize = s;
+        const scaled = (cfg) => s * radius(cfg);
 
-        const jr = radius(TOUCH_CONFIG.joystick);
+        const jr = scaled(TOUCH_CONFIG.joystick);
         this.joy.radius = jr;
         this.joy.homeX = this._mx(margin + jr);
         this.joy.homeY = H - margin - jr;
@@ -302,8 +315,8 @@ export class TouchControls {
         this.joyThumbGfx.setRadius(jr * 0.48);
         if (this.joyPointerId === null) this._placeJoystick(this.joy.homeX, this.joy.homeY);
 
-        const fr = radius(TOUCH_CONFIG.fire);
-        const sr = radius(TOUCH_CONFIG.small);
+        const fr = scaled(TOUCH_CONFIG.fire);
+        const sr = scaled(TOUCH_CONFIG.small);
         const fireX = W - margin - fr;
         const fire = { x: this._mx(fireX), y: H - margin - fr, radius: fr };
         this.buttons = {

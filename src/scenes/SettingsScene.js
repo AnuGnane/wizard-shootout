@@ -47,6 +47,9 @@ export const RUNTIME_SETTINGS = {
     // Holiday W-32 — 'right' | 'left': the left-handed touch layout mirrors
     // the joystick and FIRE/ORB/PWR (TouchControls). Touch devices only.
     touchLayout: 'right',
+    // Holiday W-45 — 'small' | 'normal' | 'large' (TOUCH_CONFIG.sizes): the
+    // touch controls' size. Touch devices only.
+    touchSize: 'normal',
 
     // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
     mutGiantShots: false,   // 1.8x projectile scale + physics body
@@ -131,7 +134,10 @@ export class SettingsScene extends Phaser.Scene {
         this.yPos += 20;
         this.addSectionHeader('DEVICE');
         this.addChoice('Effects', 'effects', FX_CONFIG.levels);
-        if (isTouchDevice(this)) this.addChoice('Touch Layout', 'touchLayout', TOUCH_CONFIG.layouts);
+        if (isTouchDevice(this)) {
+            this.addChoice('Touch Layout', 'touchLayout', TOUCH_CONFIG.layouts);
+            this.addChoice('Touch Size', 'touchSize', Object.keys(TOUCH_CONFIG.sizes));
+        }
         if (canVibrate()) this.addToggle('Vibration', 'vibration');
 
         // === RIGHT COLUMN ===

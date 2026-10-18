@@ -475,6 +475,11 @@ export const TOUCH_CONFIG = {
     // Holiday W-32: Settings' TOUCH LAYOUT choices; 'left' mirrors the
     // controls (joystick right, FIRE/ORB/PWR left). First is the default.
     layouts: ['right', 'left'],
+    // Holiday W-45: Settings' TOUCH SIZE choices and their factors, which
+    // scale each control's radius and its minCss floor (on a phone the floor
+    // wins, so the base alone would change nothing). SMALL keeps `small` at
+    // 44.2 CSS px, over the 44-pt floor. NORMAL is the default.
+    sizes: { small: 0.85, normal: 1, large: 1.2 },
     floatZone: { maxX: 0.5, minY: 80 }, // minY clears the pause button's hit area on a phone
     // Portrait on a phone: the page shows a rotate prompt (index.html mirrors
     // this query in CSS) and a running round pauses.
