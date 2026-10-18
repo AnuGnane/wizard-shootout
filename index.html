@@ -56,10 +56,12 @@
     /* Holiday W-47: the first load says it is loading. One line of text in
        the page's font and palette (theme #1a1a2e, the manifest's colours)
        while the bundle downloads; main.js removes it once Phaser is READY.
-       Without JavaScript it stays and says so. */
+       Without JavaScript it stays and says so. Text colour as the rotate
+       prompt's. */
     #boot-loading {
       position: absolute;
       inset: 0;
+      margin: 0;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -101,10 +103,10 @@
       #rotate-prompt { display: flex; }
     }
   </style>
+  <noscript><style>#boot-loading .boot-js { display: none; }</style></noscript>
 </head>
 <body>
   <div id="game-container"><p id="boot-loading" role="status"><span class="boot-js">loading…</span><noscript>Wizard Shootout needs JavaScript</noscript></p></div>
-  <noscript><style>#boot-loading .boot-js { display: none; }</style></noscript>
   <div id="rotate-prompt" role="alert"><div class="phone"></div><p>Turn your phone sideways to play</p></div>
   <script type="module" src="/src/main.js"></script>
 </body>

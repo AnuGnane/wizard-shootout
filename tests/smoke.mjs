@@ -80,11 +80,11 @@
 //      read says so; a desktop has no PASTE (W-38),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
-//   6a2. the served index carries the "loading…" line, gone once the menu is up (W-47),
 //      the production build in dist/ installs its worker and boots offline,
 //      shows a reload button on the menu (never mid-round) once a newer
 //      worker takes over a page it already controlled (W-22),
 //      and the itch.io bundle in dist-itch/ boots from a subfolder in an iframe,
+//   6a2. the served index carries the "loading…" line, gone once the menu is up (W-47),
 //   7. the trailer's GIF encoder (scripts/gif.js) writes a GIF Chromium decodes.
 //
 // Self-contained: it starts its own dev server via the Vite Node API (so no
