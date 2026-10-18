@@ -1726,7 +1726,7 @@ try {
             return r;
         };
         const ok = (r) => r.text === 'install: tap Share, then Add to Home Screen' && r.css >= 9.99 && r.inside
-            && r.hits.length === 0 && !r.btn && !/Home Screen/.test(r.footer);
+            && r.hits.length === 0 && !r.btn && /start game/.test(r.footer) && !/Home Screen/.test(r.footer);
         const phone = await ios(false, false);
         const small = await ios(false, false, 568, 320);
         check('iPhone: the menu says "tap Share, then Add to Home Screen" at hudMinCss, clear of the menu (844x390 and 568x320), with no [ INSTALL ] and no second Add to Home Screen',

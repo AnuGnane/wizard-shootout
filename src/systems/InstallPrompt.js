@@ -9,9 +9,10 @@
 // not the installed app; desktop Chromium fires the event too, so the touch
 // guard keeps the desktop menu as it was. iOS never fires it, so there
 // (holiday W-43) addInstallButton shows a note saying how instead: Share,
-// then Add to Home Screen, in place of W-15's footer hint. The tap's release calls prompt()
-// (a user gesture, like the full-screen request), and the button goes
-// whatever the choice; appinstalled clears it too. No event, no button.
+// then Add to Home Screen, in place of W-15's footer hint. The tap's
+// release calls prompt() (a user gesture, like the full-screen request),
+// and the button goes whatever the choice; appinstalled clears it too. No
+// event, no button.
 
 import { TOUCH_CONFIG } from '../config.js';
 import { isInstalledApp } from './Fullscreen.js';
