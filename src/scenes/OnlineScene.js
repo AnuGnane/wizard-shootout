@@ -165,7 +165,11 @@ export class OnlineScene extends Phaser.Scene {
 
         // Holiday W-44: opened from a shared ?join= link (via MenuScene): JOIN
         // with the code in the box, as if typed; the player taps JOIN ROOM.
-        const join = this.scene.settings.data?.join;
+        // Taken once: Phaser keeps settings.data across a start() with no
+        // data, so a later ONLINE from the menu must not see it again.
+        const data = this.scene.settings.data;
+        const join = data?.join;
+        if (data) delete data.join;
         if (join) {
             this.startJoin();
             if (this.roomInput) {
