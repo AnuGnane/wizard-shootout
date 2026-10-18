@@ -75,6 +75,9 @@ export function loadSettings(settings) {
     if (TOUCH_CONFIG.layouts.includes(saved.touchLayout)) {
         settings.touchLayout = saved.touchLayout;
     }
+    if (Object.keys(TOUCH_CONFIG.sizes).includes(saved.touchSize)) {
+        settings.touchSize = saved.touchSize;
+    }
     for (const key of MUTATOR_KEYS) {
         if (typeof saved[key] === 'boolean') {
             settings[key] = saved[key];
@@ -115,6 +118,7 @@ export function saveSettings(settings) {
     payload.vibration = settings.vibration;
     payload.effects = settings.effects;
     payload.touchLayout = settings.touchLayout;
+    payload.touchSize = settings.touchSize;
     for (const key of MUTATOR_KEYS) {
         payload[key] = settings[key];
     }

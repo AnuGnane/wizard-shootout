@@ -47,6 +47,9 @@ export const RUNTIME_SETTINGS = {
     // Holiday W-32 — 'right' | 'left': the left-handed touch layout mirrors
     // the joystick and FIRE/ORB/PWR (TouchControls). Touch devices only.
     touchLayout: 'right',
+    // Holiday W-45 — 'small' | 'normal' | 'large' (TOUCH_CONFIG.sizes): the
+    // touch controls' size. Touch devices only.
+    touchSize: 'normal',
 
     // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
     mutGiantShots: false,   // 1.8x projectile scale + physics body
@@ -131,7 +134,12 @@ export class SettingsScene extends Phaser.Scene {
         this.yPos += 20;
         this.addSectionHeader('DEVICE');
         this.addChoice('Effects', 'effects', FX_CONFIG.levels);
-        if (isTouchDevice(this)) this.addChoice('Touch Layout', 'touchLayout', TOUCH_CONFIG.layouts);
+        if (isTouchDevice(this)) {
+            this.addChoice('Touch Layout', 'touchLayout', TOUCH_CONFIG.layouts);
+            // Holiday W-45: on TOUCH LAYOUT's line, since the column already
+            // reaches SAVE.
+            this.addChoice('Size', 'touchSize', Object.keys(TOUCH_CONFIG.sizes), TOUCH_CONFIG.sizeRow);
+        }
         if (canVibrate()) this.addToggle('Vibration', 'vibration');
 
         // === RIGHT COLUMN ===
@@ -274,13 +282,16 @@ export class SettingsScene extends Phaser.Scene {
 
     // Holiday W-31: a row that cycles through `options` (stored as given,
     // shown upper-case). A tap steps forward; left/right step on a pad.
-    addChoice(label, key, options) {
-        const labelText = this.add.text(this.colX + 20, this.yPos, `${label}: `, {
+    // `inline` ({ labelDx, valueDx } from colX) puts the choice on the
+    // previous choice's line instead of a new one.
+    addChoice(label, key, options, inline = null) {
+        const y = inline ? this.lastChoiceY : this.yPos;
+        const labelText = this.add.text(this.colX + (inline ? inline.labelDx : 20), y, `${label}: `, {
             font: '14px monospace',
             fill: '#aaaacc',
         });
         const show = () => `[${String(this.settings[key]).toUpperCase()}]`;
-        const value = this.add.text(this.colX + 230, this.yPos, show(), {
+        const value = this.add.text(this.colX + (inline ? inline.valueDx : 230), y, show(), {
             font: '14px monospace',
             fill: '#66ccff',
         }).setInteractive({ useHandCursor: true });
@@ -296,6 +307,8 @@ export class SettingsScene extends Phaser.Scene {
         this.menuNav.add(labelText, () => doStep(1), { onStep: doStep });
 
         this.controls.push({ key, choice: value });
+        if (inline) return;
+        this.lastChoiceY = this.yPos;
         this.yPos += 25;
     }
 

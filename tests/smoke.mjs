@@ -2457,7 +2457,8 @@ try {
             const cdp = await ctx.newCDPSession(phone);
             await toSettings(phone);
             const lay = await layout(phone);
-            // The phone-only VIBRATION (W-14) and TOUCH LAYOUT (W-32) rows
+            // The phone-only VIBRATION (W-14) and TOUCH LAYOUT (W-32) rows (TOUCH
+            // SIZE, W-45, shares TOUCH LAYOUT's line)
             // have no desktop twin; every other text must sit exactly where
             // the desktop draws it.
             const yOf = (f) => f.slice(f.lastIndexOf(',') + 1);
@@ -3353,6 +3354,79 @@ try {
                 JSON.stringify({ ...ed, statsNote }));
         }
         await ctx.close();
+    }
+
+    // 3aa0. Holiday W-45: touch controls at the thumb's size. Settings on a
+    // touch phone shows TOUCH SIZE (NORMAL, then LARGE, SMALL) and saves it;
+    // on 844x390 a LARGE round's FIRE radius is 1.2 times NORMAL's, SMALL
+    // keeps every control at least 44 CSS px across and at its scaled
+    // floor; at 568x320 every LARGE control's circle stays inside the canvas.
+    {
+        const round = async (vp, size) => {
+            const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('touch size pageerror: ' + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            let row = null;
+            if (size === 'settings') {
+                await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+                await pg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+                row = await pg.evaluate(() => {
+                    const s = window.__game.scene.getScene('SettingsScene');
+                    const c = s.controls.find((x) => x.key === 'touchSize');
+                    if (!c) return null;
+                    const seen = [c.choice.text];
+                    c.choice.emit('pointerdown'); seen.push(c.choice.text);
+                    c.choice.emit('pointerdown'); seen.push(c.choice.text);
+                    s.applySettings();
+                    return { seen, runtime: window.__settings.touchSize };
+                });
+                await ctx.close();
+                return row;
+            }
+            await pg.evaluate((size) => {
+                window.__settings.touchSize = size;
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            }, size);
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').touchControls, null, { timeout: 8000 });
+            await pg.waitForTimeout(300);
+            const r = await pg.evaluate(() => {
+                const tc = window.__game.scene.getScene('GameScene').touchControls;
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const circles = [{ name: 'joystick', x: tc.joy.homeX, y: tc.joy.homeY, radius: tc.joy.radius },
+                    ...Object.entries(tc.buttons).map(([name, b]) => ({ name, ...b }))];
+                return {
+                    size: tc.sizeScale, applied: tc.appliedSize, fire: tc.buttons.shoot.radius,
+                    css: Object.fromEntries(circles.map((c) => [c.name, +(2 * c.radius * k).toFixed(1)])),
+                    inside: circles.every((c) => c.x - c.radius >= 0 && c.x + c.radius <= 1024 && c.y - c.radius >= 0 && c.y + c.radius <= 700),
+                };
+            });
+            await ctx.close();
+            return r;
+        };
+        const row = await round({ width: 844, height: 390 }, 'settings');
+        check('touch size: Settings on a touch phone shows TOUCH SIZE and saves LARGE, then SMALL',
+            !!row && row.seen.join(' ') === '[NORMAL] [LARGE] [SMALL]' && row.runtime === 'small', JSON.stringify(row));
+        const phone = { width: 844, height: 390 };
+        const normal = await round(phone, 'normal');
+        const large = await round(phone, 'large');
+        const small = await round(phone, 'small');
+        const floors = { joystick: 110, shoot: 68, runeShoot: 52, ability: 52 };
+        const smallOk = Object.entries(small.css).every(([n, d]) => d >= 44 && d >= floors[n] * 0.85 - 0.1);
+        check('touch size: LARGE FIRE is 1.2x NORMAL; SMALL keeps every control at least 44 CSS px and its scaled floor',
+            Math.abs(large.fire / normal.fire - 1.2) < 1e-6 && smallOk && normal.applied === 1,
+            JSON.stringify({ normal, large, small }));
+        const tiny = await round({ width: 568, height: 320 }, 'large');
+        check('touch size: at 568x320 every LARGE control stays inside the canvas', tiny.inside, JSON.stringify(tiny));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
