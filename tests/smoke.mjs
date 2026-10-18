@@ -73,6 +73,8 @@
 //      shares the room code and the page's address and the Daily card's
 //      button shares its score; without it Online keeps only COPY and the
 //      Daily button copies the line instead (W-29),
+//   3x1. with navigator.share stubbed, the survival, 1P and PARTY result
+//      cards share their own lines, clear of REMATCH / RUN IT BACK (W-48),
 //   3x2b. with the room service stubbed, the host's QR is the ?join= link
 //      while a room code is live and the connection code without one (W-46),
 //   3y. with navigator.clipboard.readText stubbed on a phone, JOIN's
@@ -2829,6 +2831,68 @@ try {
             !b.buttons.includes('SHARE') && b.buttons.includes('COPY') && b.daily === '[ COPY RESULT ]'
                 && b.copied.length === 1 && b.copied[0].includes('won 3-1') && !b.shared.length,
             JSON.stringify({ buttons: b.buttons, daily: b.daily, copied: b.copied }));
+    }
+
+    // 3x1. Holiday W-48: every result card shares. With navigator.share
+    // stubbed on an 844x390 touch context, a survival card, a 1P card (the
+    // bot named BOT WIZARD) and a three-team PARTY card each carry the
+    // button; a tap shares the card's line from its template; no two
+    // interactive texts on a card overlap (REMATCH / RUN IT BACK included).
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(() => {
+            window.__shared = [];
+            navigator.share = (d) => { window.__shared.push(d.text); return Promise.resolve(); };
+        });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('result share pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const cdp = await ctx.newCDPSession(pg);
+        const card = async (match, data) => {
+            await pg.evaluate(([m, d]) => {
+                Object.assign(window.__match, m);
+                const g = window.__game.scene;
+                const from = g.isActive('GameOverScene') ? 'GameOverScene' : 'MenuScene';
+                g.getScene(from).scene.start('GameOverScene', d);
+            }, [match, data]);
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameOverScene') && !!window.__game.scene.getScene('GameOverScene').shareBtn, null, { timeout: 5000 });
+            await pg.waitForTimeout(150);
+            const info = await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('GameOverScene');
+                const b = s.shareBtn;
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const texts = s.children.list.filter((o) => o.type === 'Text' && o.input && o.input.enabled);
+                const boxes = texts.map((o) => { const r = o.getBounds(); return { t: o.text, x: r.x, y: r.y, w: r.width, h: r.height }; });
+                let overlap = null;
+                for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+                    const p = boxes[i], q = boxes[j];
+                    if (p.x < q.x + q.w && q.x < p.x + p.w && p.y < q.y + q.h && q.y < p.y + p.h) overlap = [p.t, q.t];
+                }
+                return { label: b.text, x: c.left + b.x * k, y: c.top + b.y * k, n: texts.length, overlap };
+            });
+            const before = await pg.evaluate(() => window.__shared.length);
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: info.x, y: info.y, id: 1 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await pg.waitForTimeout(100);
+            const shared = await pg.evaluate((n) => window.__shared.slice(n), before);
+            return { ...info, shared };
+        };
+        const origin = await pg.evaluate(() => new URL('./', location.href).href);
+        const surv = await card({ mode: 'survival', playerCount: 1 },
+            { isSurvival: true, wavesSurvived: 12, wave: 13, teamKills: 87, bestWave: 12 });
+        const solo = await card({ mode: '1p', playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } },
+            { winner: 1, scores: { 1: 3, 2: 1 }, rounds: 4 });
+        const party = await card({ mode: 'party', playerCount: 3, seatTypes: { 1: 'human', 2: 'bot', 3: 'bot', 4: 'off' } },
+            { winner: 1, scores: { 1: 5, 2: 3, 3: 2, 4: 0 }, rounds: 10 });
+        await ctx.close();
+        const one = (r, line) => r.label === '[ SHARE ]' && r.shared.length === 1 && r.shared[0] === line && !r.overlap && r.n >= 3;
+        check('result share: survival, 1P and PARTY cards each share their own line; no interactive texts overlap',
+            one(surv, `Wizard Shootout survival: 12 waves, 87 slain - best 12 waves - ${origin}`)
+                && one(solo, `Wizard Shootout: BLUE WIZARD won BLUE WIZARD 3, BOT WIZARD 1 - ${origin}`)
+                && one(party, `Wizard Shootout: BLUE won BLUE 5, RED 3, GREEN 2 - ${origin}`),
+            JSON.stringify({ surv, solo, party }));
     }
 
     // 3y. Holiday W-38: paste the room code with one tap. On an 844x390 touch
