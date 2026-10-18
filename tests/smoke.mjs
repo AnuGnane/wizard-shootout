@@ -2457,11 +2457,12 @@ try {
             const cdp = await ctx.newCDPSession(phone);
             await toSettings(phone);
             const lay = await layout(phone);
-            // The phone-only VIBRATION (W-14), TOUCH LAYOUT (W-32) and TOUCH SIZE (W-45) rows
+            // The phone-only VIBRATION (W-14) and TOUCH LAYOUT (W-32) rows (TOUCH
+            // SIZE, W-45, shares TOUCH LAYOUT's line)
             // have no desktop twin; every other text must sit exactly where
             // the desktop draws it.
             const yOf = (f) => f.slice(f.lastIndexOf(',') + 1);
-            const onlyRows = ['Vibration', 'Touch Layout', 'Touch Size'].map((n) => lay.frames.find((f) => f.startsWith(n))).filter(Boolean);
+            const onlyRows = ['Vibration', 'Touch Layout'].map((n) => lay.frames.find((f) => f.startsWith(n))).filter(Boolean);
             const phoneOnly = (f) => f.startsWith('PHONE@') || onlyRows.some((o) => yOf(f) === yOf(o));
             const r = { bad: lay.bad, moved: lay.frames.filter((f) => !phoneOnly(f) && !deskLayout.frames.includes(f)) };
             if (vp.width === 844) {

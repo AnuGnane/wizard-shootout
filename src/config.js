@@ -480,6 +480,8 @@ export const TOUCH_CONFIG = {
     // wins, so the base alone would change nothing). SMALL keeps `small` at
     // 44.2 CSS px, over the 44-pt floor. NORMAL is the default.
     sizes: { small: 0.85, normal: 1, large: 1.2 },
+    // Its Settings choice, on TOUCH LAYOUT's line (game px from the column).
+    sizeRow: { labelDx: 330, valueDx: 380 },
     floatZone: { maxX: 0.5, minY: 80 }, // minY clears the pause button's hit area on a phone
     // Portrait on a phone: the page shows a rotate prompt (index.html mirrors
     // this query in CSS) and a running round pauses.
