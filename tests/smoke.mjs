@@ -3661,8 +3661,8 @@ try {
     // 3aa0c. Holiday W-50: small print on STATS and CONTROLS. On a 568x320
     // touch phone every text drawn under 14 game px is at least hudMinCss CSS
     // px tall, no two texts' bounds intersect, and all of them sit on the
-    // canvas above [ BACK ]'s top; on a 1280x720 desktop the small sizes
-    // are today's (pinned).
+    // canvas above [ BACK ]'s top, with W-42's storage note on screen too;
+    // on a 1280x720 desktop the small sizes are today's (pinned).
     {
         const look = async (pg, key) => {
             await pg.evaluate((key) => {
@@ -3708,6 +3708,24 @@ try {
         const pStats = await look(phone, 'StatsScene');
         const pControls = await look(phone, 'ControlsScene');
         await ctx.close();
+        // With every write failing (W-42's stub) the Stats note shows on the
+        // phone in the tally's place, still clear of every other text.
+        const fctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        await fctx.addInitScript(init);
+        await fctx.addInitScript(() => {
+            Storage.prototype.setItem = function () {
+                throw new DOMException('quota', 'QuotaExceededError');
+            };
+        });
+        const failing = await fctx.newPage();
+        failing.on('pageerror', (e) => errors.push('small print note pageerror: ' + e.message));
+        await failing.goto(url, { waitUntil: 'networkidle' });
+        await failing.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await look(failing, 'SettingsScene');
+        await failing.evaluate(() => window.__game.scene.getScene('SettingsScene').applySettings());
+        const pNote = await look(failing, 'StatsScene');
+        pNote.note = await failing.evaluate(() => window.__game.scene.getScene('StatsScene').storageNote?.text || null);
+        await fctx.close();
         const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
         await desk.addInitScript(init);
         desk.on('pageerror', (e) => errors.push('small print desktop pageerror: ' + e.message));
@@ -3718,8 +3736,9 @@ try {
         await desk.close();
         const clean = (r) => r.low.length === 0 && r.hit.length === 0 && r.off.length === 0;
         check('small print: at 568x320 STATS and CONTROLS text under 14 game px is at least hudMinCss CSS px, none overlaps, all above BACK',
-            clean(pStats) && clean(pControls) && pStats.sizes.desc >= 14 && pControls.sizes.hint >= 14,
-            JSON.stringify({ pStats, pControls }));
+            clean(pStats) && clean(pControls) && pStats.sizes.desc >= 14 && pControls.sizes.hint >= 14
+                && clean(pNote) && pNote.note === STORAGE_CONFIG.statsNote,
+            JSON.stringify({ pStats, pControls, pNote }));
         check('small print: a 1280x720 desktop keeps STATS and CONTROLS at today\'s sizes',
             JSON.stringify(dStats.sizes) === JSON.stringify({ head: 12, name: 13, desc: 10, tally: 12 })
                 && dControls.sizes.hint === 13 && dStats.hit.length === 0,

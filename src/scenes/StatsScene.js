@@ -117,18 +117,22 @@ export class StatsScene extends Phaser.Scene {
             });
         }
 
-        this.drawBalance(width, this.touch ? y : null, fpx);
+        // Holiday W-50: on a phone the grown tally reaches down to [ BACK ],
+        // so a storage note there takes the tally's lines instead (the tally
+        // could not be saved either; its button still copies it).
+        const noteHere = this.touch && writeFailed();
+        this.drawBalance(width, this.touch ? y : null, fpx, !noteHere);
 
         // Holiday W-42: the profile's last write did not stick; say so.
         this.storageNote = null;
         if (writeFailed()) {
             const px = menuFontFloor(this);
-            this.storageNote = this.add.text(width / 2, height - 34 - STORAGE_CONFIG.statsDy, STORAGE_CONFIG.statsNote, {
+            this.storageNote = this.add.text(width / 2, noteHere ? this.tallyBottom + R.gap : height - 34 - STORAGE_CONFIG.statsDy, STORAGE_CONFIG.statsNote, {
                 font: `${px}px monospace`,
                 fill: STORAGE_CONFIG.fill,
                 align: 'center',
                 wordWrap: { width: STORAGE_CONFIG.maxWidthPx },
-            }).setOrigin(0.5);
+            }).setOrigin(0.5, noteHere ? 0 : 0.5);
         }
 
         // Back button + ESC, matching SettingsScene's convention.
@@ -156,7 +160,8 @@ export class StatsScene extends Phaser.Scene {
     // at menuFontPx() size, one line per class under its short name
     // (BALANCE_TALLY_CONFIG.shortNames), TOUCH_CONFIG.menuRows.stats.tallyCols
     // to a row, since seven grown two-line columns overrun the canvas.
-    drawBalance(width, top = null, fpx = (base) => base) {
+    // `rows` false draws the heading and button only.
+    drawBalance(width, top = null, fpx = (base) => base, rows = true) {
         const cfg = BALANCE_TALLY_CONFIG;
         const R = TOUCH_CONFIG.menuRows.stats;
         const head = this.add.text(width / 2, top === null ? cfg.titleY : top, cfg.heading, {
@@ -164,11 +169,11 @@ export class StatsScene extends Phaser.Scene {
             fill: '#8888aa',
         }).setOrigin(0.5, top === null ? 0.5 : 0);
 
-        const rows = balanceRows();
+        const tally = rows ? balanceRows() : [];
         const colors = { in: cfg.colors.inBand, out: cfg.colors.outBand, few: cfg.colors.few };
         if (top === null) {
-            const startX = width / 2 - ((rows.length - 1) * cfg.colW) / 2;
-            rows.forEach((r, i) => {
+            const startX = width / 2 - ((tally.length - 1) * cfg.colW) / 2;
+            tally.forEach((r, i) => {
                 this.add.text(startX + i * cfg.colW, cfg.rowY, `${r.name}\n${formatRate(r.rate)} (${r.matches})`, {
                     font: '12px monospace',
                     fill: colors[r.band],
@@ -177,8 +182,8 @@ export class StatsScene extends Phaser.Scene {
             });
         } else {
             let y = head.y + head.height;
-            for (let first = 0; first < rows.length; first += R.tallyCols) {
-                const line = rows.slice(first, first + R.tallyCols);
+            for (let first = 0; first < tally.length; first += R.tallyCols) {
+                const line = tally.slice(first, first + R.tallyCols);
                 const startX = width / 2 - ((line.length - 1) * R.tallyColW) / 2;
                 let h = 0;
                 line.forEach((r, i) => {
