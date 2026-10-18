@@ -312,7 +312,10 @@ death (1 HP), fog of war, mutators, and sound/music on/off. Everything
 persists to `localStorage`. **Effects** (FULL / LITE / AUTO, default AUTO)
 draws fewer sparks, shorter trails, a smaller shake and a coarser fog on
 LITE; AUTO switches a round to LITE when its frames run slower than 40 fps,
-and the pause screen then says "EFFECTS: LITE (auto)".
+and the pause screen then says "EFFECTS: LITE (auto)". On a touch device,
+**Joystick** (FLOATING / FIXED, default FLOATING) chooses whether the
+joystick's base drops under the thumb or stays put and is driven from
+anywhere on its half of the screen.
 
 ## Development
 
