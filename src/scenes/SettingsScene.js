@@ -50,6 +50,9 @@ export const RUNTIME_SETTINGS = {
     // Holiday W-45 — 'small' | 'normal' | 'large' (TOUCH_CONFIG.sizes): the
     // touch controls' size. Touch devices only.
     touchSize: 'normal',
+    // Holiday W-49 — 'floating' | 'fixed' (TOUCH_CONFIG.joystickModes): where
+    // the joystick's base sits while a thumb drives it. Touch devices only.
+    joystickMode: 'floating',
 
     // Phase 5c — Mutators (all default OFF, all persisted, all combinable)
     mutGiantShots: false,   // 1.8x projectile scale + physics body
@@ -135,6 +138,9 @@ export class SettingsScene extends Phaser.Scene {
         this.addSectionHeader('DEVICE');
         this.addChoice('Effects', 'effects', FX_CONFIG.levels);
         if (isTouchDevice(this)) {
+            // Holiday W-49: on EFFECTS' line, its value under SIZE's, since a
+            // row of its own pushes VIBRATION into SAVE.
+            this.addChoice('Joystick', 'joystickMode', TOUCH_CONFIG.joystickModes, TOUCH_CONFIG.joystickRow);
             this.addChoice('Touch Layout', 'touchLayout', TOUCH_CONFIG.layouts);
             // Holiday W-45: on TOUCH LAYOUT's line, since the column already
             // reaches SAVE.

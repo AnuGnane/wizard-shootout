@@ -2463,12 +2463,13 @@ try {
             await toSettings(phone);
             const lay = await layout(phone);
             // The phone-only VIBRATION (W-14) and TOUCH LAYOUT (W-32) rows (TOUCH
-            // SIZE, W-45, shares TOUCH LAYOUT's line)
+            // SIZE, W-45, shares TOUCH LAYOUT's line; JOYSTICK, W-49, EFFECTS')
             // have no desktop twin; every other text must sit exactly where
             // the desktop draws it.
             const yOf = (f) => f.slice(f.lastIndexOf(',') + 1);
             const onlyRows = ['Vibration', 'Touch Layout'].map((n) => lay.frames.find((f) => f.startsWith(n))).filter(Boolean);
-            const phoneOnly = (f) => f.startsWith('PHONE@') || onlyRows.some((o) => yOf(f) === yOf(o));
+            const joystick = (f) => f.startsWith('Joystick: ') || /^\[(FLOATING|FIXED)\]@/.test(f);
+            const phoneOnly = (f) => f.startsWith('PHONE@') || joystick(f) || onlyRows.some((o) => yOf(f) === yOf(o));
             const r = { bad: lay.bad, moved: lay.frames.filter((f) => !phoneOnly(f) && !deskLayout.frames.includes(f)) };
             if (vp.width === 844) {
                 // Burn Duration's row: its [-]/[+] and value, and a point
@@ -3563,6 +3564,98 @@ try {
             JSON.stringify({ normal, large, small }));
         const tiny = await round({ width: 568, height: 320 }, 'large');
         check('touch size: at 568x320 every LARGE control stays inside the canvas', tiny.inside, JSON.stringify(tiny));
+    }
+
+    // 3aa0b. Holiday W-49: a fixed joystick, by choice. Settings on a touch
+    // phone shows JOYSTICK (FLOATING, then FIXED) and saves FIXED; on 844x390
+    // a touch at the float zone's far corner leaves a FIXED base at its home
+    // with the thumb pushed from the home towards the touch, and moves a
+    // FLOATING base under it (today's behaviour, pinned).
+    {
+        const round = async (mode) => {
+            const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('joystick mode pageerror: ' + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            if (mode === 'settings') {
+                await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+                await pg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+                const row = await pg.evaluate(() => {
+                    const s = window.__game.scene.getScene('SettingsScene');
+                    const c = s.controls.find((x) => x.key === 'joystickMode');
+                    if (!c) return null;
+                    const seen = [c.choice.text];
+                    c.choice.emit('pointerdown'); seen.push(c.choice.text);
+                    s.applySettings();
+                    return { seen, runtime: window.__settings.joystickMode };
+                });
+                await ctx.close();
+                return row;
+            }
+            await pg.evaluate((mode) => {
+                window.__settings.joystickMode = mode;
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            }, mode);
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').touchControls, null, { timeout: 8000 });
+            await pg.waitForTimeout(300);
+            // The float zone's far corner from the home: its right edge, just
+            // under its top (game px), in CSS px.
+            const at = await pg.evaluate((zone) => {
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const gx = 1024 * zone.maxX - 12, gy = zone.minY + 12;
+                return { gx, gy, x: c.left + gx * k, y: c.top + gy * k };
+            }, TOUCH_CONFIG.floatZone);
+            const cdp = await ctx.newCDPSession(pg);
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, id: 1 }] });
+            await pg.waitForTimeout(60);
+            const r = await pg.evaluate((at) => {
+                const tc = window.__game.scene.getScene('GameScene').touchControls;
+                const t = tc.joyThumbGfx;
+                return {
+                    fixed: tc.fixedJoystick, held: tc.joyPointerId !== null,
+                    home: { x: tc.joy.homeX, y: tc.joy.homeY }, base: { x: tc.joy.x, y: tc.joy.y },
+                    // The thumb's offset from the base, and the touch's from the home.
+                    thumb: { x: t.x - tc.joy.x, y: t.y - tc.joy.y }, touch: { x: at.gx - tc.joy.homeX, y: at.gy - tc.joy.homeY },
+                    radius: tc.joy.radius, state: { up: tc.state.up, right: tc.state.right },
+                };
+            }, at);
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await pg.waitForTimeout(60);
+            r.released = await pg.evaluate(() => {
+                const tc = window.__game.scene.getScene('GameScene').touchControls;
+                return tc.joyPointerId === null && tc.joy.x === tc.joy.homeX && tc.joy.y === tc.joy.homeY
+                    && tc.joyThumbGfx.x === tc.joy.homeX && tc.joyThumbGfx.y === tc.joy.homeY;
+            });
+            await ctx.close();
+            return r;
+        };
+        const row = await round('settings');
+        check('joystick mode: Settings on a touch phone shows JOYSTICK and saves FIXED',
+            !!row && row.seen.join(' ') === '[FLOATING] [FIXED]' && row.runtime === 'fixed', JSON.stringify(row));
+        const fixed = await round('fixed');
+        const cross = fixed.thumb.x * fixed.touch.y - fixed.thumb.y * fixed.touch.x;
+        const dot = fixed.thumb.x * fixed.touch.x + fixed.thumb.y * fixed.touch.y;
+        const len = Math.hypot(fixed.thumb.x, fixed.thumb.y);
+        check('joystick mode: FIXED keeps the base home and pushes the thumb from it towards a far touch',
+            fixed.fixed && fixed.held && fixed.base.x === fixed.home.x && fixed.base.y === fixed.home.y
+                && dot > 0 && Math.abs(cross) / Math.max(1, len * Math.hypot(fixed.touch.x, fixed.touch.y)) < 0.02
+                && Math.abs(len - fixed.radius) < 1 && fixed.state.up && fixed.state.right && fixed.released,
+            JSON.stringify(fixed));
+        const floating = await round('floating');
+        check('joystick mode: FLOATING drops the base under the same touch',
+            !floating.fixed && floating.held && (floating.base.x !== floating.home.x || floating.base.y !== floating.home.y)
+                && Math.abs(floating.base.x - (1024 * TOUCH_CONFIG.floatZone.maxX - 12)) < 1 && floating.released,
+            JSON.stringify(floating));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
