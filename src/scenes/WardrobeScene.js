@@ -36,8 +36,9 @@ export class WardrobeScene extends Phaser.Scene {
             fill: '#5599ff',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, 66, 'Customize your wizard (Blue / seat 1)', {
-            font: '14px monospace',
+        const touchRows = isTouchDevice(this) ? TOUCH_CONFIG.menuRows.wardrobe : null;
+        this.add.text(width / 2, touchRows ? touchRows.subY : 66, 'Customize your wizard (Blue / seat 1)', {
+            font: `${menuFontPx(this, 14)}px monospace`,
             fill: '#aaaacc',
         }).setOrigin(0.5);
 
@@ -63,7 +64,7 @@ export class WardrobeScene extends Phaser.Scene {
 
         // --- ROBE row ---
         const robeHead = this.add.text(width / 2, this.touch ? y : 268, 'ROBE', {
-            font: 'bold 16px monospace',
+            font: `bold ${menuFontPx(this, 16)}px monospace`,
             fill: '#ffdd44',
         }).setOrigin(0.5, this.touch ? 0 : 0.5);
         y = robeHead.y + robeHead.height;
@@ -71,7 +72,7 @@ export class WardrobeScene extends Phaser.Scene {
 
         // --- STAFF row ---
         const staffHead = this.add.text(width / 2, this.touch ? y : 408, 'STAFF', {
-            font: 'bold 16px monospace',
+            font: `bold ${menuFontPx(this, 16)}px monospace`,
             fill: '#ffdd44',
         }).setOrigin(0.5, this.touch ? 0 : 0.5);
         y = staffHead.y + staffHead.height;
@@ -84,7 +85,7 @@ export class WardrobeScene extends Phaser.Scene {
         }).setOrigin(0.5, this.touch ? 0 : 0.5);
 
         // Back button + ESC, matching StatsScene's convention.
-        const backBtn = this.add.text(width / 2, height - 40, '[ BACK ]', {
+        const backBtn = this.add.text(width / 2, this.touch ? R.backY : height - 40, '[ BACK ]', {
             font: '24px monospace',
             fill: '#ffffff',
             backgroundColor: '#333355',

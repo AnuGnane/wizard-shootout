@@ -261,7 +261,7 @@ export const APP_UPDATE_CONFIG = {
     // of the hint (holiday W-53).
     version: {
         prefix: 'build ',
-        x: 1012, y: 690, touchY: 664,
+        x: 1012, y: 690, touchY: 674,
         fontPx: 12, fill: '#555577',
     },
 };
@@ -395,11 +395,15 @@ export const TOUCH_CONFIG = {
             titleY: 26, statsY: 50, statGap: 22, gap: 6, elemColW: 190,
             cellW: 254, cellPad: 4, tallyCols: 4, tallyColW: 250,
         },
-        controls: { hintY: 74 },
+        // CONTROLS (W-58): the PLAYER headers' y, the first binding row's y
+        // and an action label's x from its column, for the grown print (a
+        // badge reading PRESS A KEY stays clear of its label).
+        controls: { hintY: 74, headY: 108, rowStartY: 144, labelDx: -130 },
         // MAP SELECT (holiday W-51): a card's inner margin at its foot, the
         // gap between the custom tag and the size note on one line, and the
         // gap between the thumbnail and the theme name.
-        mapSelect: { pad: 3, tagGap: 10, thumbGap: 2 },
+        // W-58: the gap between the grown BOT DIFFICULTY label and buttons.
+        mapSelect: { pad: 3, tagGap: 10, thumbGap: 2, diffGap: 24 },
         // WARDROBE (holiday W-51): the preview disc's y, radius and sprite
         // scale, the gap between flowing blocks, each row's swatch spacing
         // (TOUCH_CONFIG.wardrobe below is the desktop's), wide enough for a
@@ -407,8 +411,10 @@ export const TOUCH_CONFIG = {
         // spacing, and the least half-height of a swatch's hit area (the
         // desktop ring's 46 / 2).
         wardrobe: {
-            previewY: 128, previewR: 52, previewScale: 2.4, gap: 8, robeSpacing: 160, staffSpacing: 170,
+            previewY: 132, previewR: 46, previewScale: 2.4, gap: 8, robeSpacing: 160, staffSpacing: 170,
             hintInset: 6, minHalfHit: 23,
+            // W-58: the grown subtitle's y and [ BACK ]'s, under the footer.
+            subY: 72, backY: 668,
         },
         // CLASS SELECT (holiday W-52): on a touch device a card starts at
         // `top`, draws its sprite (at spriteScale) and name at spriteY and
@@ -417,11 +423,16 @@ export const TOUCH_CONFIG = {
         // tall as the tallest needs, plus `pad`. A card that would pass
         // maxBottom (partyMaxBottom over the party seats' rows) leaves out its
         // signature's description. The party seats' hint names a ready seat's
-        // class by its short name (BALANCE_TALLY_CONFIG.shortNames), and the
-        // seats' titles sit partyTitleLift higher, clear of the grown hint.
+        // class by its short name (BALANCE_TALLY_CONFIG.shortNames).
+        // W-58 grows the rest: the subtitle sits at subY (survivalSubY on
+        // the SOLO / DUO step); where two neighbouring names come closer than
+        // nameGap every other name drops a row; the party rows under the
+        // cards take partyRows, one grown line apart.
         classSelect: {
             top: 96, spriteY: 32, spriteScale: 2.4, nameY: 80, gap: 4, pad: 4,
-            maxBottom: 620, partyMaxBottom: 536, partyTitleLift: 6,
+            maxBottom: 620, partyMaxBottom: 520,
+            subY: 75, survivalSubY: 206, nameGap: 6,
+            partyRows: { titleY: 538, hintY: 565, stateY: 592, seatsY: 619, partyHintY: 646, footerY: 673 },
         },
         // ONLINE's pick lobby (holiday W-52), on a touch device: the class
         // cards' top and height, the sprite (at spriteScale), name and
@@ -433,9 +444,14 @@ export const TOUCH_CONFIG = {
         // subtitle's y, the orb row's icon y and scale, label y and spacing
         // (a grown label is wider than the desktop's 70), the gamepad line's
         // y (shown only while a pad is connected) and the footer hint's y.
+        // W-58 grows the 20px buttons and the secondary row too: SURVIVAL and
+        // ONLINE pairDx either side of centre at pairY, SETTINGS at
+        // settingsY, the secondary row at smallY laid out by width, smallGap
+        // apart; the lines below move down to make room.
         menu: {
-            dailyY: 540, orbY: 573, orbScale: 1, orbLabelY: 603, orbSpacing: 92,
-            padY: 634, hintY: 664,
+            pairY: 423, pairDx: 125, settingsY: 472, smallY: 521, smallGap: 18,
+            dailyY: 556, orbY: 586, orbScale: 1, orbLabelY: 614, orbSpacing: 92,
+            padY: 644, hintY: 674,
         },
         // SETTINGS (holiday W-55), on a touch device whose rows grow past
         // 14 px: the desktop's two columns become two pages (ORBS ENABLED,
@@ -486,6 +502,9 @@ export const TOUCH_CONFIG = {
     // Full screen in the phone browser (holiday W-15): the [ FULL SCREEN ]
     // toggle in the top-right corner of the menu and the pause screen (game
     // px, centre; room for the longer [ EXIT FULL SCREEN ] label).
+    // Holiday W-58: a menu button whose label grew to the floor and would
+    // pass a side of the canvas moves in to sit this far from it.
+    menuEdgeInset: 8,
     fullscreenButton: {
         menu: { x: 900, y: 30 },
         pause: { x: 900, y: 34 },
@@ -504,11 +523,11 @@ export const TOUCH_CONFIG = {
         // menu says how instead: one line at hudMinCss CSS px (never below
         // iosMinPx game px), right-aligned at iosRight along the top edge,
         // above the title and the red wizard; where a full-screen toggle
-        // shows (iPad) it ends iosGap left of the toggle (room for the
-        // toggle to grow to [ EXIT FULL SCREEN ]).
+        // shows (iPad) it ends iosGap left of the leftmost x the toggle
+        // reaches under either label, [ EXIT FULL SCREEN ] the wider (W-58).
         iosText: 'install: tap Share, then Add to Home Screen',
         iosFill: '#8899cc', iosMinPx: 13,
-        iosRight: 1012, iosY: 4, iosGap: 36,
+        iosRight: 1012, iosY: 4, iosGap: 12,
     },
     // In-round HUD on a phone (holiday W-13): the smallest HUD text, in CSS
     // px, in the modes that get touch controls; labels shorten before any
