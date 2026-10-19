@@ -3277,7 +3277,10 @@ try {
                 victim.lastHitBy = { by: seat1Wins ? 1 : 2, element: 'arcane' };
                 victim.takeDamage(1000);
             }, seat1Wins);
-            await pg.waitForFunction(() => window.__game.scene.isActive('GameOverScene'), null, { timeout: 8000 });
+            // The round-end delay runs on the game clock, which falls behind
+            // the wall clock when the suite loads the machine (Phaser clamps a
+            // slow frame's delta): 2.2 s of game time has taken over 8 s here.
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameOverScene'), null, { timeout: 20000 });
         };
         await playMatch('hard', true);
         await playMatch('hard', false);
