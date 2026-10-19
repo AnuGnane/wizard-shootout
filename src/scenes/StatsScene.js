@@ -3,7 +3,7 @@ import { ELEMENT_COLORS, BALANCE_TALLY_CONFIG, STORAGE_CONFIG, TOUCH_CONFIG } fr
 import { writeFailed } from '../systems/Storage.js';
 import { STATS, ACHIEVEMENTS } from '../systems/Stats.js';
 import { audio } from '../systems/AudioSystem.js';
-import { ensureTapTarget, isTouchDevice, menuFontPx, menuFontFloor } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFont, menuFontPx, menuFontFloor } from '../systems/TouchMenu.js';
 import { balanceRows, balanceMarkdown, formatRate } from '../systems/BalanceTally.js';
 import { canShare, shareOrCopy } from '../systems/Share.js';
 
@@ -58,8 +58,15 @@ export class StatsScene extends Phaser.Scene {
 
         const statsY = this.touch ? R.statsY : 90;
         const statGap = this.touch ? R.statGap : 26;
-        this.drawStatColumn(width / 2 - 260, statsY, leftLines, statGap);
-        let y = this.drawStatColumn(width / 2 + 40, statsY, rightLines, statGap) + R.gap;
+        // Holiday W-59: on a phone the grown stat lines take three wider
+        // columns of statRows lines, so the page keeps its height.
+        const columns = this.touch ? [] : [leftLines, rightLines];
+        if (this.touch) {
+            const all = [...leftLines, ...rightLines];
+            for (let i = 0; i < all.length; i += R.statRows) columns.push(all.slice(i, i + R.statRows));
+        }
+        const colDx = this.touch ? R.statColDx : [-260, 40];
+        let y = Math.max(...columns.map((lines, i) => this.drawStatColumn(width / 2 + colDx[i], statsY, lines, statGap))) + R.gap;
 
         // Per-element kill counts, colored by element (same palette as HUD/orbs).
         // On a phone, one line each ("fire 3"), so the grown labels fit a row.
@@ -86,7 +93,7 @@ export class StatsScene extends Phaser.Scene {
 
         // Achievements grid: 4 columns, one row per 4 achievements.
         const achHead = this.add.text(width / 2, this.touch ? y : 300, 'ACHIEVEMENTS', {
-            font: 'bold 16px monospace',
+            font: `bold ${fpx(16)}px monospace`,
             fill: '#ffdd44',
         }).setOrigin(0.5, this.touch ? 0 : 0.5);
         y = achHead.y + achHead.height + R.gap / 2;
@@ -201,7 +208,7 @@ export class StatsScene extends Phaser.Scene {
 
         const b = cfg.button;
         const btn = this.add.text(b.x, b.y, canShare() ? cfg.shareLabel : cfg.copyLabel, {
-            font: b.font,
+            font: menuFont(this, b.font),
             fill: b.fill,
             backgroundColor: b.bg,
             padding: b.padding,
@@ -235,11 +242,11 @@ export class StatsScene extends Phaser.Scene {
         let bottom = y;
         for (const [label, value] of lines) {
             this.add.text(x, yPos, `${label}:`, {
-                font: '15px monospace',
+                font: `${menuFontPx(this, 15)}px monospace`,
                 fill: '#aaaacc',
             });
-            const t = this.add.text(x + 210, yPos, `${value}`, {
-                font: 'bold 15px monospace',
+            const t = this.add.text(x + (this.touch ? TOUCH_CONFIG.menuRows.stats.valueDx : 210), yPos, `${value}`, {
+                font: `bold ${menuFontPx(this, 15)}px monospace`,
                 fill: '#ffffff',
             }).setOrigin(1, 0);
             bottom = yPos + t.height;

@@ -391,9 +391,13 @@ export const TOUCH_CONFIG = {
     // classes per row and their spacing. CONTROLS: the hint line's y.
     // MAP SELECT and WARDROBE (holiday W-51): below.
     menuRows: {
+        // W-59 grows the stat lines too: a line every statGap, statRows to a
+        // column, the three columns statColDx from centre, a value
+        // right-aligned valueDx in.
         stats: {
-            titleY: 26, statsY: 50, statGap: 22, gap: 6, elemColW: 190,
+            titleY: 26, statsY: 50, statGap: 27, gap: 6, elemColW: 190,
             cellW: 254, cellPad: 4, tallyCols: 4, tallyColW: 250,
+            statRows: 4, statColDx: [-470, -150, 170], valueDx: 300,
         },
         // CONTROLS (W-58): the PLAYER headers' y, the first binding row's y
         // and an action label's x from its column, for the grown print (a
@@ -485,6 +489,24 @@ export const TOUCH_CONFIG = {
             cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,
             battleY: 352, mapCols: 6, mapSlotW: 162, mapY: 390, mapRowH: 108, nameGap: 2,
             hintY: 594, pickY: 624,
+        },
+        // ONLINE's HOST and JOIN flow (holiday W-59), on a touch device: the
+        // grown DOM labels' line height (one line, so each still fits above
+        // the box it names) and their short wording, keyed by the desktop
+        // text; `y` moves a label (the room status, under its box); the
+        // short subtitle and the status line's wrap width.
+        onlineFlow: {
+            lineHeight: 1,
+            short: {
+                'ROOM CODE — tell your friend to JOIN with this:': 'ROOM CODE - your friend JOINs:',
+                'No room code? Send this code across yourself:': 'Or send this code yourself:',
+                '5 characters, letters and numbers.': '5 letters or numbers.',
+                'No room code? Paste their code here:': 'Or paste their code here:',
+                'Your reply, for them to scan:': 'Your reply, as a QR:',
+            },
+            y: { 'opening a room…': 302, '5 characters, letters and numbers.': 302 },
+            subtitle: 'share a room code, scan a QR, or paste codes',
+            statusWrapW: 900,
         },
     },
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC

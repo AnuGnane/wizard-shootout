@@ -95,6 +95,10 @@
 //      SELECT, WARDROBE and the main menu, buttons included, reads at
 //      hudMinCss with nothing overlapping or off the canvas; a desktop keeps
 //      today's sizes (W-58),
+//   3aa0l. on a 568x320 phone every text on ONLINE (menu, HOST, JOIN, both
+//      pick lobbies, the overlay's labels too) and STATS reads at hudMinCss
+//      with nothing overlapping or off the canvas; a desktop keeps today's
+//      sizes and wording (W-59),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -4500,6 +4504,87 @@ try {
             d.MenuScene.survival === 20 && d.MenuScene.stats === 16 && d.ClassSelectScene.arcanist === 15
                 && d.ClassSelectScene.p1 === 14 && d.ControlsScene.up === 14 && d.ControlsScene.player === 16
                 && d.MapSelectScene.diff === 14 && d.WardrobeScene.robe === 16 && d.WardrobeScene.sub === 14,
+            JSON.stringify(d));
+    }
+
+    // 3aa0l. Holiday W-59: the texts between 14 px and the floor on ONLINE
+    // (its menu, HOST, JOIN and both sides of the pick lobby) and STATS. On
+    // a 568x320 touch phone every visible text, buttons included, and every
+    // flow label, box and button in ONLINE's overlay (through its scale) is
+    // at least hudMinCss CSS px tall, no two texts' bounds intersect and all
+    // sit on the canvas; on a 1280x720 desktop the grown sizes are today's.
+    {
+        const screens = [['OnlineScene', null], ['OnlineScene', 'host'], ['OnlineScene', 'join'],
+            ['OnlineScene', 'lobby'], ['OnlineScene', 'guest'], ['StatsScene', null]];
+        const look = async (pg, key, step) => {
+            await pg.evaluate(() => window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop()));
+            await pg.waitForFunction((key) => !window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await pg.evaluate((key) => {
+                window.__match.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                window.__game.scene.start(key, {});
+            }, key);
+            await pg.waitForFunction((key) => window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await pg.waitForTimeout(300);
+            await pg.evaluate((step) => {
+                const sc = window.__game.scene.getScene('OnlineScene');
+                if (step === 'host') sc.startHost();
+                else if (step === 'join') sc.startJoin();
+                else if (step === 'lobby' || step === 'guest') { sc.role = step === 'lobby' ? 'host' : 'guest'; sc._buildPickLobby(); }
+            }, step);
+            await pg.waitForTimeout(300);
+            return pg.evaluate(({ key, min }) => {
+                const sc = window.__game.scene.getScene(key);
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+                const px = (o) => parseFloat(o.style.fontSize);
+                const low = ts.filter((o) => px(o) * k < min - 0.01).map((o) => `${o.text.slice(0, 16)}@${px(o)}`);
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 12)}|${ts[j].text.slice(0, 12)}`);
+                }
+                const off = ts.filter((o) => {
+                    const g = o.getBounds();
+                    return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700;
+                }).map((o) => o.text.slice(0, 12));
+                const scale = sc.overlay ? parseFloat(/scale\(([\d.]+)\)/.exec(sc.overlay.style.transform)?.[1]) : 1;
+                const els = sc.overlay ? [...sc.overlay.querySelectorAll('div, textarea, button, input')]
+                    .filter((e) => e.offsetParent !== null && /\dpx/.test(e.style.font)) : [];
+                const elPx = (e) => parseFloat(/(\d+(?:\.\d+)?)px/.exec(e.style.font)[1]);
+                const elLow = els.filter((e) => elPx(e) * scale < min - 0.01).map((e) => `${e.tagName}:${e.textContent.slice(0, 12)}@${elPx(e)}`);
+                const size = (t) => { const o = ts.find((x) => x.text.startsWith(t)); return o ? px(o) : null; };
+                const label = els.find((e) => e.tagName === 'DIV' && /ROOM CODE/.test(e.textContent));
+                return {
+                    n: ts.length, els: els.length, low, hit, off, elLow,
+                    sizes: { status: size('Choose HOST') || size('generating') || size('enter the room') || size('Pick'),
+                        back: size('[ BACK ]'), battle: size('BATTLEGROUND'), games: size('Games Played'),
+                        ach: size('ACHIEVEMENTS'), label: label ? elPx(label) : null, labelText: label ? label.textContent : null },
+                };
+            }, { key, min: TOUCH_CONFIG.hudMinCss });
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('floor part 2 pageerror: ' + e.message));
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const p = [];
+        for (const [key, step] of screens) p.push({ key, step, ...(await look(phone, key, step)) });
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('floor part 2 desktop pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const d = { host: (await look(desk, 'OnlineScene', 'host')).sizes, lobby: (await look(desk, 'OnlineScene', 'lobby')).sizes,
+            stats: (await look(desk, 'StatsScene', null)).sizes };
+        await desk.close();
+        const bad = p.filter((r) => r.n === 0 || r.low.length || r.hit.length || r.off.length || r.elLow.length
+            || (r.step === 'host' || r.step === 'join') && r.els < 8);
+        check('floor part 2: at 568x320 every text on ONLINE (menu, HOST, JOIN, both lobbies, the overlay\'s labels included) and STATS is at least hudMinCss CSS px, none overlaps, all on the canvas',
+            bad.length === 0, JSON.stringify(bad.length ? bad.map(({ sizes, ...r }) => r) : p.map((r) => `${r.key}${r.step ? ':' + r.step : ''}=${r.n}+${r.els}`)));
+        check('floor part 2: a 1280x720 desktop keeps ONLINE\'s and STATS\' 14 to 20 px texts and wording at today\'s',
+            d.host.status === 16 && d.host.back === 20 && d.host.label === 15
+                && d.host.labelText === 'ROOM CODE — tell your friend to JOIN with this:'
+                && d.lobby.battle === 15 && d.stats.games === 15 && d.stats.ach === 16,
             JSON.stringify(d));
     }
 

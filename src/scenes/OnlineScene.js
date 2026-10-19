@@ -11,7 +11,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode, findRoomCode, ROOM_CODE_ALPHABET } from '../systems/NetSignal.js';
-import { ensureTapTarget, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFont, menuFontPx } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 import { SHARE_CONFIG, NET_CONFIG, TOUCH_CONFIG, BALANCE_TALLY_CONFIG } from '../config.js';
 import { canShare, fillShare, joinLink, shareOrCopy } from '../systems/Share.js';
@@ -123,9 +123,14 @@ export class OnlineScene extends Phaser.Scene {
             fill: '#5599ff',
         }).setOrigin(0.5).setStroke('#ffffff', 2);
 
-        this.subtitleText = this.add.text(width / 2, 92,
-            'Serverless — share a room code, scan a QR, or paste codes. Best on the same network.', {
-            font: '15px monospace',
+        // Holiday W-59: on a touch device the subtitle and the status line
+        // grow to menuFontPx(); the subtitle takes its short wording and the
+        // status line wraps to a second line rather than shrink (W-13).
+        const touch = isTouchDevice(this);
+        const F = TOUCH_CONFIG.menuRows.onlineFlow;
+        this.subtitleText = this.add.text(width / 2, 92, touch ? F.subtitle
+            : 'Serverless — share a room code, scan a QR, or paste codes. Best on the same network.', {
+            font: `${menuFontPx(this, 15)}px monospace`,
             fill: '#aaaacc',
         }).setOrigin(0.5);
 
@@ -142,8 +147,10 @@ export class OnlineScene extends Phaser.Scene {
 
         // Status line, updated across the flow.
         this.statusText = this.add.text(width / 2, 196, 'Choose HOST or JOIN to begin.', {
-            font: '16px monospace',
+            font: `${menuFontPx(this, 16)}px monospace`,
             fill: '#ffdd44',
+            align: 'center',
+            wordWrap: touch ? { width: F.statusWrapW } : null,
         }).setOrigin(0.5);
 
         // DOM overlay that tracks the canvas.
@@ -231,7 +238,7 @@ export class OnlineScene extends Phaser.Scene {
 
     makeButton(x, y, label, bgColor, hoverColor, onClick, fontSize = '24px') {
         const btn = this.add.text(x, y, label, {
-            font: `${fontSize} monospace`,
+            font: `${menuFontPx(this, parseInt(fontSize, 10))}px monospace`,
             fill: '#ffffff',
             backgroundColor: bgColor,
             padding: { x: 22, y: 9 },
@@ -320,16 +327,21 @@ export class OnlineScene extends Phaser.Scene {
 
     _label(text, x, y, w = COL_W, color = '#aab4e8') {
         const el = document.createElement('div');
-        el.textContent = text;
+        // Holiday W-59: on a touch device a label grows to menuFontPx() and
+        // takes its short wording (TOUCH_CONFIG.menuRows.onlineFlow), one
+        // grown line tall, so it still fits above the box it names.
+        const F = isTouchDevice(this) ? TOUCH_CONFIG.menuRows.onlineFlow : null;
+        el.textContent = (F && F.short[text]) || text;
         Object.assign(el.style, {
             position: 'absolute',
             left: x + 'px',
-            top: y + 'px',
+            top: (F && F.y[text] !== undefined ? F.y[text] : y) + 'px',
             width: w + 'px',
             color,
-            font: '15px monospace',
+            font: `${menuFontPx(this, 15)}px monospace`,
             pointerEvents: 'none',
         });
+        if (F) el.style.lineHeight = String(F.lineHeight);
         return this._addFlowEl(el);
     }
 
@@ -856,7 +868,7 @@ export class OnlineScene extends Phaser.Scene {
 
         // --- map strip (host) / a note that the host owns it (guest) ---
         if (isHost) {
-            this._lobbyText(width / 2, L ? L.battleY : 418, 'BATTLEGROUND', 'bold 15px monospace', '#aab4e8');
+            this._lobbyText(width / 2, L ? L.battleY : 418, 'BATTLEGROUND', menuFont(this, 'bold 15px monospace'), '#aab4e8');
             const choices = [RANDOM_MAP, ...MAP_DEFS.map((def, i) => i)];
             const cols = L ? L.mapCols : choices.length;
             const slotW = L ? L.mapSlotW : MAP_SLOT_W;
@@ -869,14 +881,14 @@ export class OnlineScene extends Phaser.Scene {
             });
         } else {
             this._lobbyText(width / 2, 440, 'The host is choosing the battleground.',
-                '15px monospace', '#8888aa');
+                menuFont(this, '15px monospace'), '#8888aa');
         }
 
         this._lobbyText(width / 2, L ? L.hintY : 548,
             L ? 'tap a wizard' + (isHost ? ' and a battleground' : '')
                 : '←/→ move  ·  ENTER picks  ·  mouse works too  ·  ESC leaves',
             `${menuFontPx(this, 12)}px monospace`, '#666688');
-        this.pickStatus = this._lobbyText(width / 2, L ? L.pickY : 592, '', 'bold 15px monospace', '#66ff66');
+        this.pickStatus = this._lobbyText(width / 2, L ? L.pickY : 592, '', menuFont(this, 'bold 15px monospace'), '#66ff66');
 
         this._refreshLobby();
     }
