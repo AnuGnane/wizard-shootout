@@ -10,6 +10,8 @@ import { addUpdateButton, addVersionText } from '../systems/AppUpdate.js';
 import { addInstallButton, iosInstallNote } from '../systems/InstallPrompt.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 import { takePendingJoin } from '../systems/Share.js';
+import { isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
+import { TOUCH_CONFIG } from '../config.js';
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -145,12 +147,19 @@ export class MenuScene extends Phaser.Scene {
             DailyChallenge.startChallenge(this);
         });
 
+        // Holiday W-53: on a touch device the small lines below grow to
+        // menuFontPx() and take the touch rows (TOUCH_CONFIG.menuRows.menu);
+        // the keyboard hints go, and the gamepad line shows while a pad is
+        // connected.
+        const touch = isTouchDevice(this);
+        const R = touch ? TOUCH_CONFIG.menuRows.menu : null;
+
         const dailyStatus = getDailyStatus();
         const dailySubtitle = dailyStatus.won
             ? `today: best ${dailyStatus.bestRounds}`
             : 'today: new!';
-        this.add.text(dailyX, 532, dailySubtitle, {
-            font: '11px monospace',
+        this.add.text(dailyX, R ? R.dailyY : 532, dailySubtitle, {
+            font: `${menuFontPx(this, 11)}px monospace`,
             fill: dailyStatus.won ? '#66ff66' : '#ffdd44',
         }).setOrigin(0.5);
 
@@ -177,12 +186,13 @@ export class MenuScene extends Phaser.Scene {
             { key: 'rune_shield', label: 'Shield' },
             { key: 'rune_triple', label: 'Triple' },
         ];
-        const legendStart = width / 2 - ((orbs.length - 1) * 70) / 2;
+        const orbSpacing = R ? R.orbSpacing : 70;
+        const legendStart = width / 2 - ((orbs.length - 1) * orbSpacing) / 2;
         orbs.forEach((orb, i) => {
-            const x = legendStart + i * 70;
-            this.add.image(x, 562, orb.key).setScale(1.2);
-            this.add.text(x, 587, orb.label, {
-                font: '11px monospace',
+            const x = legendStart + i * orbSpacing;
+            this.add.image(x, R ? R.orbY : 562, orb.key).setScale(R ? R.orbScale : 1.2);
+            this.add.text(x, R ? R.orbLabelY : 587, orb.label, {
+                font: `${menuFontPx(this, 11)}px monospace`,
                 fill: '#8888aa',
             }).setOrigin(0.5);
         });
@@ -200,7 +210,7 @@ export class MenuScene extends Phaser.Scene {
             fill: '#5599ff',
             align: 'center',
         });
-        controlsP1.setOrigin(0.5);
+        controlsP1.setOrigin(0.5).setVisible(!touch);
 
         const controlsP2 = this.add.text(width / 2 + 180, 625,
             `Player 2 (Red)\nArrows - Move\n${keyLabel(p2Bindings.shoot)} - Shoot\n${keyLabel(p2Bindings.runeShoot)} - Orb Shot`, {
@@ -208,15 +218,16 @@ export class MenuScene extends Phaser.Scene {
             fill: '#ff5566',
             align: 'center',
         });
-        controlsP2.setOrigin(0.5);
+        controlsP2.setOrigin(0.5).setVisible(!touch);
 
         // Gamepad legend, tucked under the keyboard controls
-        const controlsGamepad = this.add.text(width / 2, 665,
+        const controlsGamepad = this.add.text(width / 2, R ? R.padY : 665,
             'Gamepads: stick/d-pad move · A shoot · X orb · B ability', {
-            font: '12px monospace',
+            font: `${menuFontPx(this, 12)}px monospace`,
             fill: '#666688',
         });
         controlsGamepad.setOrigin(0.5);
+        if (touch) this.showGamepadLineWhilePadConnected(controlsGamepad);
 
         // Holiday W-15: a phone browser gets a full-screen toggle in the top
         // right; where it has no Fullscreen API (iPhone Safari) the footer
@@ -228,8 +239,8 @@ export class MenuScene extends Phaser.Scene {
             : '1 / 2 / 3 / 4 - start game | first to ' + RUNTIME_SETTINGS.targetScore + ' wins';
 
         // Hint
-        const hint = this.add.text(width / 2, 690, hintText, {
-            font: '14px monospace',
+        const hint = this.add.text(width / 2, R ? R.hintY : 690, hintText, {
+            font: `${menuFontPx(this, 14)}px monospace`,
             fill: '#666688',
         });
         hint.setOrigin(0.5);
@@ -276,6 +287,23 @@ export class MenuScene extends Phaser.Scene {
         btn.on('pointerdown', onClick);
         this.menuNav.add(btn, onClick);
         return btn;
+    }
+
+    // Holiday W-53: on a touch device the gamepad line shows only while a
+    // pad is connected (the native flag, as TouchControls reads it, W-24).
+    showGamepadLineWhilePadConnected(text) {
+        const pads = this.input.gamepad;
+        const connected = () => !!pads && pads.getAll().some((p) => p && p.connected);
+        text.setVisible(connected());
+        if (!pads) return;
+        const onConnected = () => text.setVisible(true);
+        const onDisconnected = () => text.setVisible(connected());
+        pads.on('connected', onConnected);
+        pads.on('disconnected', onDisconnected);
+        this.events.once('shutdown', () => {
+            pads.off('connected', onConnected);
+            pads.off('disconnected', onDisconnected);
+        });
     }
 
     // Smaller, subtler variant of makeButton for the secondary utility row
