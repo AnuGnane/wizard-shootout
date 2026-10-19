@@ -8,7 +8,7 @@ import { MenuNav } from '../systems/MenuNav.js';
 import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
-import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx } from '../systems/TouchMenu.js';
+import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx, menuFontPx, addTapObstacle } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG, STORAGE_CONFIG } from '../config.js';
 import { writeFailed } from '../systems/Storage.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
@@ -89,13 +89,16 @@ export class MapEditorScene extends Phaser.Scene {
             fill: '#5599ff',
         }).setOrigin(0.5);
 
+        this.touch = isTouchDevice(this);
+        // Holiday W-57: the small texts grow to hudMinCss CSS px on a phone.
+        this.fontPx = (basePx) => menuFontPx(this, basePx);
+
         this.nameText = this.add.text(width / 2, 70, '', {
-            font: '16px monospace',
+            font: `${this.fontPx(16)}px monospace`,
             fill: '#ffffff',
         }).setOrigin(0.5);
 
         this.menuNav = new MenuNav(this, { onBack: () => this.goBack() });
-        this.touch = isTouchDevice(this);
 
         this.gridGfx = this.add.graphics();
         this.cursorRect = this.add.rectangle(0, 0, TILE, TILE, 0x000000, 0)
@@ -106,16 +109,25 @@ export class MapEditorScene extends Phaser.Scene {
         this.createButtonBar(width);
 
         this.statusText = this.add.text(width / 2, STATUS_Y, '', {
-            font: `bold ${STATUS_FONT_PX}px monospace`,
+            font: `bold ${this.fontPx(STATUS_FONT_PX)}px monospace`,
             fill: '#66ff66',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, height - 24, backHint(this,
+        const hint = this.add.text(width / 2, height - 24, backHint(this,
             'Click + drag to paint  ·  border tiles are locked  ·  arrows/ENTER move the buttons  ·  ESC - back',
             'Drag to paint  ·  border tiles are locked  ·  tap [ BACK ] to leave'), {
-            font: '12px monospace',
+            font: `${this.fontPx(12)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);
+
+        // Holiday W-57: the grown buttons keep clear of the column's texts
+        // and of the status and hint lines (their text, so width, changes).
+        if (this.touch) {
+            for (const o of [this.paintHead, this.mapHead, this.sizeText, this.savedText]) addTapObstacle(this, o);
+            addTapObstacle(this, this.statusText, true);
+            addTapObstacle(this, hint, true);
+            relayoutTapTargets(this);
+        }
 
         // Painting: pointerdown paints one tile, pointermove-while-down drags a
         // stroke. Both ignore anything outside the grid rect (that's where the
@@ -154,8 +166,8 @@ export class MapEditorScene extends Phaser.Scene {
     // gap suggests: MenuNav's focus frame is drawn 6px outside the item's
     // bounds, and anything tighter than that gets clipped by it.
     createToolColumn() {
-        this.add.text(COL_X, 106, 'PAINT', {
-            font: 'bold 14px monospace',
+        this.paintHead = this.add.text(COL_X, 106, 'PAINT', {
+            font: `bold ${this.fontPx(14)}px monospace`,
             fill: '#5599ff',
         });
 
@@ -166,8 +178,8 @@ export class MapEditorScene extends Phaser.Scene {
             this.toolButtons[tool.key] = btn;
         });
 
-        this.add.text(COL_X, 294, 'MAP', {
-            font: 'bold 14px monospace',
+        this.mapHead = this.add.text(COL_X, 294, 'MAP', {
+            font: `bold ${this.fontPx(14)}px monospace`,
             fill: '#5599ff',
         });
 
@@ -176,15 +188,27 @@ export class MapEditorScene extends Phaser.Scene {
         this.newBtn = this.makeButton(COL_X, 380, '[ NEW / SIZE ]', '#1a1a2e', '#aaccff',
             () => this.openSizeMenu(), '14px', 0);
 
+        // Holiday W-57: on a phone the grown lines stack under NEW / SIZE
+        // and wrap clear of the grid (TOUCH_CONFIG.menuRows.editor).
+        const grown = this.touch && this.fontPx(12) > 12;
+        const ed = TOUCH_CONFIG.menuRows.editor;
+        const wrap = grown ? { wordWrap: { width: ed.colWrapW } } : {};
         this.sizeText = this.add.text(COL_X, 420, '', {
-            font: '13px monospace',
+            font: `${this.fontPx(13)}px monospace`,
             fill: '#8888aa',
+            ...wrap,
         });
 
         this.savedText = this.add.text(COL_X, 444, '', {
-            font: '12px monospace',
+            font: `${this.fontPx(12)}px monospace`,
             fill: '#666688',
+            ...wrap,
         });
+        if (grown) {
+            this.sizeText.setText('size: 00 x 00');
+            this.sizeText.setY(this.newBtn.getBounds().bottom + ed.colGap);
+            this.savedText.setY(this.sizeText.getBounds().bottom + ed.colGap);
+        }
 
         this.refreshToolButtons();
 
@@ -499,7 +523,7 @@ export class MapEditorScene extends Phaser.Scene {
 
     updateStatus() {
         const valid = this.problems.length === 0;
-        this.statusText.setFontSize(STATUS_FONT_PX);
+        this.statusText.setFontSize(this.fontPx(STATUS_FONT_PX));
         this.statusText.setWordWrapWidth(null);
         this.statusText.setText(valid ? 'VALID' : this.problems[0]);
         this.statusText.setColor(valid ? '#66ff66' : '#ff6666');
@@ -513,7 +537,7 @@ export class MapEditorScene extends Phaser.Scene {
 
     // Temporary message in the status line; the live verdict comes back after.
     flashStatus(message, color = '#ffdd44', hold = STATUS_HOLD) {
-        this.statusText.setFontSize(STATUS_FONT_PX);
+        this.statusText.setFontSize(this.fontPx(STATUS_FONT_PX));
         this.statusText.setWordWrapWidth(null);
         this.statusText.setText(message);
         this.statusText.setColor(color);
@@ -640,7 +664,10 @@ export class MapEditorScene extends Phaser.Scene {
 
         const rows = entries.length + 1; // + cancel
         const panelW = 520;
-        const panelH = 82 + rows * 36;
+        // Holiday W-57: on a phone the grown rows sit their height apart.
+        const rowPx = this.fontPx(16);
+        const pitch = Math.max(36, Math.ceil(rowPx * 1.2 + 12 + TOUCH_CONFIG.menuRows.editor.rowGap));
+        const panelH = 82 + rows * pitch;
         const top = Math.round((height - panelH) / 2);
 
         const objects = [];
@@ -655,7 +682,7 @@ export class MapEditorScene extends Phaser.Scene {
         objects.push(panel);
 
         objects.push(this.add.text(width / 2, top + 32, title, {
-            font: 'bold 18px monospace',
+            font: `bold ${this.fontPx(18)}px monospace`,
             fill: '#5599ff',
         }).setOrigin(0.5).setDepth(82));
 
@@ -664,8 +691,8 @@ export class MapEditorScene extends Phaser.Scene {
 
         const rowsTop = top + 70;
         entries.forEach((entry, i) => {
-            const btn = this.add.text(width / 2, rowsTop + i * 36, entry.label, {
-                font: '16px monospace',
+            const btn = this.add.text(width / 2, rowsTop + i * pitch, entry.label, {
+                font: `${rowPx}px monospace`,
                 fill: '#ffffff',
                 backgroundColor: '#26385f',
                 padding: { x: 16, y: 6 },
@@ -682,8 +709,8 @@ export class MapEditorScene extends Phaser.Scene {
             objects.push(btn);
         });
 
-        const cancel = this.add.text(width / 2, rowsTop + entries.length * 36, `[ ${cancelLabel} ]`, {
-            font: '16px monospace',
+        const cancel = this.add.text(width / 2, rowsTop + entries.length * pitch, `[ ${cancelLabel} ]`, {
+            font: `${rowPx}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#333355',
             padding: { x: 16, y: 6 },
@@ -725,6 +752,13 @@ export class MapEditorScene extends Phaser.Scene {
         this.nameText.setVisible(false);
         this.buildOverlay();
 
+        // Holiday W-57: the overlay is scaled with the canvas, so its fonts
+        // take the same floor in game px as the scene's texts; the field and
+        // OK grow to fit, the hint moves under them.
+        const ed = TOUCH_CONFIG.menuRows.editor;
+        const inputPx = this.fontPx(15);
+        const fieldH = inputPx > 15 ? inputPx + ed.fieldPad : 30;
+
         const input = document.createElement('input');
         input.type = 'text';
         input.value = this.mapName;
@@ -738,10 +772,10 @@ export class MapEditorScene extends Phaser.Scene {
             left: '292px',
             top: '56px',
             width: '360px',
-            height: '30px',
+            height: fieldH + 'px',
             background: '#1a1a30',
             color: '#cfd6ff',
-            font: '15px monospace',
+            font: `${inputPx}px monospace`,
             border: '1px solid #4a6bb0',
             borderRadius: '4px',
             padding: '4px 8px',
@@ -764,10 +798,10 @@ export class MapEditorScene extends Phaser.Scene {
             left: '662px',
             top: '56px',
             width: '70px',
-            height: '30px',
+            height: fieldH + 'px',
             background: '#26385f',
             color: '#dfe6ff',
-            font: 'bold 13px monospace',
+            font: `bold ${this.fontPx(13)}px monospace`,
             border: '1px solid #4a6bb0',
             borderRadius: '4px',
             cursor: 'pointer',
@@ -781,10 +815,10 @@ export class MapEditorScene extends Phaser.Scene {
         Object.assign(hint.style, {
             position: 'absolute',
             left: '292px',
-            top: '90px',
+            top: (56 + fieldH + ed.fieldGap) + 'px',
             width: '440px',
             color: '#8888aa',
-            font: '12px monospace',
+            font: `${this.fontPx(12)}px monospace`,
             pointerEvents: 'none',
         });
         this.overlay.appendChild(hint);

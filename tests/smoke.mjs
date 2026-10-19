@@ -88,6 +88,9 @@
 //   3aa0i. on a 568x320 phone the survival, 1P and Daily result cards read
 //      at hudMinCss with nothing overlapping or inside a button's grown
 //      area and no keyboard hint; a desktop keeps today's sizes (W-56),
+//   3aa0j. on a 568x320 phone the map editor, its size menu, its LOAD list
+//      and its name field read at hudMinCss with nothing overlapping or
+//      inside a button's grown area; a desktop keeps today's sizes (W-57),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -4314,6 +4317,105 @@ try {
             d.survival.small === 16 && d.survival.best === 16 && d['1p'].small === 16 && d['1p'].ach === 14
                 && d.daily.best === 16 && d.survival.hint && d['1p'].hint && d.daily.hint,
             JSON.stringify(d));
+    }
+
+    // 3aa0j. Holiday W-57: small print in the map editor. On a 568x320
+    // touch phone the size menu that opens with the editor, the editor once
+    // it closes (a map saved, so the saved line shows) and the LOAD list each
+    // read at hudMinCss CSS px for every text, no two texts' bounds intersect
+    // and none sits in a button's grown hit area; the name field's input, OK
+    // and hint read at hudMinCss too, the hint under the field. A 1280x720
+    // desktop keeps the 16 / 14 / 13 / 12 px lines and the 30 px field.
+    {
+        const run = async (pg) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('MapEditorScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('MapEditorScene') && window.__mapEditor?.modal, null, { timeout: 5000 });
+            await pg.waitForTimeout(250);
+            // `modal`: only the modal's texts and buttons (depth 80 and up).
+            const look = (modal) => pg.evaluate(([min, modal]) => {
+                const e = window.__mapEditor;
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const mine = (o) => (modal ? o.depth >= 80 : true);
+                const ts = e.children.list.filter((o) => o.type === 'Text' && o.visible && o.text && mine(o));
+                const low = ts.filter((o) => o.displayHeight * k < min - 0.5).map((o) => `${o.text.slice(0, 16)}:${(o.displayHeight * k).toFixed(1)}`);
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 12)}|${ts[j].text.slice(0, 12)}`);
+                }
+                const rect = (o) => {
+                    const h = o.input.hitArea;
+                    const m = o.getWorldTransformMatrix();
+                    const sx = Math.hypot(m.a, m.b), sy = Math.hypot(m.c, m.d);
+                    const x0 = m.tx + (h.x - o.displayOriginX) * sx, y0 = m.ty + (h.y - o.displayOriginY) * sy;
+                    return { x0, y0, x1: x0 + h.width * sx, y1: y0 + h.height * sy };
+                };
+                const btns = e.children.list.filter((o) => o.type === 'Text' && o.visible && o.input && o.input.enabled && mine(o));
+                const inBtn = [];
+                for (const o of ts.filter((x) => !btns.includes(x))) {
+                    const b = o.getBounds();
+                    for (const btn of btns) {
+                        const r = rect(btn);
+                        if (b.x < r.x1 && r.x0 < b.right && b.y < r.y1 && r.y0 < b.bottom) inBtn.push(`${o.text.slice(0, 12)}|${btn.text}`);
+                    }
+                }
+                const off = ts.filter((o) => { const g = o.getBounds(); return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700; }).map((o) => o.text.slice(0, 12));
+                // The column's lines stay left of the widest grid (25 tiles from x 335).
+                const wide = modal ? [] : [e.sizeText, e.savedText].filter((o) => o.getBounds().right > 335).map((o) => o.text);
+                const px = (o) => parseFloat(o.style.fontSize);
+                return { n: ts.length, low, hit, inBtn, off, wide,
+                    sizes: modal ? { row: px(btns[0]) } : { name: px(e.nameText), size: px(e.sizeText), saved: px(e.savedText), paint: px(e.paintHead) } };
+            }, [TOUCH_CONFIG.hudMinCss, modal]);
+            const sizeMenu = await look(true);
+            await pg.evaluate(() => {
+                const e = window.__mapEditor;
+                e.closeModal();
+                e.saveMap();
+                e.updateStatus();
+            });
+            await pg.waitForTimeout(250);
+            const editor = await look(false);
+            await pg.evaluate(() => window.__mapEditor.openLoadMenu());
+            await pg.waitForTimeout(250);
+            const loadList = await look(true);
+            await pg.evaluate(() => {
+                const e = window.__mapEditor;
+                e.closeModal();
+                e.openNameEditor();
+            });
+            await pg.waitForTimeout(150);
+            const field = await pg.evaluate((min) => {
+                const ov = document.querySelector('[data-map-editor-overlay]');
+                if (!ov) return null;
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const [input, ok, hint] = [ov.querySelector('input'), ov.querySelector('button'), ov.querySelector('div')];
+                const css = (el) => +(parseFloat(getComputedStyle(el).fontSize) * k).toFixed(1);
+                const ir = input.getBoundingClientRect(), hr = hint.getBoundingClientRect();
+                return { input: css(input), ok: css(ok), hint: css(hint), hintBelow: hr.top >= ir.bottom - 0.5,
+                    tall: [input, ok, hint].every((el) => css(el) >= min - 0.5), h: input.style.height };
+            }, TOUCH_CONFIG.hudMinCss);
+            await pg.evaluate(() => window.__mapEditor.closeNameEditor(false));
+            return { sizeMenu, editor, loadList, field };
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('editor small print pageerror: ' + e.message));
+        const p = await run(phone);
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('editor small print desktop pageerror: ' + e.message));
+        const d = await run(desk);
+        await desk.close();
+        const clean = (r) => r.n > 0 && !r.low.length && !r.hit.length && !r.inBtn.length && !r.off.length && !r.wide.length;
+        check('editor small print: at 568x320 the editor, its size menu and LOAD list read at hudMinCss, nothing overlaps or sits in a button; the name field reads too',
+            clean(p.sizeMenu) && clean(p.editor) && clean(p.loadList) && !!p.field && p.field.tall && p.field.hintBelow,
+            JSON.stringify(p));
+        check('editor small print: a 1280x720 desktop keeps the 16 / 14 / 13 / 12 px lines and the 30 px name field',
+            JSON.stringify(d.editor.sizes) === JSON.stringify({ name: 16, size: 13, saved: 12, paint: 14 })
+                && d.sizeMenu.sizes.row === 16 && !!d.field && d.field.h === '30px' && !d.editor.hit.length,
+            JSON.stringify({ editor: d.editor.sizes, menu: d.sizeMenu.sizes, field: d.field, hit: d.editor.hit }));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
