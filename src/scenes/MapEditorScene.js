@@ -193,6 +193,14 @@ export class MapEditorScene extends Phaser.Scene {
         const grown = this.touch && this.fontPx(12) > 12;
         const ed = TOUCH_CONFIG.menuRows.editor;
         const wrap = grown ? { wordWrap: { width: ed.colWrapW } } : {};
+        // Holiday W-60: the grown buttons are taller than the desktop's 36 px
+        // steps, so on a phone the column takes the editor's touch rows.
+        if (grown) {
+            Object.values(this.toolButtons).forEach((btn, i) => btn.setY(ed.toolY + i * ed.toolGap));
+            this.mapHead.setY(ed.mapHeadY);
+            this.themeBtn.setY(ed.themeY);
+            this.newBtn.setY(ed.newY);
+        }
         this.sizeText = this.add.text(COL_X, 420, '', {
             font: `${this.fontPx(13)}px monospace`,
             fill: '#8888aa',
@@ -260,7 +268,7 @@ export class MapEditorScene extends Phaser.Scene {
     // why it can't run, which is more useful than a dead click.
     makeButton(x, y, label, bgColor, hoverColor, onClick, fontSize = '16px', originX = 0.5) {
         const btn = this.add.text(x, y, label, {
-            font: `${fontSize} monospace`,
+            font: `${this.fontPx(parseInt(fontSize, 10))}px monospace`,
             fill: '#ffffff',
             backgroundColor: bgColor,
             padding: { x: 14, y: 7 },
