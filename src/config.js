@@ -407,6 +407,30 @@ export const TOUCH_CONFIG = {
             previewY: 128, previewR: 52, previewScale: 2.4, gap: 8, robeSpacing: 160, staffSpacing: 170,
             hintInset: 6, minHalfHit: 23,
         },
+        // CLASS SELECT (holiday W-52): on a touch device a card starts at
+        // `top`, draws its sprite (at spriteScale) and name at spriteY and
+        // nameY below that, and stacks its grown print under the name, `gap`
+        // apart and wrapped `pad` in from the card's sides; every card is as
+        // tall as the tallest needs, plus `pad`. A card that would pass
+        // maxBottom (partyMaxBottom over the party seats' rows) leaves out its
+        // signature's description. The party seats' hint names a ready seat's
+        // class by its short name (BALANCE_TALLY_CONFIG.shortNames), and the
+        // seats' titles sit partyTitleLift higher, clear of the grown hint.
+        classSelect: {
+            top: 96, spriteY: 32, spriteScale: 2.4, nameY: 80, gap: 4, pad: 4,
+            maxBottom: 620, partyMaxBottom: 536, partyTitleLift: 6,
+        },
+        // ONLINE's pick lobby (holiday W-52), on a touch device: the class
+        // cards' top and height, the sprite (at spriteScale), name and
+        // signature rows from the card's top and the signature's wrap inset;
+        // BATTLEGROUND's y, the map strip in rows of mapCols slots mapSlotW
+        // wide from mapY, mapRowH apart, each name nameGap under its slot;
+        // the tap hint's and the picks line's y.
+        online: {
+            cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,
+            battleY: 352, mapCols: 6, mapSlotW: 162, mapY: 390, mapRowH: 108, nameGap: 2,
+            hintY: 594, pickY: 624,
+        },
     },
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
     // Wardrobe swatches (holiday W-27): the game-px spacing of each row's

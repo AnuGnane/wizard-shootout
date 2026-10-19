@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ELEMENT_COLORS, TEAM_NAMES } from '../config.js';
+import { ELEMENT_COLORS, TEAM_NAMES, TOUCH_CONFIG, BALANCE_TALLY_CONFIG } from '../config.js';
 import { getTeamColors } from '../systems/TeamColors.js';
 import { WIZARD_CLASSES, CLASS_KEYS } from '../systems/Classes.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
@@ -8,7 +8,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { addBackButton, backHint } from '../systems/TouchMenu.js';
+import { addBackButton, backHint, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 
 // Phase 9c: card width is derived from the class count (rather than a flat
@@ -92,7 +92,13 @@ export class ClassSelectScene extends Phaser.Scene {
             y: cardY,
         }));
 
-        this.cardPositions.forEach((pos, i) => this.createCard(pos, i));
+        // Holiday W-52: on a touch device the card print grows to
+        // menuFontPx() and each card stacks it under the name; the row then
+        // takes the tallest card's height (layoutTouchCards).
+        this.touchCards = isTouchDevice(this) && menuFontPx(this, 10) > 10;
+        this.cardH = CARD_H;
+        const cards = this.cardPositions.map((pos, i) => this.createCard(pos, i));
+        if (this.touchCards) this.layoutTouchCards(cards);
 
         this.transitioning = false;
 
@@ -115,11 +121,13 @@ export class ClassSelectScene extends Phaser.Scene {
     createCard(pos, index) {
         const { x, y, key } = pos;
         const cls = WIZARD_CLASSES[key];
-        const top = y - CARD_H / 2;
+        const R = TOUCH_CONFIG.menuRows.classSelect;
+        const touch = this.touchCards;
+        const top = touch ? R.top : y - CARD_H / 2;
+        const fpx = (base) => menuFontPx(this, base);
 
         const bg = this.add.rectangle(x, y, CARD_W, CARD_H, 0x1a1a2e);
         bg.setStrokeStyle(2, 0x3a3a5a);
-        bg.setInteractive({ useHandCursor: true });
         bg.on('pointerover', () => bg.setFillStyle(0x232340));
         bg.on('pointerout', () => bg.setFillStyle(0x1a1a2e));
         bg.on('pointerdown', () => {
@@ -135,16 +143,16 @@ export class ClassSelectScene extends Phaser.Scene {
             }
         });
 
-        this.add.image(x, top + 62, `wizard_${key}_1`).setScale(3.5);
+        this.add.image(x, top + (touch ? R.spriteY : 62), `wizard_${key}_1`).setScale(touch ? R.spriteScale : 3.5);
 
-        this.add.text(x, top + 118, cls.name.toUpperCase(), {
+        const name = this.add.text(x, top + (touch ? R.nameY : 118), cls.name.toUpperCase(), {
             font: 'bold 15px monospace',
             fill: '#ffffff',
         }).setOrigin(0.5);
 
         const elementColor = ELEMENT_COLORS[cls.element];
-        this.add.text(x, top + 138, cls.element.toUpperCase(), {
-            font: '12px monospace',
+        const element = this.add.text(x, top + 138, cls.element.toUpperCase(), {
+            font: `${fpx(12)}px monospace`,
             fill: '#' + elementColor.toString(16).padStart(6, '0'),
         }).setOrigin(0.5);
 
@@ -152,24 +160,58 @@ export class ClassSelectScene extends Phaser.Scene {
         // is the longest label+cooldown string yet, and cards got narrower
         // to fit 7 of them (see CARD_W above); shrinking this one line keeps
         // every card's label on a single line with room to spare.
-        this.add.text(x, top + 163, `${cls.signature.label.toUpperCase()} · ${cls.signature.cooldown / 1000}s`, {
-            font: 'bold 10px monospace',
+        const wrapW = touch ? CARD_W - 2 * R.pad : CARD_W - 20;
+        const sig = this.add.text(x, top + 163, `${cls.signature.label.toUpperCase()} · ${cls.signature.cooldown / 1000}s`, {
+            font: `bold ${fpx(10)}px monospace`,
             fill: '#ffdd44',
+            align: 'center',
+            wordWrap: touch ? { width: wrapW } : null,
         }).setOrigin(0.5);
 
-        this.add.text(x, top + 180, cls.signature.description, {
-            font: '11px monospace',
+        const desc = this.add.text(x, top + 180, cls.signature.description, {
+            font: `${fpx(11)}px monospace`,
             fill: '#aaaacc',
             align: 'center',
-            wordWrap: { width: CARD_W - 20 },
+            wordWrap: { width: wrapW },
         }).setOrigin(0.5, 0);
 
-        this.add.text(x, top + CARD_H - 40, cls.passive, {
-            font: '11px monospace',
+        const passive = this.add.text(x, top + CARD_H - 40, cls.passive, {
+            font: `${fpx(11)}px monospace`,
             fill: '#8888aa',
             align: 'center',
-            wordWrap: { width: CARD_W - 20 },
+            wordWrap: { width: wrapW },
         }).setOrigin(0.5, 0);
+
+        if (!touch) bg.setInteractive({ useHandCursor: true });
+        return { pos, bg, name, lines: [element, sig, desc, passive], desc };
+    }
+
+    // Holiday W-52: stack each card's grown print under its name, then size
+    // every card to the tallest. A row that would still pass the bottom it
+    // has (TOUCH_CONFIG.menuRows.classSelect) leaves the descriptions out.
+    layoutTouchCards(cards) {
+        const R = TOUCH_CONFIG.menuRows.classSelect;
+        const maxBottom = this.mode === 'party' ? R.partyMaxBottom : R.maxBottom;
+        const stack = (card) => {
+            let y = card.name.getBounds().bottom + R.gap;
+            for (const t of card.lines) {
+                if (!t.visible) continue;
+                t.setOrigin(0.5, 0).setY(y);
+                y += t.height + R.gap;
+            }
+            return y - R.gap + R.pad;
+        };
+        let bottom = Math.max(...cards.map(stack));
+        if (bottom > maxBottom) {
+            cards.forEach((c) => c.desc.setVisible(false));
+            bottom = Math.max(...cards.map(stack));
+        }
+        this.cardH = Math.ceil(bottom - R.top);
+        for (const card of cards) {
+            card.pos.y = R.top + this.cardH / 2;
+            card.bg.setSize(CARD_W, this.cardH).setPosition(card.pos.x, card.pos.y);
+            card.bg.setInteractive({ useHandCursor: true });
+        }
     }
 
     // ============ SURVIVAL PRE-STEP (Phase 9b) ============
@@ -234,7 +276,7 @@ export class ClassSelectScene extends Phaser.Scene {
         this.sizeNav.add(btn, onClick);
 
         this.add.text(x, y + 44, sub, {
-            font: '13px monospace',
+            font: `${menuFontPx(this, 13)}px monospace`,
             fill: '#8888aa',
         }).setOrigin(0.5);
 
@@ -265,12 +307,12 @@ export class ClassSelectScene extends Phaser.Scene {
         const p1TeamColorStr = '#' + p1TeamColor.toString(16).padStart(6, '0');
         const p2TeamColorStr = '#' + p2TeamColor.toString(16).padStart(6, '0');
 
-        this.p1Frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
+        this.p1Frame = this.add.rectangle(0, 0, CARD_W - 10, this.cardH - 10, 0x000000, 0);
         this.p1Frame.setStrokeStyle(3, p1TeamColor, 1);
         this.p1Frame.setDepth(20);
 
         if (this.twoHumans) {
-            this.p2Frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
+            this.p2Frame = this.add.rectangle(0, 0, CARD_W - 10, this.cardH - 10, 0x000000, 0);
             this.p2Frame.setStrokeStyle(3, p2TeamColor, 1);
             this.p2Frame.setDepth(20);
         }
@@ -486,18 +528,19 @@ export class ClassSelectScene extends Phaser.Scene {
             const seat = this.seats[n];
             const teamColor = this.partyTeamColors[n - 1];
 
-            seat.frame = this.add.rectangle(0, 0, CARD_W - 10, CARD_H - 10, 0x000000, 0);
+            seat.frame = this.add.rectangle(0, 0, CARD_W - 10, this.cardH - 10, 0x000000, 0);
             seat.frame.setStrokeStyle(3, teamColor, 1);
             seat.frame.setDepth(20);
 
             const x = seatX[n - 1];
-            seat.titleText = this.add.text(x, height - 142, `P${n} ${TEAM_NAMES[n - 1]}`, {
+            const lift = this.touchCards ? TOUCH_CONFIG.menuRows.classSelect.partyTitleLift : 0;
+            seat.titleText = this.add.text(x, height - 142 - lift, `P${n} ${TEAM_NAMES[n - 1]}`, {
                 font: 'bold 14px monospace',
                 fill: '#' + teamColor.toString(16).padStart(6, '0'),
             }).setOrigin(0.5);
 
             seat.hint = this.add.text(x, height - 120, '', {
-                font: '13px monospace',
+                font: `${menuFontPx(this, 13)}px monospace`,
                 fill: '#8888aa',
             }).setOrigin(0.5);
 
@@ -510,9 +553,11 @@ export class ClassSelectScene extends Phaser.Scene {
             }
         }
 
-        this.add.text(width / 2, height - 65,
-            'Seats 3 & 4: press 3 / 4 (or click) to toggle OFF · BOT · PAD   —   pad A joins an OFF seat', {
-            font: '12px monospace',
+        // Holiday W-52: the touch line is shorter, so it fits grown.
+        this.add.text(width / 2, height - 65, backHint(this,
+            'Seats 3 & 4: press 3 / 4 (or click) to toggle OFF · BOT · PAD   —   pad A joins an OFF seat',
+            'Seats 3 & 4: tap to toggle OFF · BOT · PAD'), {
+            font: `${menuFontPx(this, 12)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);
 
@@ -522,7 +567,7 @@ export class ClassSelectScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         this.add.text(width / 2, height - 16, backHint(this, 'ESC - back', 'BACK - top left'), {
-            font: '13px monospace',
+            font: `${menuFontPx(this, 13)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);
 
@@ -622,7 +667,10 @@ export class ClassSelectScene extends Phaser.Scene {
         const teamStr = '#' + this.partyTeamColors[n - 1].toString(16).padStart(6, '0');
 
         if (seat.confirmed && seat.classKey) {
-            seat.hint.setText(`READY — ${WIZARD_CLASSES[seat.classKey].name}`);
+            // Holiday W-52: the grown hint names the class short on a phone.
+            const cls = WIZARD_CLASSES[seat.classKey];
+            const label = this.touchCards ? BALANCE_TALLY_CONFIG.shortNames[seat.classKey] || cls.name : cls.name;
+            seat.hint.setText(`READY — ${label}`);
             seat.hint.setColor('#66ff66');
         } else if (n === 1) {
             seat.hint.setText('A/D + SPACE');
