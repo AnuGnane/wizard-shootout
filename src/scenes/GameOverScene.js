@@ -7,7 +7,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, hitRect, isTouchDevice, menuFontPx, relayoutTapTargets } from '../systems/TouchMenu.js';
+import { ensureTapTarget, hitRect, isTouchDevice, menuFont, menuFontPx, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
 
 export class GameOverScene extends Phaser.Scene {
@@ -359,7 +359,8 @@ export class GameOverScene extends Phaser.Scene {
     createShare(text) {
         const cfg = SHARE_CONFIG.shareButton;
         const btn = this.add.text(cfg.x, cfg.y, canShare() ? SHARE_CONFIG.shareLabel : SHARE_CONFIG.copyLabel, {
-            font: cfg.font,
+            // Holiday W-60: grown to the floor on a phone.
+            font: menuFont(this, cfg.font),
             fill: cfg.fill,
             backgroundColor: cfg.bg,
             padding: cfg.padding,

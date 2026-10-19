@@ -99,12 +99,42 @@
 //      pick lobbies, the overlay's labels too) and STATS reads at hudMinCss
 //      with nothing overlapping or off the canvas; a desktop keeps today's
 //      sizes and wording (W-59),
+//   3aa0m. on a 568x320 phone every text on all eleven menu scenes (the
+//      main menu, CLASS SELECT, MAP SELECT, WARDROBE, STATS, CONTROLS,
+//      SETTINGS, ONLINE, the map editor, PAUSE over a 1P round and a survival
+//      result card) reads at hudMinCss, half a pixel of rounding aside, and
+//      no two overlap; misses only by a reasoned allowlist (W-60),
+// The steps the body also holds, by id:
+//   3b. a seat-1 orb pickup reaches stats and the achievement toast,
+//   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
+//   3g2. an Online match survives a connection blip within the grace (W-35),
+//   3h. a round pauses when the phone page goes hidden (W-11),
+//   3i. one tap starts sound on a phone, and it comes back after an
+//      interruption (W-12),
+//   3l2. [ INSTALL ] on the menu where the browser offers it (W-34),
+//   3l3. on iOS the menu says how to Add to Home Screen (W-43),
+//   3x2. offline, ONLINE says so at once and opens no socket (W-36),
+//   3x3. HOST and a touch round hold a screen wake lock, released on leaving
+//      or pausing (W-37),
+//   3y2. a shared ?join= link opens JOIN with the code filled (W-44),
+//   3z. Settings' EFFECTS cycles AUTO / FULL / LITE, LITE spawns fewer
+//      shards and AUTO's monitor drops to lite on slow frames (W-31),
+//   3z2. Reduce Motion makes AUTO lite at once (W-41),
+//   3z3. a save that did not stick is said (W-42),
+//   3aa0. TOUCH SIZE sizes the touch controls (W-45),
+//   3aa0b. a FIXED joystick stays at its home (W-49),
+//   3aa0c. small print on STATS and CONTROLS reads at hudMinCss (W-50),
+//   3aa0d. small print on MAP SELECT and WARDROBE reads at hudMinCss (W-51),
+//   3aa0e. small print on CLASS SELECT and ONLINE reads at hudMinCss (W-52),
+//   3aa0f. the main menu's small lines read at hudMinCss (W-53),
+//   3aa0g. QUIT TO MENU asks once on a phone (W-54),
+//   3aa. the left-handed touch layout mirrors the controls (W-32),
 //   5. nothing logged a console error or threw during any of the above,
-//   6. the PWA manifest, icons and service worker are served (dev server), and
-//      the production build in dist/ installs its worker and boots offline,
+//   6a. the PWA manifest, icons and service worker are served (dev server),
+//   6b. the production build in dist/ installs its worker and boots offline,
 //      shows a reload button on the menu (never mid-round) once a newer
 //      worker takes over a page it already controlled (W-22),
-//      and the itch.io bundle in dist-itch/ boots from a subfolder in an iframe,
+//   6c. the itch.io bundle in dist-itch/ boots from a subfolder in an iframe,
 //   6a2. the served index carries the "loading…" line, gone once the menu is up (W-47),
 //   7. the trailer's GIF encoder (scripts/gif.js) writes a GIF Chromium decodes.
 //
@@ -4586,6 +4616,98 @@ try {
                 && d.host.labelText === 'ROOM CODE — tell your friend to JOIN with this:'
                 && d.lobby.battle === 15 && d.stats.games === 15 && d.stats.ach === 16,
             JSON.stringify(d));
+    }
+
+    // 3aa0m. Holiday W-60: every menu screen's text reaches the floor at
+    // 568x320. Each of the eleven menu scenes is started in turn on a touch
+    // phone (PAUSE over a paused 1P round, GAME OVER on a survival card), and
+    // every visible Text, inside containers too and through their scale, is
+    // at least hudMinCss CSS px tall, half a pixel of rounding aside, and no
+    // two visible texts' bounds intersect. The W-50 to W-59 steps keep their
+    // own variants (party, HOST / JOIN, custom maps, Settings' second page)
+    // and layout rules; this is the default state of every screen, and the
+    // net for a text the next package adds under the floor.
+    {
+        // `scene: text prefix` -> why it may stay under the floor. Empty:
+        // nothing needs it.
+        const allow = {};
+        const scenes = ['MenuScene', 'ClassSelectScene', 'MapSelectScene', 'WardrobeScene', 'StatsScene',
+            'ControlsScene', 'SettingsScene', 'OnlineScene', 'MapEditorScene', 'PauseScene', 'GameOverScene'];
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('menu floor pageerror: ' + e.message));
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const misses = [];
+        const seen = {};
+        for (const key of scenes) {
+            await phone.evaluate(() => {
+                const g = window.__game.scene;
+                g.getScenes(true).forEach((sc) => sc.scene.stop());
+                if (g.isPaused('GameScene')) g.stop('GameScene');
+            });
+            await phone.waitForFunction(() => window.__game.scene.getScenes(true).length === 0
+                && !window.__game.scene.isPaused('GameScene'), null, { timeout: 5000 });
+            await phone.evaluate((key) => {
+                const g = window.__game.scene;
+                const M = window.__match;
+                Object.assign(M, { online: false, isDailyChallenge: false, mode: '1p', playerCount: 2,
+                    seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } });
+                if (key === 'PauseScene') {
+                    M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                    M.mapIndex = 0; M.round = 1;
+                    M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                    g.start('GameScene');
+                } else if (key === 'GameOverScene') {
+                    Object.assign(M, { mode: 'survival', playerCount: 1, seatTypes: { 1: 'human', 2: 'off', 3: 'off', 4: 'off' } });
+                    g.start(key, { isSurvival: true, wavesSurvived: 7, wave: 8, teamKills: 41, bestWave: 7 });
+                } else {
+                    g.start(key, key === 'ClassSelectScene' || key === 'MapSelectScene' ? { mode: '1p' } : {});
+                }
+            }, key);
+            if (key === 'PauseScene') {
+                await phone.waitForFunction(() => window.__game.scene.isActive('GameScene')
+                    && window.__game.scene.getScene('GameScene').player1?.isAlive, null, { timeout: 8000 });
+                await phone.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+            }
+            await phone.waitForFunction((key) => window.__game.scene.isActive(key), key, { timeout: 8000 });
+            await phone.waitForTimeout(300);
+            const r = await phone.evaluate(({ key, min }) => {
+                const sc = window.__game.scene.getScene(key);
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = [];
+                const walk = (list) => list.forEach((o) => {
+                    if (o.type === 'Container') { if (o.visible) walk(o.list); } else if (o.type === 'Text' && o.visible && o.text) ts.push(o);
+                });
+                walk(sc.children.list);
+                const scale = (o) => {
+                    let s = Math.abs(o.scaleY);
+                    for (let p = o.parentContainer; p; p = p.parentContainer) s *= Math.abs(p.scaleY);
+                    return s;
+                };
+                const css = (o) => parseFloat(o.style.fontSize) * scale(o) * k;
+                const name = (o) => o.text.replace(/\n/g, ' ').slice(0, 24);
+                const low = ts.filter((o) => css(o) < min - 0.5).map((o) => ({ text: name(o), css: +css(o).toFixed(2) }));
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${name(ts[i])} | ${name(ts[j])}`);
+                }
+                return { n: ts.length, low, hit };
+            }, { key, min: TOUCH_CONFIG.hudMinCss });
+            seen[key] = r.n;
+            for (const l of r.low) {
+                if (!Object.keys(allow).some((a) => `${key}: ${l.text}`.startsWith(a))) {
+                    misses.push(`${key}: "${l.text}" is ${l.css} CSS px`);
+                }
+            }
+            for (const h of r.hit) misses.push(`${key}: "${h}" overlap`);
+            if (r.n === 0) misses.push(`${key}: no text found`);
+        }
+        await ctx.close();
+        check('menu floor: at 568x320 every text on all eleven menu scenes is at least hudMinCss CSS px and none overlaps (allowlist: none)',
+            misses.length === 0 && Object.keys(seen).length === scenes.length,
+            misses.length ? misses.join('; ') : JSON.stringify(seen));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

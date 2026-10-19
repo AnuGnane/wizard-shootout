@@ -484,7 +484,12 @@ export const TOUCH_CONFIG = {
         // sit their measured height plus rowGap apart (36 at the least, the
         // desktop's); the name field and its OK grow to the font plus
         // fieldPad (30 on a desktop), the hint fieldGap under them.
-        editor: { colGap: 4, colWrapW: 290, rowGap: 4, fieldPad: 16, fieldGap: 4 },
+        // W-60 grows the editor's buttons too: the tools from toolY, toolGap
+        // apart, then the MAP head's top and THEME's and NEW's centres.
+        editor: {
+            colGap: 4, colWrapW: 290, rowGap: 4, fieldPad: 16, fieldGap: 4,
+            toolY: 150, toolGap: 44, mapHeadY: 312, themeY: 362, newY: 406,
+        },
         online: {
             cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,
             battleY: 352, mapCols: 6, mapSlotW: 162, mapY: 390, mapRowH: 108, nameGap: 2,
