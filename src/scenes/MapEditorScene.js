@@ -8,7 +8,7 @@ import { MenuNav } from '../systems/MenuNav.js';
 import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
-import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx, menuFontPx, addTapObstacle } from '../systems/TouchMenu.js';
+import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx, menuFontPx, addTapObstacle, hitRect } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG, STORAGE_CONFIG } from '../config.js';
 import { writeFailed } from '../systems/Storage.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
@@ -204,11 +204,6 @@ export class MapEditorScene extends Phaser.Scene {
             fill: '#666688',
             ...wrap,
         });
-        if (grown) {
-            this.sizeText.setText('size: 00 x 00');
-            this.sizeText.setY(this.newBtn.getBounds().bottom + ed.colGap);
-            this.savedText.setY(this.sizeText.getBounds().bottom + ed.colGap);
-        }
 
         this.refreshToolButtons();
 
@@ -217,6 +212,15 @@ export class MapEditorScene extends Phaser.Scene {
             for (const btn of [...Object.values(this.toolButtons), this.themeBtn, this.newBtn]) {
                 ensureTapTarget(this, btn);
             }
+        }
+        // Holiday W-57: the grown PAINT head sits over WALL's grown hit area
+        // and the size and saved lines under NEW's, so neither button gives
+        // up its thumb room to them (MAP stays between SPAWN 2 and THEME).
+        if (grown) {
+            this.paintHead.setY(hitRect(this.toolButtons.wall).y0 - ed.colGap - this.paintHead.height);
+            this.sizeText.setText('size: 00 x 00');
+            this.sizeText.setY(hitRect(this.newBtn).y1 + ed.colGap);
+            this.savedText.setY(this.sizeText.getBounds().bottom + ed.colGap);
         }
     }
 
@@ -533,6 +537,16 @@ export class MapEditorScene extends Phaser.Scene {
         this.setEnabled(this.testBtn, valid && saved && !this.dirty);
         this.setEnabled(this.deleteBtn, saved);
         this.setEnabled(this.loadBtn, getCustomMaps().length > 0);
+        this.statusResized();
+    }
+
+    // Holiday W-57: the status line is an obstacle to the grown bar buttons
+    // (see create); when its height changes (W-42's wrapped note, or back),
+    // lay them out again.
+    statusResized() {
+        if (!this.touch || this.statusText.height === this.statusH) return;
+        this.statusH = this.statusText.height;
+        relayoutTapTargets(this);
     }
 
     // Temporary message in the status line; the live verdict comes back after.
@@ -541,6 +555,7 @@ export class MapEditorScene extends Phaser.Scene {
         this.statusText.setWordWrapWidth(null);
         this.statusText.setText(message);
         this.statusText.setColor(color);
+        this.statusResized();
         if (this._statusTimer) this._statusTimer.remove();
         this._statusTimer = this.time.delayedCall(hold, () => {
             this._statusTimer = null;
@@ -569,6 +584,7 @@ export class MapEditorScene extends Phaser.Scene {
             this.statusText.setFontSize(Math.max(STORAGE_CONFIG.minFontPx,
                 Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(this))));
             this.statusText.setWordWrapWidth(STORAGE_CONFIG.maxWidthPx).setAlign('center');
+            this.statusResized();
             return;
         }
         this.flashStatus(`saved "${this.mapName}"`, '#66ff66');
