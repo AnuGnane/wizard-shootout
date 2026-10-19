@@ -4,7 +4,7 @@ import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { canVibrate } from '../systems/Haptics.js';
 
 // Runtime settings that can be modified
@@ -103,11 +103,25 @@ export class SettingsScene extends Phaser.Scene {
         // value left/right step. Created before addToggle()/addSlider()/
         // buttons below run, since they register themselves as items as
         // they're built.
-        this.menuNav = new MenuNav(this, { onBack: () => this.goToMenu() });
+        // Holiday W-55: focusing a row on the other page shows that page.
+        this.menuNav = new MenuNav(this, { onBack: () => this.goToMenu(), onFocus: (item) => this.focusPage(item) });
+
+        // Holiday W-55: on a phone where 14 px reads under hudMinCss the rows
+        // and heads grow to menuFontPx, and the two columns, too tall for the
+        // grown rows, become two pages of two columns each
+        // (TOUCH_CONFIG.menuRows.settings). A desktop keeps today's layout.
+        this.rowFont = `${menuFontPx(this, 14)}px monospace`;
+        this.headFont = `bold ${menuFontPx(this, 16)}px monospace`;
+        this.paged = menuFontPx(this, 14) > 14;
+        this.rowsCfg = TOUCH_CONFIG.menuRows.settings;
+        this.pageOf = new Map();
+        this.page = 0;
+        this.column = null;
 
         // === LEFT COLUMN ===
         this.colX = 50;
         this.yPos = 90;
+        this.startColumn(0, 0);
 
         this.addSectionHeader('ORBS ENABLED');
         this.addToggle('Fire (burn)', 'fire');
@@ -117,7 +131,7 @@ export class SettingsScene extends Phaser.Scene {
         this.addToggle('Shield (block hit)', 'shield');
         this.addToggle('Triple (spread)', 'triple');
 
-        this.yPos += 20;
+        this.yPos += this.paged ? this.rowsCfg.sectionGap : 20;
         this.addSectionHeader('EFFECTS');
         this.addSlider('Burn Duration (s)', 'fireBurnDuration', 1000, 8000, 500, (v) => (v / 1000).toFixed(1));
         this.addSlider('Slow Duration (s)', 'iceSlowDuration', 1000, 6000, 500, (v) => (v / 1000).toFixed(1));
@@ -126,7 +140,8 @@ export class SettingsScene extends Phaser.Scene {
         // ARENA lives in the left column (rather than after MATCH on the
         // right) to make room for the new MUTATORS section without either
         // column running past the Save/Back buttons.
-        this.yPos += 20;
+        this.yPos += this.paged ? this.rowsCfg.sectionGap : 20;
+        this.startColumn(0, 1);
         this.addSectionHeader('ARENA');
         this.addSlider('Orb Spawn Min (s)', 'runeSpawnMin', 3000, 15000, 1000, (v) => (v / 1000).toFixed(0));
         this.addSlider('Orb Spawn Max (s)', 'runeSpawnMax', 5000, 20000, 1000, (v) => (v / 1000).toFixed(0));
@@ -134,7 +149,7 @@ export class SettingsScene extends Phaser.Scene {
         // Holiday W-14: left column, since the right one already reaches the
         // bottom buttons. Holiday W-31: EFFECTS shows on every device; the
         // Vibration row joins it only on a touch device that can buzz.
-        this.yPos += 20;
+        this.yPos += this.paged ? this.rowsCfg.sectionGap : 20;
         this.addSectionHeader('DEVICE');
         this.addChoice('Effects', 'effects', FX_CONFIG.levels);
         if (isTouchDevice(this)) {
@@ -151,13 +166,14 @@ export class SettingsScene extends Phaser.Scene {
         // === RIGHT COLUMN ===
         this.colX = 530;
         this.yPos = 90;
+        this.startColumn(1, 0);
 
         this.addSectionHeader('PLAYER');
         this.addSlider('Health', 'playerHealth', 50, 200, 10);
         this.addSlider('Normal Damage', 'normalDamage', 10, 50, 5);
         this.addSlider('Orb Damage', 'runeDamage', 5, 40, 5);
 
-        this.yPos += 20;
+        this.yPos += this.paged ? this.rowsCfg.sectionGap : 20;
         this.addSectionHeader('MATCH');
         this.addSlider('First to (rounds)', 'targetScore', 1, 10, 1);
         this.addToggle('Sound', 'soundEnabled');
@@ -165,7 +181,8 @@ export class SettingsScene extends Phaser.Scene {
 
         // Sudden Death moved here from MATCH — it's a mutator in spirit
         // (key/persistence unchanged), alongside the four new Phase 5c ones.
-        this.yPos += 20;
+        this.yPos += this.paged ? this.rowsCfg.sectionGap : 20;
+        this.startColumn(1, 1);
         this.addSectionHeader('MUTATORS');
         this.addToggle('Sudden Death (1 HP)', 'suddenDeath');
         this.addToggle('Giant Projectiles', 'mutGiantShots');
@@ -174,10 +191,38 @@ export class SettingsScene extends Phaser.Scene {
         this.addToggle('Mirror Maps', 'mutMirrorMaps');
         this.addToggle('Fog of War (1P)', 'fogOfWar');
 
-        this.yPos += 20;
+        this.yPos += this.paged ? this.rowsCfg.sectionGap : 20;
         this.addSectionHeader('ACCESSIBILITY');
         this.addToggle('Screen Shake', 'screenShake');
         this.addToggle('Colorblind Team Colors', 'colorblindTeams');
+        this.endColumn();
+
+        // Holiday W-55: the page flip, on a paged phone only.
+        if (this.paged) {
+            const { x, y } = this.rowsCfg.pageBtn;
+            this.pageBtn = this.add.text(x, y, this.rowsCfg.pageLabels[0], {
+                font: `${menuFontPx(this, 18)}px monospace`,
+                fill: '#ffffff',
+                backgroundColor: '#333355',
+                padding: { x: 12, y: 8 },
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            // A tap leaves the focus where it was: on a row now hidden, it
+            // moves to the shown page's first row.
+            const doFlip = () => {
+                audio.uiClick();
+                this.showPage(1 - this.page);
+                const nav = this.menuNav;
+                const cur = nav.items[nav.index];
+                if (cur && this.pageOf.has(cur.gameObject) && this.pageOf.get(cur.gameObject) !== this.page) {
+                    nav.setFocus(nav.items.findIndex((it) => this.pageOf.get(it.gameObject) === this.page));
+                } else {
+                    nav.refresh();
+                }
+            };
+            this.pageBtn.on('pointerdown', doFlip);
+            ensureTapTarget(this, this.pageBtn);
+            this.menuNav.add(this.pageBtn, doFlip);
+        }
 
         // Buttons. Three across the bottom row now that CONTROLS sits between
         // SAVE and BACK - shifted outward (was ±120) so the wider middle
@@ -233,6 +278,60 @@ export class SettingsScene extends Phaser.Scene {
         backBtn.on('pointerdown', doBack);
         ensureTapTarget(this, backBtn);
         this.menuNav.add(backBtn, doBack);
+
+        if (this.paged) this.showPage(0);
+    }
+
+    // Holiday W-55: the rows that follow go on `page`, column `col` (paged
+    // phone only; a desktop keeps colX/yPos as set). The column before is
+    // finished first.
+    startColumn(page, col) {
+        if (!this.paged) return;
+        this.endColumn();
+        this.curPage = page;
+        this.colX = this.rowsCfg.colX[col];
+        this.yPos = this.rowsCfg.top;
+        this.column = [];
+    }
+
+    // Holiday W-55: line the finished column's values up valueGap right of
+    // its widest label, and a slider's [+] and value stepGap after [-].
+    endColumn() {
+        if (!this.column) return;
+        const { valueGap, stepGap } = this.rowsCfg;
+        const vx = Math.max(...this.column.map((r) => r.label.x + r.label.width)) + valueGap;
+        for (const { parts } of this.column) {
+            let x = vx;
+            for (const o of parts) {
+                o.x = x;
+                x += o.width + stepGap;
+            }
+        }
+        this.column = null;
+    }
+
+    // Holiday W-55: a row's or head's texts belong to the current page; a
+    // row's height moves yPos on (paged), or the desktop's fixed step does.
+    track(objs, deskStep, gap, label = null, parts = []) {
+        if (!this.paged) {
+            this.yPos += deskStep;
+            return;
+        }
+        for (const o of objs) this.pageOf.set(o, this.curPage);
+        if (label) this.column.push({ label, parts });
+        this.yPos += Math.max(...objs.map((o) => o.height)) + gap;
+    }
+
+    showPage(page) {
+        this.page = page;
+        for (const [o, p] of this.pageOf) o.setVisible(p === page);
+        this.pageBtn.setText(this.rowsCfg.pageLabels[page]);
+        relayoutTapTargets(this);
+    }
+
+    focusPage(item) {
+        const p = this.pageOf && this.pageOf.get(item.gameObject);
+        if (p !== undefined && p !== this.page) this.showPage(p);
     }
 
     update() {
@@ -245,11 +344,11 @@ export class SettingsScene extends Phaser.Scene {
     }
 
     addSectionHeader(text) {
-        this.add.text(this.colX, this.yPos, text, {
-            font: 'bold 16px monospace',
+        const head = this.add.text(this.colX, this.yPos, text, {
+            font: this.headFont,
             fill: '#5599ff',
         });
-        this.yPos += 30;
+        this.track([head], 30, this.rowsCfg.headGap);
     }
 
     addToggle(label, key) {
@@ -263,13 +362,14 @@ export class SettingsScene extends Phaser.Scene {
             }
         };
 
-        this.add.text(this.colX + 20, this.yPos, `${label}: `, {
-            font: '14px monospace',
+        const dx = this.paged ? this.rowsCfg.labelDx : 20;
+        const labelText = this.add.text(this.colX + dx, this.yPos, `${label}: `, {
+            font: this.rowFont,
             fill: '#aaaacc',
         });
 
         const toggle = this.add.text(this.colX + 230, this.yPos, getValue() ? '[ON]' : '[OFF]', {
-            font: '14px monospace',
+            font: this.rowFont,
             fill: getValue() ? '#66ff66' : '#ff6666',
         }).setInteractive({ useHandCursor: true });
 
@@ -283,22 +383,25 @@ export class SettingsScene extends Phaser.Scene {
         this.menuNav.add(toggle, doToggle);
 
         this.controls.push({ key, toggle, isRuneToggle });
-        this.yPos += 25;
+        this.track([labelText, toggle], 25, this.rowsCfg.rowGap, labelText, [toggle]);
     }
 
     // Holiday W-31: a row that cycles through `options` (stored as given,
     // shown upper-case). A tap steps forward; left/right step on a pad.
     // `inline` ({ labelDx, valueDx } from colX) puts the choice on the
     // previous choice's line instead of a new one.
+    // Holiday W-55: a paged phone gives every choice its own row.
     addChoice(label, key, options, inline = null) {
+        if (this.paged) inline = null;
         const y = inline ? this.lastChoiceY : this.yPos;
-        const labelText = this.add.text(this.colX + (inline ? inline.labelDx : 20), y, `${label}: `, {
-            font: '14px monospace',
+        const dx = this.paged ? this.rowsCfg.labelDx : 20;
+        const labelText = this.add.text(this.colX + (inline ? inline.labelDx : dx), y, `${label}: `, {
+            font: this.rowFont,
             fill: '#aaaacc',
         });
         const show = () => `[${String(this.settings[key]).toUpperCase()}]`;
         const value = this.add.text(this.colX + (inline ? inline.valueDx : 230), y, show(), {
-            font: '14px monospace',
+            font: this.rowFont,
             fill: '#66ccff',
         }).setInteractive({ useHandCursor: true });
 
@@ -315,27 +418,28 @@ export class SettingsScene extends Phaser.Scene {
         this.controls.push({ key, choice: value });
         if (inline) return;
         this.lastChoiceY = this.yPos;
-        this.yPos += 25;
+        this.track([labelText, value], 25, this.rowsCfg.rowGap, labelText, [value]);
     }
 
     addSlider(label, key, min, max, step, formatter = (v) => v) {
-        const labelText = this.add.text(this.colX + 20, this.yPos, `${label}: `, {
-            font: '14px monospace',
+        const dx = this.paged ? this.rowsCfg.labelDx : 20;
+        const labelText = this.add.text(this.colX + dx, this.yPos, `${label}: `, {
+            font: this.rowFont,
             fill: '#aaaacc',
         });
 
         const valueText = this.add.text(this.colX + 330, this.yPos, `${formatter(this.settings[key])}`, {
-            font: '14px monospace',
+            font: this.rowFont,
             fill: '#ffffff',
         });
 
         const minus = this.add.text(this.colX + 230, this.yPos, '[-]', {
-            font: '14px monospace',
+            font: this.rowFont,
             fill: '#ff6666',
         }).setInteractive({ useHandCursor: true });
 
         const plus = this.add.text(this.colX + 280, this.yPos, '[+]', {
-            font: '14px monospace',
+            font: this.rowFont,
             fill: '#66ff66',
         }).setInteractive({ useHandCursor: true });
 
@@ -355,7 +459,7 @@ export class SettingsScene extends Phaser.Scene {
         this.menuNav.add(labelText, () => {}, { onStep: doStep });
 
         this.controls.push({ key, valueText, formatter });
-        this.yPos += 25;
+        this.track([labelText, valueText, minus, plus], 25, this.rowsCfg.rowGap, labelText, [minus, plus, valueText]);
     }
 
     applySettings() {

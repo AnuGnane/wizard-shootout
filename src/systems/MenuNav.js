@@ -39,6 +39,9 @@ export class MenuNav {
         this.grid = !!options.grid;
         this.padIndex = options.padIndex ?? 0;
         this.onBack = options.onBack || null;
+        // Holiday W-55: called with an item as it takes the focus, before the
+        // highlight moves (Settings shows the page the item is on).
+        this.onFocus = options.onFocus || null;
 
         // Highlight frame - a stroked, unfilled rectangle sized to the
         // focused item's bounds plus a little padding, exactly the same
@@ -90,6 +93,7 @@ export class MenuNav {
     setFocus(i) {
         if (i < 0 || i >= this.items.length) return;
         this.index = i;
+        if (this.onFocus) this.onFocus(this.items[i]);
         this.refresh();
     }
 
