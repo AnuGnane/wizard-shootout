@@ -212,7 +212,9 @@ export function menuFont(scene, font) {
 
 // Holiday W-58: a centred button whose grown label would pass a side of
 // the canvas moves in until it is TOUCH_CONFIG.menuEdgeInset clear of it.
+// A desktop's buttons stay where they were drawn.
 export function keepOnCanvas(scene, btn, x = btn.x) {
+    if (!isTouchDevice(scene)) return btn;
     const half = btn.width * Math.abs(btn.scaleX) / 2;
     const inset = TOUCH_CONFIG.menuEdgeInset;
     return btn.setX(Math.max(inset + half, Math.min(x, scene.scale.width - inset - half)));
