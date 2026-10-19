@@ -4231,8 +4231,8 @@ try {
     }
 
     // 3aa0i. Holiday W-56: small print on the result cards. On a 568x320
-    // touch phone a survival card (a new record), a 1P match card with two
-    // achievements and a Daily card each read at hudMinCss CSS px for every
+    // touch phone a survival card (a new record), a 1P match card with six
+    // achievements, a Daily card and a net card after them each read at hudMinCss CSS px for every
     // text, no two texts' bounds intersect, no text sits in a button's grown
     // hit area and no keyboard hint shows; a 1280x720 desktop keeps the 16
     // and 14 px lines and the SPACE / ESC hint (pinned).
@@ -4241,7 +4241,10 @@ try {
             { name: 'survival', match: { mode: 'survival', playerCount: 1, seatTypes: { 1: 'human', 2: 'off', 3: 'off', 4: 'off' } },
                 data: { isSurvival: true, wavesSurvived: 7, wave: 8, teamKills: 41, bestWave: 7 } },
             { name: '1p', match: { mode: '1p', playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } },
-                data: { winner: 1, scores: { 1: 5, 2: 3 }, rounds: 8, unlockedAchievements: ['First Blood', 'Untouchable Wizard Supreme'] } },
+                data: { winner: 1, scores: { 1: 5, 2: 3 }, rounds: 8, unlockedAchievements: ['First Blood', 'Untouchable', 'Elementalist', 'Wall Builder', 'Survivor', 'Sharpshooter'] } },
+            // A net card after a local one: no REMATCH (review of W-56).
+            { name: 'net', match: { mode: '2p', online: true, playerCount: 2, seatTypes: { 1: 'human', 2: 'human', 3: 'off', 4: 'off' } },
+                data: { winner: 2, scores: { 1: 2, 2: 3 }, rounds: 5 } },
             { name: 'daily', match: { mode: '1p', playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } },
                 data: { winner: 1, scores: { 1: 3, 2: 1 }, rounds: 4, isDaily: true, dailyStatus: { bestRounds: 4 } } },
         ];
@@ -4252,6 +4255,7 @@ try {
             for (const c of cards) {
                 await pg.evaluate(([m, d]) => {
                     Object.assign(window.__match, { online: false, isDailyChallenge: false }, m);
+                    if (m.online) window.__match.online = true;
                     const g = window.__game.scene;
                     const from = g.isActive('GameOverScene') ? 'GameOverScene' : 'MenuScene';
                     g.getScene(from).scene.start('GameOverScene', d);
@@ -4290,6 +4294,7 @@ try {
                     return { low, hit, inBtn, off, hint, small: size(/^(fell on|\d+ rounds played)/), ach: size(/^★ New/), best: size(/^(BEST|Best today)/) };
                 }, TOUCH_CONFIG.hudMinCss);
             }
+            await pg.evaluate(() => { window.__match.online = false; });
             return out;
         };
         const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
@@ -4302,8 +4307,8 @@ try {
         const d = await run(desk);
         await desk.close();
         const clean = (r) => !r.low.length && !r.hit.length && !r.inBtn.length && !r.off.length && !r.hint;
-        check('result small print: at 568x320 the survival, 1P and Daily cards read at hudMinCss, nothing overlaps or sits in a button, no key hint',
-            clean(p.survival) && clean(p['1p']) && clean(p.daily) && p['1p'].ach >= 14 && p.survival.best >= 16,
+        check('result small print: at 568x320 the survival, 1P, Daily and net cards read at hudMinCss, nothing overlaps or sits in a button, no key hint',
+            clean(p.survival) && clean(p['1p']) && clean(p.daily) && clean(p.net) && p['1p'].ach >= 14 && p.survival.best >= 16,
             JSON.stringify(p));
         check('result small print: a 1280x720 desktop keeps the 16 and 14 px lines and the SPACE / ESC hint',
             d.survival.small === 16 && d.survival.best === 16 && d['1p'].small === 16 && d['1p'].ach === 14

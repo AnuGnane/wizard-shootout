@@ -49,6 +49,7 @@ export class GameOverScene extends Phaser.Scene {
         this.touch = isTouchDevice(this);
         this.smallLines = [];
         this.stackAnchor = null;
+        this.restartBtn = null;
         this.font = (basePx, bold = false) => `${bold ? 'bold ' : ''}${menuFontPx(this, basePx)}px monospace`;
 
         if (this.isSurvival) {
@@ -313,11 +314,17 @@ export class GameOverScene extends Phaser.Scene {
         // see GameScene's trackProfile guard), so this and the daily's
         // best-today line below share the same y and never collide.
         if (this.unlockedAchievements.length > 0) {
-            // Holiday W-56: wrapped on a touch device, where it grows.
+            // Holiday W-56: wrapped on a touch device, where it grows, to at
+            // most achLines lines so the buttons stay on the canvas (STATS
+            // lists them all).
             this.smallLines.push(this.add.text(width / 2, 418, `★ New: ${this.unlockedAchievements.join(', ')}`, {
                 font: this.font(14),
                 fill: '#ffdd44',
-                ...(this.touch ? { align: 'center', wordWrap: { width: TOUCH_CONFIG.menuRows.result.wrapW } } : {}),
+                ...(this.touch ? {
+                    align: 'center',
+                    wordWrap: { width: TOUCH_CONFIG.menuRows.result.wrapW },
+                    maxLines: TOUCH_CONFIG.menuRows.result.achLines,
+                } : {}),
             }).setOrigin(0.5));
         }
 
