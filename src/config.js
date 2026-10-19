@@ -458,6 +458,13 @@ export const TOUCH_CONFIG = {
         // [ SHARE ] move down to sit btnGap under the stack when it reaches
         // them, and MAIN MENU with them.
         result: { gap: 4, wrapW: 440, achLines: 2, btnGap: 8 },
+        // The map editor (holiday W-57), on a touch device: the size and
+        // saved lines stack colGap under [ NEW / SIZE ], wrapping at colWrapW
+        // (clear of the widest grid, 25 tiles from x 335); a list modal's rows
+        // sit their measured height plus rowGap apart (36 at the least, the
+        // desktop's); the name field and its OK grow to the font plus
+        // fieldPad (30 on a desktop), the hint fieldGap under them.
+        editor: { colGap: 4, colWrapW: 290, rowGap: 4, fieldPad: 16, fieldGap: 4 },
         online: {
             cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,
             battleY: 352, mapCols: 6, mapSlotW: 162, mapY: 390, mapRowH: 108, nameGap: 2,

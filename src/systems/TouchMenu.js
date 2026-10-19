@@ -71,7 +71,7 @@ function layoutTarget(scene, obj) {
     const others = neighbours(scene, obj, N).map((o) => {
         const grown = targetsOf(scene).has(o);
         return { grown, r: grown ? frameRect(o) : hitRect(o) };
-    });
+    }).concat(obstaclesOf(scene, obj));
     // The boundary facing a neighbour: its edge, or half-way to a grown one.
     const edge = (mine, theirs, grown) => (grown ? (mine + theirs) / 2 : theirs);
 
@@ -136,6 +136,32 @@ function targetsOf(scene) {
         });
     }
     return scene.__tapTargets;
+}
+
+// Holiday W-57: texts the scene's grown hit areas stay clear of, as if each
+// were a neighbour that does not grow (a section head, a status line). A
+// `band` obstacle spans the whole width at its rows, for a centred line whose
+// text, and so its width, changes after layout.
+export function addTapObstacle(scene, obj, band = false) {
+    if (!scene.__tapObstacles) {
+        scene.__tapObstacles = new Map();
+        scene.events.once('shutdown', () => { scene.__tapObstacles = null; });
+    }
+    scene.__tapObstacles.set(obj, band);
+    return obj;
+}
+
+function obstaclesOf(scene, obj) {
+    if (!scene.__tapObstacles) return [];
+    const out = [];
+    for (const [o, band] of scene.__tapObstacles) {
+        // One under the target (a modal's button over the screen) is behind it.
+        if (o === obj || !o.scene || !o.visible || o.depth < obj.depth) continue;
+        const r = frameRect(o);
+        if (band) { r.x0 = -Infinity; r.x1 = Infinity; }
+        out.push({ grown: false, r });
+    }
+    return out;
 }
 
 // Grow `obj`'s rectangular hit area (it must already be interactive) to at
