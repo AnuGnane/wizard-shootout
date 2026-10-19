@@ -11,9 +11,9 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode, findRoomCode, ROOM_CODE_ALPHABET } from '../systems/NetSignal.js';
-import { ensureTapTarget, isTouchDevice } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
-import { SHARE_CONFIG, NET_CONFIG } from '../config.js';
+import { SHARE_CONFIG, NET_CONFIG, TOUCH_CONFIG, BALANCE_TALLY_CONFIG } from '../config.js';
 import { canShare, fillShare, joinLink, shareOrCopy } from '../systems/Share.js';
 import * as WakeLock from '../systems/WakeLock.js';
 
@@ -349,7 +349,9 @@ export class OnlineScene extends Phaser.Scene {
             height: h + 'px',
             background: readonly ? '#12122a' : '#1a1a30',
             color: '#cfd6ff',
-            font: '11px monospace',
+            // Holiday W-52: the overlay is scaled with the canvas, so a game
+            // px here reads as many CSS px as one on the canvas.
+            font: `${menuFontPx(this, 11)}px monospace`,
             border: '1px solid #33436a',
             borderRadius: '4px',
             padding: '6px',
@@ -371,7 +373,7 @@ export class OnlineScene extends Phaser.Scene {
             height: h + 'px',
             background: '#26385f',
             color: '#dfe6ff',
-            font: 'bold 13px monospace',
+            font: `bold ${menuFontPx(this, 13)}px monospace`,
             border: '1px solid #4a6bb0',
             borderRadius: '4px',
             cursor: 'pointer',
@@ -837,31 +839,44 @@ export class OnlineScene extends Phaser.Scene {
 
         this.lobbyNav = new MenuNav(this, { grid: true, padding: 4 });
 
+        // Holiday W-52: on a touch device the lobby's print grows to
+        // menuFontPx(), so the cards and the map strip take the touch rows
+        // (TOUCH_CONFIG.menuRows.online): shorter cards with the short class
+        // name and no passive, and the strip in rows wide enough for a name.
+        this.lobbyTouch = isTouchDevice(this) && menuFontPx(this, 9) > 9;
+        const L = this.lobbyTouch ? TOUCH_CONFIG.menuRows.online : null;
+
         // --- class cards ---
         const totalW = CLASS_KEYS.length * LOBBY_CARD_W + (CLASS_KEYS.length - 1) * LOBBY_CARD_GAP;
         const startX = width / 2 - totalW / 2 + LOBBY_CARD_W / 2;
+        const cardY = L ? L.cardTop + L.cardH / 2 : LOBBY_CLASS_Y;
         CLASS_KEYS.forEach((key, i) => {
-            this._createClassCard(startX + i * (LOBBY_CARD_W + LOBBY_CARD_GAP), LOBBY_CLASS_Y, key, i);
+            this._createClassCard(startX + i * (LOBBY_CARD_W + LOBBY_CARD_GAP), cardY, key, i);
         });
 
         // --- map strip (host) / a note that the host owns it (guest) ---
         if (isHost) {
-            this._lobbyText(width / 2, 418, 'BATTLEGROUND', 'bold 15px monospace', '#aab4e8');
+            this._lobbyText(width / 2, L ? L.battleY : 418, 'BATTLEGROUND', 'bold 15px monospace', '#aab4e8');
             const choices = [RANDOM_MAP, ...MAP_DEFS.map((def, i) => i)];
-            const stripW = choices.length * MAP_SLOT_W;
-            const mapX0 = width / 2 - stripW / 2 + MAP_SLOT_W / 2;
+            const cols = L ? L.mapCols : choices.length;
+            const slotW = L ? L.mapSlotW : MAP_SLOT_W;
             choices.forEach((choice, i) => {
-                this._createMapCard(mapX0 + i * MAP_SLOT_W, MAP_STRIP_Y, choice, i);
+                const row = Math.floor(i / cols);
+                const inRow = Math.min(cols, choices.length - row * cols);
+                const x0 = width / 2 - (inRow * slotW) / 2 + slotW / 2;
+                const y = L ? L.mapY + row * L.mapRowH : MAP_STRIP_Y;
+                this._createMapCard(x0 + (i % cols) * slotW, y, choice, i, row, i % cols);
             });
         } else {
             this._lobbyText(width / 2, 440, 'The host is choosing the battleground.',
                 '15px monospace', '#8888aa');
         }
 
-        this._lobbyText(width / 2, 548,
-            '←/→ move  ·  ENTER picks  ·  mouse works too  ·  ESC leaves',
-            '12px monospace', '#666688');
-        this.pickStatus = this._lobbyText(width / 2, 592, '', 'bold 15px monospace', '#66ff66');
+        this._lobbyText(width / 2, L ? L.hintY : 548,
+            L ? 'tap a wizard' + (isHost ? ' and a battleground' : '')
+                : '←/→ move  ·  ENTER picks  ·  mouse works too  ·  ESC leaves',
+            `${menuFontPx(this, 12)}px monospace`, '#666688');
+        this.pickStatus = this._lobbyText(width / 2, L ? L.pickY : 592, '', 'bold 15px monospace', '#66ff66');
 
         this._refreshLobby();
     }
@@ -877,24 +892,30 @@ export class OnlineScene extends Phaser.Scene {
     // "coming online soon" state left to draw.
     _createClassCard(x, y, key, index) {
         const cls = WIZARD_CLASSES[key];
-        const top = y - LOBBY_CARD_H / 2;
+        const L = this.lobbyTouch ? TOUCH_CONFIG.menuRows.online : null;
+        const cardH = L ? L.cardH : LOBBY_CARD_H;
+        const top = y - cardH / 2;
+        const fpx = (base) => menuFontPx(this, base);
 
-        const bg = this.add.rectangle(x, y, LOBBY_CARD_W, LOBBY_CARD_H, 0x1a1a2e);
+        const bg = this.add.rectangle(x, y, LOBBY_CARD_W, cardH, 0x1a1a2e);
         bg.setStrokeStyle(2, 0x3a3a5a);
 
-        const sprite = this.add.image(x, top + 42, `wizard_${key}_1`).setScale(2.4);
-        const name = this.add.text(x, top + 76, cls.name.toUpperCase(), {
-            font: 'bold 13px monospace', fill: '#ffffff',
+        const sprite = this.add.image(x, top + (L ? L.spriteY : 42), `wizard_${key}_1`).setScale(L ? L.spriteScale : 2.4);
+        const label = L ? BALANCE_TALLY_CONFIG.shortNames[key] || cls.name : cls.name;
+        const name = this.add.text(x, top + (L ? L.nameY : 76), label.toUpperCase(), {
+            font: `bold ${fpx(13)}px monospace`, fill: '#ffffff',
         }).setOrigin(0.5);
-        const sig = this.add.text(x, top + 96, cls.signature.label.toUpperCase(), {
-            font: 'bold 10px monospace', fill: '#ffdd44',
-        }).setOrigin(0.5);
+        const sig = this.add.text(x, top + (L ? L.sigY : 96), cls.signature.label.toUpperCase(), {
+            font: `bold ${fpx(10)}px monospace`, fill: '#ffdd44',
+            align: 'center',
+            wordWrap: L ? { width: LOBBY_CARD_W - 2 * L.pad } : null,
+        }).setOrigin(0.5, L ? 0 : 0.5);
         const note = this.add.text(x, top + 116, cls.passive, {
             font: '10px monospace',
             fill: '#8888aa',
             align: 'center',
             wordWrap: { width: LOBBY_CARD_W - 16 },
-        }).setOrigin(0.5, 0);
+        }).setOrigin(0.5, 0).setVisible(!L);
 
         const activate = () => this._pickClass(key);
         bg.setInteractive({ useHandCursor: true });
@@ -909,11 +930,13 @@ export class OnlineScene extends Phaser.Scene {
 
     // One map slot: a tiny layout preview plus the map's name. `choice` is a
     // MAP_DEFS index, or RANDOM_MAP for the roll-it card.
-    _createMapCard(x, y, choice, index) {
+    _createMapCard(x, y, choice, index, row = 0, col = index) {
         const isRandom = choice === RANDOM_MAP;
         const def = isRandom ? null : MAP_DEFS[choice];
+        const L = this.lobbyTouch ? TOUCH_CONFIG.menuRows.online : null;
+        const slotW = L ? L.mapSlotW : MAP_SLOT_W;
 
-        const bg = this.add.rectangle(x, y, MAP_SLOT_W - 6, MAP_SLOT_H, 0x1a1a2e);
+        const bg = this.add.rectangle(x, y, slotW - 6, MAP_SLOT_H, 0x1a1a2e);
         bg.setStrokeStyle(2, 0x3a3a5a);
         this.lobbyEls.push(bg);
 
@@ -927,12 +950,12 @@ export class OnlineScene extends Phaser.Scene {
         }
         this.lobbyEls.push(preview);
 
-        const name = this.add.text(x, y + MAP_SLOT_H / 2 + 9, isRandom ? 'RANDOM' : def.name.toUpperCase(), {
-            font: '9px monospace',
+        const name = this.add.text(x, y + MAP_SLOT_H / 2 + (L ? L.nameGap : 9), isRandom ? 'RANDOM' : def.name.toUpperCase(), {
+            font: `${menuFontPx(this, 9)}px monospace`,
             fill: isRandom ? '#66ff66' : '#aaaacc',
             align: 'center',
-            wordWrap: { width: MAP_SLOT_W - 2 },
-        }).setOrigin(0.5, 0.5);
+            wordWrap: { width: slotW - 2 },
+        }).setOrigin(0.5, L ? 0 : 0.5);
         this.lobbyEls.push(name);
 
         const activate = () => this._pickMap(choice);
@@ -940,7 +963,7 @@ export class OnlineScene extends Phaser.Scene {
         bg.on('pointerover', () => { if (this.pickedMapChoice !== choice) bg.setFillStyle(0x232340); });
         bg.on('pointerout', () => this._refreshLobby());
         bg.on('pointerdown', activate);
-        this.lobbyNav.add(bg, activate, { row: 1, col: index });
+        this.lobbyNav.add(bg, activate, { row: 1 + row, col });
 
         this.mapCards.push({ choice, bg, preview, name });
     }

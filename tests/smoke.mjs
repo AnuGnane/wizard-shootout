@@ -3844,6 +3844,104 @@ try {
             JSON.stringify({ maps: dMaps.sizes, ward: dWard.sizes }));
     }
 
+    // 3aa0e. Holiday W-52: small print on CLASS SELECT and ONLINE. On a
+    // 568x320 touch phone every text drawn under 14 game px is at least
+    // hudMinCss CSS px tall (ONLINE's textareas and buttons through the
+    // overlay's scale), no two texts' bounds intersect, all sit on the
+    // canvas and every class name on CLASS SELECT is whole; this holds on
+    // 1P and party CLASS SELECT, ONLINE's HOST and JOIN and the host's pick
+    // lobby. On a 1280x720 desktop the small sizes are today's (pinned).
+    {
+        const screens = {
+            '1p': ['ClassSelectScene', { mode: '1p' }, null],
+            party: ['ClassSelectScene', { mode: 'party' }, null],
+            host: ['OnlineScene', {}, 'host'],
+            join: ['OnlineScene', {}, 'join'],
+            lobby: ['OnlineScene', {}, 'lobby'],
+        };
+        const look = async (pg, name) => {
+            const [key, data, step] = screens[name];
+            // The same scene twice in a row: let the first one stop before
+            // starting it again.
+            await pg.evaluate(() => window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop()));
+            await pg.waitForFunction((key) => !window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await pg.evaluate(({ key, data }) => {
+                window.__match.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                window.__game.scene.start(key, data);
+            }, { key, data });
+            await pg.waitForFunction((key) => window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await pg.waitForTimeout(300);
+            await pg.evaluate((step) => {
+                const sc = window.__game.scene.getScene('OnlineScene');
+                if (step === 'host') sc.startHost();
+                else if (step === 'join') sc.startJoin();
+                else if (step === 'lobby') { sc.role = 'host'; sc._buildPickLobby(); }
+            }, step);
+            await pg.waitForTimeout(300);
+            return pg.evaluate(({ key, min }) => {
+                const sc = window.__game.scene.getScene(key);
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+                const px = (o) => parseFloat(o.style.fontSize);
+                const low = ts.filter((o) => px(o) < 14 && px(o) * k < min - 0.01).map((o) => o.text.slice(0, 16));
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 12)}|${ts[j].text.slice(0, 12)}`);
+                }
+                const off = ts.filter((o) => {
+                    const g = o.getBounds();
+                    return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700;
+                }).map((o) => o.text.slice(0, 12));
+                // The DOM overlay (textareas and buttons) is scaled with the canvas.
+                const scale = sc.overlay ? parseFloat(/scale\(([\d.]+)\)/.exec(sc.overlay.style.transform)?.[1]) : 1;
+                const els = sc.overlay ? [...sc.overlay.querySelectorAll('textarea, button')] : [];
+                const elPx = els.map((e) => parseFloat(/(\d+(?:\.\d+)?)px/.exec(e.style.font)[1]));
+                const elLow = els.filter((e, i) => elPx[i] * scale < min - 0.01).map((e) => e.tagName + ':' + e.textContent.slice(0, 10));
+                const size = (t) => { const o = ts.find((x) => x.text.startsWith(t)); return o ? px(o) : null; };
+                return {
+                    low, hit, off, elLow, els: els.length, elPx: [...new Set(elPx)].sort((a, b) => a - b),
+                    texts: ts.map((o) => o.text),
+                    sizes: key === 'ClassSelectScene'
+                        ? { element: size('ARCANE'), sig: size('BLINK'), desc: size('Teleport') }
+                        : { map: size('OPEN COURT'), sig: size('FLAME BURST'), passive: size('Burn immune') },
+                };
+            }, { key, min: TOUCH_CONFIG.hudMinCss });
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('small print 3 pageerror: ' + e.message));
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const p = {};
+        for (const name of Object.keys(screens)) p[name] = await look(phone, name);
+        const classNames = await phone.evaluate(async () => {
+            const { WIZARD_CLASSES, CLASS_KEYS } = await import('/wizard-shootout/src/systems/Classes.js');
+            return CLASS_KEYS.map((key) => WIZARD_CLASSES[key].name.toUpperCase());
+        });
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('small print 3 desktop pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const d = { '1p': await look(desk, '1p'), host: await look(desk, 'host'), lobby: await look(desk, 'lobby') };
+        await desk.close();
+        const clean = (r) => r.low.length === 0 && r.hit.length === 0 && r.off.length === 0 && r.elLow.length === 0;
+        const whole = (r) => classNames.length >= 7 && classNames.every((n) => r.texts.includes(n));
+        const brief = (r) => ({ ...r, texts: undefined });
+        check('small print: at 568x320 CLASS SELECT (1P and party) text under 14 game px is at least hudMinCss CSS px, none overlaps, every class name whole',
+            clean(p['1p']) && clean(p.party) && whole(p['1p']) && whole(p.party),
+            JSON.stringify({ '1p': brief(p['1p']), party: brief(p.party) }));
+        check('small print: at 568x320 ONLINE HOST, JOIN and the pick lobby keep their print and the code boxes\' buttons and textareas at hudMinCss CSS px, none overlaps',
+            clean(p.host) && clean(p.join) && clean(p.lobby) && p.host.els >= 4 && p.join.els >= 4,
+            JSON.stringify({ host: brief(p.host), join: brief(p.join), lobby: brief(p.lobby) }));
+        check('small print: a 1280x720 desktop keeps CLASS SELECT and ONLINE at today\'s sizes',
+            JSON.stringify(d['1p'].sizes) === JSON.stringify({ element: 12, sig: 10, desc: 11 })
+                && JSON.stringify(d.lobby.sizes) === JSON.stringify({ map: 9, sig: 10, passive: 10 })
+                && JSON.stringify(d.host.elPx) === JSON.stringify([11, 13]),
+            JSON.stringify({ cs: d['1p'].sizes, lobby: d.lobby.sizes, host: d.host.elPx }));
+    }
+
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
     // phone Settings shows TOUCH LAYOUT and saves LEFT; a 1P round then has
     // the joystick bottom-right and FIRE bottom-left (ORB to its right, PWR
