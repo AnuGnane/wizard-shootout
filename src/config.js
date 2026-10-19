@@ -451,6 +451,13 @@ export const TOUCH_CONFIG = {
             valueGap: 16, stepGap: 24, pageBtn: { x: 870, y: 40 },
             pageLabels: ['[ PAGE 1/2 > ]', '[ < PAGE 2/2 ]'],
         },
+        // The result cards (holiday W-56), on a touch device: the small lines
+        // under the score (or HORDE SLAIN) stack from its foot `gap` apart,
+        // the achievements line wrapping at wrapW to at most achLines lines;
+        // REMATCH / RUN IT BACK and
+        // [ SHARE ] move down to sit btnGap under the stack when it reaches
+        // them, and MAIN MENU with them.
+        result: { gap: 4, wrapW: 440, achLines: 2, btnGap: 8 },
         online: {
             cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,
             battleY: 352, mapCols: 6, mapSlotW: 162, mapY: 390, mapRowH: 108, nameGap: 2,

@@ -22,7 +22,7 @@ export function cssPerGamePx(scene) {
 }
 
 // World-space rectangle of an interactive object's current hit area.
-function hitRect(o) {
+export function hitRect(o) {
     const h = o.input.hitArea;
     const m = o.getWorldTransformMatrix();
     const sx = Math.hypot(m.a, m.b), sy = Math.hypot(m.c, m.d);

@@ -85,6 +85,9 @@
 //      read at hudMinCss with nothing overlapping, every row a focus stop
 //      that shows its page, and the pause note reads too; a desktop keeps
 //      one page and today's sizes (W-55),
+//   3aa0i. on a 568x320 phone the survival, 1P and Daily result cards read
+//      at hudMinCss with nothing overlapping or inside a button's grown
+//      area and no keyboard hint; a desktop keeps today's sizes (W-56),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -4225,6 +4228,92 @@ try {
             !d.paged && d.pages.length === 1 && d.pages[0].row === '14px' && d.pages[0].head === '16px'
                 && !d.pages[0].hit.length && d.nav.rows === d.nav.controls && !!d.pause && d.pause.px === '18px',
             JSON.stringify({ paged: d.paged, page: d.pages[0], nav: d.nav, pause: d.pause }));
+    }
+
+    // 3aa0i. Holiday W-56: small print on the result cards. On a 568x320
+    // touch phone a survival card (a new record), a 1P match card with six
+    // achievements, a Daily card and a net card after them each read at hudMinCss CSS px for every
+    // text, no two texts' bounds intersect, no text sits in a button's grown
+    // hit area and no keyboard hint shows; a 1280x720 desktop keeps the 16
+    // and 14 px lines and the SPACE / ESC hint (pinned).
+    {
+        const cards = [
+            { name: 'survival', match: { mode: 'survival', playerCount: 1, seatTypes: { 1: 'human', 2: 'off', 3: 'off', 4: 'off' } },
+                data: { isSurvival: true, wavesSurvived: 7, wave: 8, teamKills: 41, bestWave: 7 } },
+            { name: '1p', match: { mode: '1p', playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } },
+                data: { winner: 1, scores: { 1: 5, 2: 3 }, rounds: 8, unlockedAchievements: ['First Blood', 'Untouchable', 'Elementalist', 'Wall Builder', 'Survivor', 'Sharpshooter'] } },
+            // A net card after a local one: no REMATCH (review of W-56).
+            { name: 'net', match: { mode: '2p', online: true, playerCount: 2, seatTypes: { 1: 'human', 2: 'human', 3: 'off', 4: 'off' } },
+                data: { winner: 2, scores: { 1: 2, 2: 3 }, rounds: 5 } },
+            { name: 'daily', match: { mode: '1p', playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } },
+                data: { winner: 1, scores: { 1: 3, 2: 1 }, rounds: 4, isDaily: true, dailyStatus: { bestRounds: 4 } } },
+        ];
+        const run = async (pg) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            const out = {};
+            for (const c of cards) {
+                await pg.evaluate(([m, d]) => {
+                    Object.assign(window.__match, { online: false, isDailyChallenge: false }, m);
+                    if (m.online) window.__match.online = true;
+                    const g = window.__game.scene;
+                    const from = g.isActive('GameOverScene') ? 'GameOverScene' : 'MenuScene';
+                    g.getScene(from).scene.start('GameOverScene', d);
+                }, [c.match, c.data]);
+                await pg.waitForFunction(() => window.__game.scene.isActive('GameOverScene') && !!window.__game.scene.getScene('GameOverScene').shareBtn, null, { timeout: 5000 });
+                await pg.waitForTimeout(250);
+                out[c.name] = await pg.evaluate((min) => {
+                    const sc = window.__game.scene.getScene('GameOverScene');
+                    const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                    const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+                    const low = ts.filter((o) => o.displayHeight * k < min - 0.5).map((o) => `${o.text.slice(0, 16)}:${(o.displayHeight * k).toFixed(1)}`);
+                    const hit = [];
+                    for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                        const a = ts[i].getBounds(), b = ts[j].getBounds();
+                        if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 12)}|${ts[j].text.slice(0, 12)}`);
+                    }
+                    const rect = (o) => {
+                        const h = o.input.hitArea;
+                        const m = o.getWorldTransformMatrix();
+                        const sx = Math.hypot(m.a, m.b), sy = Math.hypot(m.c, m.d);
+                        const x0 = m.tx + (h.x - o.displayOriginX) * sx, y0 = m.ty + (h.y - o.displayOriginY) * sy;
+                        return { x0, y0, x1: x0 + h.width * sx, y1: y0 + h.height * sy };
+                    };
+                    const btns = ts.filter((o) => o.input && o.input.enabled);
+                    const inBtn = [];
+                    for (const o of ts.filter((x) => !btns.includes(x))) {
+                        const b = o.getBounds();
+                        for (const btn of btns) {
+                            const r = rect(btn);
+                            if (b.x < r.x1 && r.x0 < b.right && b.y < r.y1 && r.y0 < b.bottom) inBtn.push(`${o.text.slice(0, 12)}|${btn.text}`);
+                        }
+                    }
+                    const off = ts.filter((o) => { const g = o.getBounds(); return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700; }).map((o) => o.text.slice(0, 12));
+                    const hint = ts.some((o) => /SPACE|ESC/.test(o.text));
+                    const size = (re) => { const o = ts.find((x) => re.test(x.text)); return o ? parseFloat(o.style.fontSize) : null; };
+                    return { low, hit, inBtn, off, hint, small: size(/^(fell on|\d+ rounds played)/), ach: size(/^★ New/), best: size(/^(BEST|Best today)/) };
+                }, TOUCH_CONFIG.hudMinCss);
+            }
+            await pg.evaluate(() => { window.__match.online = false; });
+            return out;
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('result small print pageerror: ' + e.message));
+        const p = await run(phone);
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('result small print desktop pageerror: ' + e.message));
+        const d = await run(desk);
+        await desk.close();
+        const clean = (r) => !r.low.length && !r.hit.length && !r.inBtn.length && !r.off.length && !r.hint;
+        check('result small print: at 568x320 the survival, 1P, Daily and net cards read at hudMinCss, nothing overlaps or sits in a button, no key hint',
+            clean(p.survival) && clean(p['1p']) && clean(p.daily) && clean(p.net) && p['1p'].ach >= 14 && p.survival.best >= 16,
+            JSON.stringify(p));
+        check('result small print: a 1280x720 desktop keeps the 16 and 14 px lines and the SPACE / ESC hint',
+            d.survival.small === 16 && d.survival.best === 16 && d['1p'].small === 16 && d['1p'].ach === 14
+                && d.daily.best === 16 && d.survival.hint && d['1p'].hint && d.daily.hint,
+            JSON.stringify(d));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

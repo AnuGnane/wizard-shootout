@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG, TEAM_NAMES, SHARE_CONFIG } from '../config.js';
+import { PLAYER_CONFIG, TEAM_NAMES, SHARE_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { getTeamColors } from '../systems/TeamColors.js';
 import { MATCH_STATE, resetMatch } from '../systems/MatchState.js';
 import { clearSession } from '../systems/NetSession.js';
@@ -7,7 +7,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { ensureTapTarget, hitRect, isTouchDevice, menuFontPx, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
 
 export class GameOverScene extends Phaser.Scene {
@@ -44,11 +44,21 @@ export class GameOverScene extends Phaser.Scene {
         // Background
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
+        // Holiday W-56: the card's small lines (stacked under stackAnchor on
+        // a touch device, see stackLines) and the font sizes a phone reads.
+        this.touch = isTouchDevice(this);
+        this.smallLines = [];
+        this.stackAnchor = null;
+        this.restartBtn = null;
+        this.font = (basePx, bold = false) => `${bold ? 'bold ' : ''}${menuFontPx(this, basePx)}px monospace`;
+
         if (this.isSurvival) {
             this.createSurvivalResult(width, height);
         } else {
             this.createMatchResult(width, height);
         }
+        // Where the stacked small lines end (touch), for the buttons below.
+        const stackBottom = this.stackLines();
 
         // Leaving to the menu tears down a live net session first (close the
         // connection + drop online mode) so the next match starts clean. In
@@ -85,6 +95,7 @@ export class GameOverScene extends Phaser.Scene {
             restartBtn.on('pointerout', () => restartBtn.setStyle({ fill: '#ffffff' }));
             restartBtn.on('pointerdown', doRematch);
             this.menuNav.add(restartBtn, doRematch);
+            this.restartBtn = restartBtn;
         }
 
         // Holiday W-29: the Daily card shares (or, without a share sheet,
@@ -107,11 +118,28 @@ export class GameOverScene extends Phaser.Scene {
         ensureTapTarget(this, menuBtn);
         this.menuNav.add(menuBtn, goToMenu);
 
+        // Holiday W-56: the buttons move down together until the row under
+        // the stacked lines, grown hit areas included, is btnGap clear of
+        // them. Moving the row with MAIN MENU keeps the areas' shapes, so the
+        // second pass only adds what the grown areas reach above the labels.
+        if (stackBottom !== null) {
+            const row = [this.restartBtn, this.shareBtn].filter(Boolean);
+            const top = (o) => (o.input.customHitArea ? hitRect(o).y0 : o.getBounds().top);
+            for (let pass = 0; pass < 2; pass++) {
+                const shift = Math.max(0, Math.ceil(stackBottom + TOUCH_CONFIG.menuRows.result.btnGap - Math.min(...row.map(top))));
+                for (const o of [...row, menuBtn]) o.y += shift;
+                relayoutTapTargets(this);
+            }
+            this.menuNav.refresh();
+        }
+
         // Keyboard shortcut. SPACE (rematch) is suppressed in net mode; ESC
         // is now handled by menuNav's onBack above.
         if (!isNet) this.input.keyboard.once('keydown-SPACE', () => this.rematch());
 
-        // Hint
+        // Hint. Holiday W-56: not on a touch device, as the round's key hint
+        // bar (W-13); the buttons are the way out there.
+        if (this.touch) return;
         const hint = this.add.text(width / 2, 630, isNet ? 'ESC - Menu' : 'SPACE - Rematch | ESC - Menu', {
             font: '14px monospace',
             fill: '#666688',
@@ -119,11 +147,26 @@ export class GameOverScene extends Phaser.Scene {
         hint.setOrigin(0.5);
     }
 
+    // Holiday W-56: on a touch device, stack the card's small lines under
+    // stackAnchor from their grown heights (TOUCH_CONFIG.menuRows.result);
+    // returns the stack's foot, or null where nothing moves (a desktop
+    // keeps every line where it was drawn).
+    stackLines() {
+        if (!this.touch || !this.stackAnchor || !this.smallLines.length) return null;
+        const { gap } = TOUCH_CONFIG.menuRows.result;
+        let y = Math.max(...[].concat(this.stackAnchor).map((o) => o.getBounds().bottom)) + gap;
+        for (const line of this.smallLines) {
+            line.setY(y + line.displayHeight / 2);
+            y += line.displayHeight + gap;
+        }
+        return y - gap;
+    }
+
     // Phase 9b — survival run result: how many waves the co-op team survived,
     // the shared kill tally, and the local best to beat. No winner, no score.
     createSurvivalResult(width, height) {
         this.add.text(width / 2, 40, 'WAVE SURVIVAL', {
-            font: 'bold 22px monospace',
+            font: this.font(22, true),
             fill: '#ffbb55',
         }).setOrigin(0.5);
 
@@ -151,15 +194,15 @@ export class GameOverScene extends Phaser.Scene {
             repeat: -1,
         });
 
-        this.add.text(width / 2, 330, `HORDE SLAIN: ${this.teamKills}`, {
+        this.stackAnchor = this.add.text(width / 2, 330, `HORDE SLAIN: ${this.teamKills}`, {
             font: 'bold 26px monospace',
             fill: '#ffffff',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, 370, `fell on wave ${this.wave}`, {
-            font: '16px monospace',
+        this.smallLines.push(this.add.text(width / 2, 370, `fell on wave ${this.wave}`, {
+            font: this.font(16),
             fill: '#8888aa',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5));
 
         this.resultShareText = fillShare(SHARE_CONFIG.survival, {
             waves: this.wavesSurvived,
@@ -168,10 +211,10 @@ export class GameOverScene extends Phaser.Scene {
         });
 
         const isRecord = this.wavesSurvived > 0 && this.wavesSurvived >= this.bestWave;
-        this.add.text(width / 2, 405, isRecord ? `BEST: ${this.bestWave}  ★ new record` : `BEST: ${this.bestWave}`, {
-            font: '16px monospace',
+        this.smallLines.push(this.add.text(width / 2, 405, isRecord ? `BEST: ${this.bestWave}  ★ new record` : `BEST: ${this.bestWave}`, {
+            font: this.font(16),
             fill: isRecord ? '#66ff66' : '#8888aa',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5));
     }
 
     // The classic winner/score result. Unchanged from before Phase 9b — only
@@ -181,7 +224,7 @@ export class GameOverScene extends Phaser.Scene {
         // rather than a normal match.
         if (this.isDaily) {
             this.add.text(width / 2, 40, 'DAILY CHALLENGE', {
-                font: 'bold 22px monospace',
+                font: this.font(22, true),
                 fill: '#ffdd44',
             }).setOrigin(0.5);
         }
@@ -248,34 +291,41 @@ export class GameOverScene extends Phaser.Scene {
         if (isParty) {
             const segGap = 150;
             const startX = width / 2 - ((activeSeats.length - 1) * segGap) / 2;
-            activeSeats.forEach((n, i) => {
-                this.add.text(startX + i * segGap, 350, `${TEAM_NAMES[n - 1]} ${this.scores[n]}`, {
-                    font: 'bold 26px monospace',
-                    fill: '#' + teamColors[n - 1].toString(16).padStart(6, '0'),
-                }).setOrigin(0.5);
-            });
+            this.stackAnchor = activeSeats.map((n, i) => this.add.text(startX + i * segGap, 350, `${TEAM_NAMES[n - 1]} ${this.scores[n]}`, {
+                font: 'bold 26px monospace',
+                fill: '#' + teamColors[n - 1].toString(16).padStart(6, '0'),
+            }).setOrigin(0.5));
         } else {
             const scoreText = this.add.text(width / 2, 350, `${this.scores[1]}  -  ${this.scores[2]}`, {
                 font: 'bold 44px monospace',
                 fill: '#ffffff',
             });
             scoreText.setOrigin(0.5);
+            this.stackAnchor = scoreText;
         }
 
-        this.add.text(width / 2, 392, `${this.rounds} rounds played`, {
-            font: '16px monospace',
+        this.smallLines.push(this.add.text(width / 2, 392, `${this.rounds} rounds played`, {
+            font: this.font(16),
             fill: '#8888aa',
-        }).setOrigin(0.5);
+        }).setOrigin(0.5));
 
         // Phase 6a: newly-unlocked achievements from this match, if any.
         // Never happens for a daily (achievements are skipped during one —
         // see GameScene's trackProfile guard), so this and the daily's
         // best-today line below share the same y and never collide.
         if (this.unlockedAchievements.length > 0) {
-            this.add.text(width / 2, 418, `★ New: ${this.unlockedAchievements.join(', ')}`, {
-                font: '14px monospace',
+            // Holiday W-56: wrapped on a touch device, where it grows, to at
+            // most achLines lines so the buttons stay on the canvas (STATS
+            // lists them all).
+            this.smallLines.push(this.add.text(width / 2, 418, `★ New: ${this.unlockedAchievements.join(', ')}`, {
+                font: this.font(14),
                 fill: '#ffdd44',
-            }).setOrigin(0.5);
+                ...(this.touch ? {
+                    align: 'center',
+                    wordWrap: { width: TOUCH_CONFIG.menuRows.result.wrapW },
+                    maxLines: TOUCH_CONFIG.menuRows.result.achLines,
+                } : {}),
+            }).setOrigin(0.5));
         }
 
         // Phase 6b: today's best result, so a daily loss still shows what
@@ -286,10 +336,10 @@ export class GameOverScene extends Phaser.Scene {
             const bestText = hasBest
                 ? `Best today: ${status.bestRounds} round${status.bestRounds === 1 ? '' : 's'}`
                 : 'Not beaten yet';
-            this.add.text(width / 2, 418, bestText, {
-                font: '16px monospace',
+            this.smallLines.push(this.add.text(width / 2, 418, bestText, {
+                font: this.font(16),
                 fill: hasBest ? '#66ff66' : '#8888aa',
-            }).setOrigin(0.5);
+            }).setOrigin(0.5));
         }
     }
 
