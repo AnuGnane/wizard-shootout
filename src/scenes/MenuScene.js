@@ -289,9 +289,6 @@ export class MenuScene extends Phaser.Scene {
         return btn;
     }
 
-    // Smaller, subtler variant of makeButton for the secondary utility row
-    // (STATS, and later Daily/Wardrobe) — a compact 16px label rather than a
-    // full mode button.
     // Holiday W-53: on a touch device the gamepad line shows only while a
     // pad is connected (the native flag, as TouchControls reads it, W-24).
     showGamepadLineWhilePadConnected(text) {
@@ -309,6 +306,9 @@ export class MenuScene extends Phaser.Scene {
         });
     }
 
+    // Smaller, subtler variant of makeButton for the secondary utility row
+    // (STATS, and later Daily/Wardrobe) — a compact 16px label rather than a
+    // full mode button.
     makeSmallButton(x, y, label, onClick) {
         const btn = this.add.text(x, y, label, {
             font: '16px monospace',
