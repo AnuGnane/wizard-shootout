@@ -256,10 +256,13 @@ export const APP_UPDATE_CONFIG = {
         font: '16px monospace', padding: { x: 14, y: 6 },
         fill: '#ffdd44', hover: '#ffffff', bg: '#3a3a1a',
     },
+    // On a touch device the version grows to menuFontPx() and sits at
+    // touchY, the footer hint's row (TOUCH_CONFIG.menuRows.menu.hintY), right
+    // of the hint (holiday W-53).
     version: {
         prefix: 'build ',
-        x: 1012, y: 690,
-        font: '12px monospace', fill: '#555577',
+        x: 1012, y: 690, touchY: 664,
+        fontPx: 12, fill: '#555577',
     },
 };
 
@@ -426,6 +429,14 @@ export const TOUCH_CONFIG = {
         // BATTLEGROUND's y, the map strip in rows of mapCols slots mapSlotW
         // wide from mapY, mapRowH apart, each name nameGap under its slot;
         // the tap hint's and the picks line's y.
+        // The main menu (holiday W-53), on a touch device: the Daily
+        // subtitle's y, the orb row's icon y and scale, label y and spacing
+        // (a grown label is wider than the desktop's 70), the gamepad line's
+        // y (shown only while a pad is connected) and the footer hint's y.
+        menu: {
+            dailyY: 540, orbY: 573, orbScale: 1, orbLabelY: 603, orbSpacing: 92,
+            padY: 634, hintY: 664,
+        },
         online: {
             cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,
             battleY: 352, mapCols: 6, mapSlotW: 162, mapY: 390, mapRowH: 108, nameGap: 2,

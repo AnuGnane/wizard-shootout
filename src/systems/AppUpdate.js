@@ -17,7 +17,7 @@
 //     __BUILD__ define ('dev' on the dev server), shown in the menu footer.
 
 import { APP_UPDATE_CONFIG } from '../config.js';
-import { ensureTapTarget } from './TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx } from './TouchMenu.js';
 
 // eslint-disable-next-line no-undef
 export const BUILD_VERSION = typeof __BUILD__ !== 'undefined' ? __BUILD__ : 'dev';
@@ -59,8 +59,11 @@ export function watchForUpdates(registration) {
 
 // The footer's build version, bottom right of `scene` (MenuScene).
 export function addVersionText(scene) {
-    const { prefix, x, y, font, fill } = APP_UPDATE_CONFIG.version;
-    return scene.add.text(x, y, prefix + BUILD_VERSION, { font, fill }).setOrigin(1, 0.5);
+    const { prefix, x, y, touchY, fontPx, fill } = APP_UPDATE_CONFIG.version;
+    const touch = isTouchDevice(scene);
+    return scene.add.text(x, touch ? touchY : y, prefix + BUILD_VERSION, {
+        font: `${menuFontPx(scene, fontPx)}px monospace`, fill,
+    }).setOrigin(1, 0.5);
 }
 
 // On MenuScene: the reload button, now if an update is ready, else as soon

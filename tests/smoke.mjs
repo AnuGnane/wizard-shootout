@@ -1705,7 +1705,7 @@ try {
             await page.goto(url, { waitUntil: 'networkidle' });
             await page.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
             await page.waitForTimeout(150);
-            const r = await page.evaluate(() => {
+            const r = await page.evaluate((touchHintY) => {
                 const s = window.__game.scene.getScene('MenuScene');
                 const list = s.children.list;
                 const note = list.find((o) => o.name === 'installNote' && o.active);
@@ -1724,9 +1724,10 @@ try {
                     inside: note ? note.getBounds().x >= 0 && note.getBounds().right <= 1024 && note.getBounds().y >= 0 : false,
                     bounds: note ? (({ x, y, right, bottom }) => ({ x, y, right, bottom }))(note.getBounds()) : null,
                     hits, btn: !!btn, toggle: list.some((o) => o.name === 'fullscreenToggle'),
-                    footer: list.find((o) => o.type === 'Text' && o.y === 690 && o.originX === 0.5)?.text || '',
+                    // The footer: at 690, or on a touch device its W-53 row.
+                    footer: list.find((o) => o.type === 'Text' && (o.y === 690 || o.y === touchHintY) && o.originX === 0.5)?.text || '',
                 };
-            });
+            }, TOUCH_CONFIG.menuRows.menu.hintY);
             await ctx.close();
             return r;
         };
@@ -3940,6 +3941,72 @@ try {
                 && JSON.stringify(d.lobby.sizes) === JSON.stringify({ map: 9, sig: 10, passive: 10 })
                 && JSON.stringify(d.host.elPx) === JSON.stringify([11, 13]),
             JSON.stringify({ cs: d['1p'].sizes, lobby: d.lobby.sizes, host: d.host.elPx }));
+    }
+
+    // 3aa0f. Holiday W-53: the main menu's small lines. On a 568x320 touch
+    // phone every text drawn under 14 game px, and the footer hint, is at
+    // least hudMinCss CSS px tall, no two texts' bounds intersect, all sit on
+    // the canvas, no keyboard hint shows, and the gamepad line shows once a
+    // pad is reported connected (W-24's stub) and goes when it disconnects;
+    // on a 1280x720 desktop the three hints show at today's sizes (pinned).
+    {
+        const look = (pg) => pg.evaluate((min) => {
+            const sc = window.__game.scene.getScene('MenuScene');
+            const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+            const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+            const px = (o) => parseFloat(o.style.fontSize);
+            const footer = (o) => /start game|Home Screen/.test(o.text);
+            const low = ts.filter((o) => (px(o) < 14 || footer(o)) && px(o) * k < min - 0.01).map((o) => o.text.slice(0, 16));
+            const hit = [];
+            for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                const a = ts[i].getBounds(), b = ts[j].getBounds();
+                if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 12)}|${ts[j].text.slice(0, 12)}`);
+            }
+            const off = ts.filter((o) => {
+                const g = o.getBounds();
+                return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700;
+            }).map((o) => o.text.slice(0, 12));
+            const size = (t) => { const o = ts.find((x) => x.text.startsWith(t)); return o ? px(o) : null; };
+            return {
+                low, hit, off,
+                keys: ts.filter((o) => /^Player [12] /.test(o.text)).length,
+                pad: ts.some((o) => o.text.startsWith('Gamepads:')),
+                sizes: { daily: size('today:'), orb: size('Burn'), keys: size('Player 1'), pad: size('Gamepads:'), footer: ts.filter(footer).map(px)[0] },
+            };
+        }, TOUCH_CONFIG.hudMinCss);
+        const pad = (pg, ev) => pg.evaluate((ev) => {
+            window.__game.scene.getScene('MenuScene').input.gamepad.emit(ev, { id: 'stub pad', index: 0, connected: ev === 'connected' }, {});
+        }, ev);
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('menu small lines pageerror: ' + e.message));
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await phone.waitForTimeout(300);
+        const before = await look(phone);
+        await pad(phone, 'connected');
+        const withPad = await look(phone);
+        await pad(phone, 'disconnected');
+        const after = await look(phone);
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('menu small lines desktop pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await desk.waitForTimeout(300);
+        const d = await look(desk);
+        await desk.close();
+        const clean = (r) => r.low.length === 0 && r.hit.length === 0 && r.off.length === 0 && r.keys === 0;
+        check('menu small lines: at 568x320 the main menu\'s text under 14 game px and the footer hint are at least hudMinCss CSS px, none overlaps, no keyboard hint',
+            clean(before) && clean(withPad) && before.sizes.daily >= 14 && before.sizes.orb >= 14,
+            JSON.stringify({ before, withPad }));
+        check('menu small lines: the phone\'s gamepad line shows while a pad is connected and goes when it disconnects',
+            !before.pad && withPad.pad && !after.pad,
+            JSON.stringify({ before: before.pad, withPad: withPad.pad, after: after.pad }));
+        check('menu small lines: a 1280x720 desktop keeps the keyboard and gamepad hints at today\'s sizes',
+            d.keys === 2 && d.pad
+                && JSON.stringify(d.sizes) === JSON.stringify({ daily: 11, orb: 11, keys: 13, pad: 12, footer: 14 }),
+            JSON.stringify(d));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
