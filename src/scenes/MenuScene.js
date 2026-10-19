@@ -88,6 +88,11 @@ export class MenuScene extends Phaser.Scene {
         // against the bottom edge). ONLINE + SETTINGS use the compact 20px size
         // so SETTINGS still clears the secondary row — verified overlap-free by
         // screenshot.
+        // Holiday W-58: on a touch device the 20px buttons and the secondary
+        // row grow to menuFontPx() and take the touch rows below PARTY
+        // (TOUCH_CONFIG.menuRows.menu).
+        const touch = isTouchDevice(this);
+        const R = touch ? TOUCH_CONFIG.menuRows.menu : null;
         this.makeButton(width / 2, 258, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
         this.makeButton(width / 2, 314, '[ 2 PLAYERS ]', '#336633', '#66ff66',
             (pointer) => secondDevice('2p', pointer, () => this.startGame('2p')));
@@ -99,13 +104,13 @@ export class MenuScene extends Phaser.Scene {
         // compact 20px buttons: SURVIVAL is ~194px wide and ONLINE ~218px, so
         // at ±112 from center they span 303-497 and 515-733, an 18px gap
         // between them and ~290px clear on either outer edge.
-        this.makeButton(width / 2 - 112, 421, '[ SURVIVAL ]', '#5a3a1a', '#ffbb55',
+        this.makeButton(width / 2 - (R ? R.pairDx : 112), R ? R.pairY : 421, '[ SURVIVAL ]', '#5a3a1a', '#ffbb55',
             () => this.startGame('survival'), '20px');
-        this.makeButton(width / 2 + 112, 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
+        this.makeButton(width / 2 + (R ? R.pairDx : 112), R ? R.pairY : 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
             audio.uiClick();
             this.scene.start('OnlineScene');
         }, '20px');
-        this.makeButton(width / 2, 468, '[ SETTINGS ]', '#333355', '#5599ff', () => {
+        this.makeButton(width / 2, R ? R.settingsY : 468, '[ SETTINGS ]', '#333355', '#5599ff', () => {
             audio.uiClick();
             this.scene.start('SettingsScene');
         }, '20px');
@@ -125,10 +130,12 @@ export class MenuScene extends Phaser.Scene {
         const secondarySpacing = 175;
         const secondarySlots = 4;
         const secondaryStartX = width / 2 - ((secondarySlots - 1) * secondarySpacing) / 2;
-        this.makeSmallButton(secondaryStartX, 509, '[ STATS ]', () => {
+        const secondaryY = R ? R.smallY : 509;
+        const secondary = [];
+        secondary.push(this.makeSmallButton(secondaryStartX, secondaryY, '[ STATS ]', () => {
             audio.uiClick();
             this.scene.start('StatsScene');
-        });
+        }));
 
         // Phase 6b: [ DAILY ] takes the reserved CENTER slot (Wardrobe stays
         // reserved on the right for a later phase). A tiny subtitle beneath
@@ -142,40 +149,50 @@ export class MenuScene extends Phaser.Scene {
         // gamepad/hint block below is nudged down by 10px, opening enough
         // clearance for this subtitle at y=532 to clear both neighbors.
         const dailyX = secondaryStartX + secondarySpacing;
-        this.makeSmallButton(dailyX, 509, '[ DAILY ]', () => {
+        secondary.push(this.makeSmallButton(dailyX, secondaryY, '[ DAILY ]', () => {
             audio.uiClick();
             DailyChallenge.startChallenge(this);
-        });
+        }));
 
         // Holiday W-53: on a touch device the small lines below grow to
         // menuFontPx() and take the touch rows (TOUCH_CONFIG.menuRows.menu);
         // the keyboard hints go, and the gamepad line shows while a pad is
         // connected.
-        const touch = isTouchDevice(this);
-        const R = touch ? TOUCH_CONFIG.menuRows.menu : null;
 
         const dailyStatus = getDailyStatus();
         const dailySubtitle = dailyStatus.won
             ? `today: best ${dailyStatus.bestRounds}`
             : 'today: new!';
-        this.add.text(dailyX, R ? R.dailyY : 532, dailySubtitle, {
+        const dailyLine = this.add.text(dailyX, R ? R.dailyY : 532, dailySubtitle, {
             font: `${menuFontPx(this, 11)}px monospace`,
             fill: dailyStatus.won ? '#66ff66' : '#ffdd44',
         }).setOrigin(0.5);
 
         // Phase 6c: [ WARDROBE ] fills the reserved RIGHT secondary slot.
         const wardrobeX = secondaryStartX + 2 * secondarySpacing;
-        this.makeSmallButton(wardrobeX, 509, '[ WARDROBE ]', () => {
+        secondary.push(this.makeSmallButton(wardrobeX, secondaryY, '[ WARDROBE ]', () => {
             audio.uiClick();
             this.scene.start('WardrobeScene');
-        });
+        }));
 
         // Phase 9a: [ MAP EDITOR ] — build your own arena; saved maps show up
         // on the map-select screen right after the built-ins.
-        this.makeSmallButton(secondaryStartX + 3 * secondarySpacing, 509, '[ MAP EDITOR ]', () => {
+        secondary.push(this.makeSmallButton(secondaryStartX + 3 * secondarySpacing, secondaryY, '[ MAP EDITOR ]', () => {
             audio.uiClick();
             this.scene.start('MapEditorScene');
-        });
+        }));
+        // Holiday W-58: grown labels outgrow the fixed spacing, so on a touch
+        // device the row is laid out by width, smallGap apart, and the Daily
+        // line follows its button.
+        if (R) {
+            const rowW = secondary.reduce((w, b) => w + b.width, 0) + (secondary.length - 1) * R.smallGap;
+            let x = width / 2 - rowW / 2;
+            for (const b of secondary) {
+                b.setX(x + b.width / 2);
+                x += b.width + R.smallGap;
+            }
+            dailyLine.setX(secondary[1].x);
+        }
 
         // Orb legend
         const orbs = [
@@ -275,7 +292,7 @@ export class MenuScene extends Phaser.Scene {
 
     makeButton(x, y, label, bgColor, hoverColor, onClick, fontSize = '26px') {
         const btn = this.add.text(x, y, label, {
-            font: `${fontSize} monospace`,
+            font: `${menuFontPx(this, parseInt(fontSize, 10))}px monospace`,
             fill: '#ffffff',
             backgroundColor: bgColor,
             padding: { x: 25, y: 10 },
@@ -311,7 +328,7 @@ export class MenuScene extends Phaser.Scene {
     // full mode button.
     makeSmallButton(x, y, label, onClick) {
         const btn = this.add.text(x, y, label, {
-            font: '16px monospace',
+            font: `${menuFontPx(this, 16)}px monospace`,
             fill: '#8899cc',
             backgroundColor: '#1a1a2e',
             padding: { x: 14, y: 6 },

@@ -204,6 +204,20 @@ export function menuFontPx(scene, basePx) {
     return isTouchDevice(scene) ? Math.max(basePx, menuFontFloor(scene)) : basePx;
 }
 
+// Holiday W-58: a font string ('bold 16px monospace') with its px size
+// passed through menuFontPx(), for the buttons whose font lives in config.js.
+export function menuFont(scene, font) {
+    return font.replace(/(\d+)px/, (m, n) => `${menuFontPx(scene, Number(n))}px`);
+}
+
+// Holiday W-58: a centred button whose grown label would pass a side of
+// the canvas moves in until it is TOUCH_CONFIG.menuEdgeInset clear of it.
+export function keepOnCanvas(scene, btn, x = btn.x) {
+    const half = btn.width * Math.abs(btn.scaleX) / 2;
+    const inset = TOUCH_CONFIG.menuEdgeInset;
+    return btn.setX(Math.max(inset + half, Math.min(x, scene.scale.width - inset - half)));
+}
+
 // A footer hint: `keys` on a desktop, `touch` on a touch device.
 export function backHint(scene, keys, touch) {
     return isTouchDevice(scene) ? touch : keys;
@@ -213,7 +227,7 @@ export function backHint(scene, keys, touch) {
 export function addBackButton(scene, onBack) {
     const { x, y } = TOUCH_CONFIG.menuBack;
     const btn = scene.add.text(x, y, '[ BACK ]', {
-        font: '18px monospace',
+        font: `${menuFontPx(scene, 18)}px monospace`,
         fill: '#ffffff',
         backgroundColor: '#333355',
         padding: { x: 12, y: 8 },
@@ -221,5 +235,6 @@ export function addBackButton(scene, onBack) {
     btn.on('pointerover', () => btn.setStyle({ fill: '#5599ff' }));
     btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' }));
     btn.on('pointerdown', () => onBack());
+    keepOnCanvas(scene, btn);
     return ensureTapTarget(scene, btn);
 }

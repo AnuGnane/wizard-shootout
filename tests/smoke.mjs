@@ -91,6 +91,10 @@
 //   3aa0j. on a 568x320 phone the map editor, its size menu, its LOAD list
 //      and its name field read at hudMinCss with nothing overlapping or
 //      inside a button's grown area; a desktop keeps today's sizes (W-57),
+//   3aa0k. on a 568x320 phone every text on CLASS SELECT, CONTROLS, MAP
+//      SELECT, WARDROBE and the main menu, buttons included, reads at
+//      hudMinCss with nothing overlapping or off the canvas; a desktop keeps
+//      today's sizes (W-58),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -4419,6 +4423,84 @@ try {
             JSON.stringify(d.editor.sizes) === JSON.stringify({ name: 16, size: 13, saved: 12, paint: 14 })
                 && d.sizeMenu.sizes.row === 16 && !!d.field && d.field.h === '30px' && !d.editor.hit.length,
             JSON.stringify({ editor: d.editor.sizes, menu: d.sizeMenu.sizes, field: d.field, hit: d.editor.hit }));
+    }
+
+    // 3aa0k. Holiday W-58: the texts between 14 px and the floor on CLASS
+    // SELECT (1P, 2P, party, the survival SOLO / DUO step and DUO's cards),
+    // CONTROLS, MAP SELECT, WARDROBE and the main menu. On a 568x320 touch
+    // phone every visible text, buttons included, is at least hudMinCss CSS
+    // px tall (through a card layer's scale), no two texts' bounds intersect
+    // and all sit on the canvas; on a 1280x720 desktop the grown sizes are
+    // today's (pinned).
+    {
+        const screens = [
+            ['MenuScene', {}], ['ClassSelectScene', { mode: '1p' }], ['ClassSelectScene', { mode: '2p' }],
+            ['ClassSelectScene', { mode: 'party' }], ['ClassSelectScene', { mode: 'survival' }],
+            ['ClassSelectScene', { mode: 'survival', duo: true }], ['ControlsScene', {}],
+            ['MapSelectScene', { mode: '1p' }], ['WardrobeScene', {}],
+        ];
+        const look = async (pg, key, data) => {
+            await pg.evaluate(() => window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop()));
+            await pg.waitForFunction((key) => !window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await pg.evaluate(({ key, data }) => {
+                window.__match.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                window.__game.scene.start(key, data);
+            }, { key, data });
+            await pg.waitForFunction((key) => window.__game.scene.isActive(key), key, { timeout: 5000 });
+            await pg.waitForTimeout(300);
+            return pg.evaluate(({ key, min }) => {
+                const sc = window.__game.scene.getScene(key);
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = [];
+                const walk = (list) => list.forEach((o) => {
+                    if (o.type === 'Container' && o.visible) walk(o.list);
+                    else if (o.type === 'Text' && o.visible && o.text) ts.push(o);
+                });
+                walk(sc.children.list);
+                const scale = (o) => { let s = o.scaleY; for (let p = o.parentContainer; p; p = p.parentContainer) s *= p.scaleY; return s; };
+                const px = (o) => parseFloat(o.style.fontSize);
+                const low = ts.filter((o) => px(o) * scale(o) * k < min - 0.01).map((o) => `${o.text.slice(0, 16)}@${px(o)}`);
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 12)}|${ts[j].text.slice(0, 12)}`);
+                }
+                const off = ts.filter((o) => {
+                    const g = o.getBounds();
+                    return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700;
+                }).map((o) => o.text.slice(0, 12));
+                const size = (t) => { const o = ts.find((x) => x.text.startsWith(t)); return o ? px(o) : null; };
+                return {
+                    n: ts.length, low, hit, off,
+                    sizes: { survival: size('[ SURVIVAL ]'), stats: size('[ STATS ]'), arcanist: size('ARCANIST'),
+                        p1: size('P1: '), up: size('UP'), player: size('PLAYER 1'), diff: size('BOT DIFFICULTY'),
+                        robe: size('ROBE'), sub: size('Customize') },
+                };
+            }, { key, min: TOUCH_CONFIG.hudMinCss });
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('floor part 1 pageerror: ' + e.message));
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const p = [];
+        for (const [key, data] of screens) p.push({ key, data, ...(await look(phone, key, data)) });
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('floor part 1 desktop pageerror: ' + e.message));
+        await desk.goto(url, { waitUntil: 'networkidle' });
+        await desk.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const d = {};
+        for (const [key, data] of [screens[0], screens[1], screens[6], screens[7], screens[8]]) d[key] = (await look(desk, key, data)).sizes;
+        await desk.close();
+        const bad = p.filter((r) => r.n === 0 || r.low.length || r.hit.length || r.off.length);
+        check('floor part 1: at 568x320 every text on CLASS SELECT, CONTROLS, MAP SELECT, WARDROBE and the main menu is at least hudMinCss CSS px, none overlaps, all on the canvas',
+            bad.length === 0, JSON.stringify(bad.length ? bad.map(({ sizes, ...r }) => r) : p.map((r) => `${r.key}${r.data.mode ? ':' + r.data.mode : ''}=${r.n}`)));
+        check('floor part 1: a 1280x720 desktop keeps those screens\' 14 to 20 px texts at today\'s sizes',
+            d.MenuScene.survival === 20 && d.MenuScene.stats === 16 && d.ClassSelectScene.arcanist === 15
+                && d.ClassSelectScene.p1 === 14 && d.ControlsScene.up === 14 && d.ControlsScene.player === 16
+                && d.MapSelectScene.diff === 14 && d.WardrobeScene.robe === 16 && d.WardrobeScene.sub === 14,
+            JSON.stringify(d));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

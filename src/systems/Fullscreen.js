@@ -15,7 +15,7 @@
 // turned upright.
 
 import { TOUCH_CONFIG } from '../config.js';
-import { ensureTapTarget, isTouchDevice } from './TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, keepOnCanvas, menuFont } from './TouchMenu.js';
 
 const query = (q) => typeof window.matchMedia === 'function' && window.matchMedia(q).matches;
 
@@ -34,7 +34,18 @@ export function fullscreenOffer(scene) {
     return document.fullscreenEnabled === true && scene.scale.fullscreen.available ? 'toggle' : 'hint';
 }
 
-const label = (scene) => (scene.scale.isFullscreen ? '[ EXIT FULL SCREEN ]' : '[ FULL SCREEN ]');
+const LABELS = ['[ FULL SCREEN ]', '[ EXIT FULL SCREEN ]'];
+const label = (scene) => LABELS[scene.scale.isFullscreen ? 1 : 0];
+
+// Holiday W-58: the leftmost x the toggle reaches under either label, so a
+// neighbour to its left stays clear when it grows to EXIT FULL SCREEN.
+export function toggleLeftmostX(toggle) {
+    const was = toggle.text;
+    const xs = LABELS.map((t) => { toggle.setText(t); toggle.__keepOn(); return toggle.getBounds().x; });
+    toggle.setText(was);
+    toggle.__keepOn();
+    return Math.min(...xs);
+}
 
 // Add the toggle to `scene` at TOUCH_CONFIG.fullscreenButton[where] ('menu' or
 // 'pause') when fullscreenOffer() says so; returns it, or null. Its hit area
@@ -44,7 +55,7 @@ export function addFullscreenToggle(scene, where, depth = 0) {
     if (fullscreenOffer(scene) !== 'toggle') return null;
     const { fill, hover, bg, font, padding } = TOUCH_CONFIG.fullscreenButton;
     const { x, y } = TOUCH_CONFIG.fullscreenButton[where];
-    const btn = scene.add.text(x, y, label(scene), { font, fill, backgroundColor: bg, padding }).setOrigin(0.5).setDepth(depth).setInteractive({ useHandCursor: true });
+    const btn = scene.add.text(x, y, label(scene), { font: menuFont(scene, font), fill, backgroundColor: bg, padding }).setOrigin(0.5).setDepth(depth).setInteractive({ useHandCursor: true });
     btn.name = 'fullscreenToggle';
     btn.on('pointerover', () => btn.setStyle({ fill: hover }));
     btn.on('pointerout', () => btn.setStyle({ fill }));
@@ -55,10 +66,15 @@ export function addFullscreenToggle(scene, where, depth = 0) {
         // still sees the change and emits enterfullscreen.
         else Promise.resolve(scene.scale.getFullscreenTarget().requestFullscreen({ navigationUI: 'hide' })).catch(() => {});
     });
+    // Holiday W-58: a grown label keeps its right edge on the canvas.
+    const keepOn = () => keepOnCanvas(scene, btn, x);
+    keepOn();
+    btn.__keepOn = keepOn;
     // A new label is a new width: lay the hit areas out again.
     const relabel = () => {
         if (!btn.scene) return;
         btn.setText(label(scene));
+        keepOn();
         if (scene.__tapTargets) scene.__tapTargets.layout();
     };
     const events = ['enterfullscreen', 'leavefullscreen'];

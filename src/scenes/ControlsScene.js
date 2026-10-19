@@ -47,18 +47,23 @@ export class ControlsScene extends Phaser.Scene {
         // Holiday W-50: grown to menuFontPx() on a touch device, a little
         // higher so it clears PLAYER 1 / PLAYER 2.
         const touch = isTouchDevice(this);
+        // Holiday W-58: the grown header, rows and labels take the touch
+        // rows (TOUCH_CONFIG.menuRows.controls); a desktop keeps its own.
+        const R = touch ? TOUCH_CONFIG.menuRows.controls : null;
+        this.rowStartY = R ? R.rowStartY : ROW_START_Y;
+        this.labelDx = R ? R.labelDx : -90;
         this.add.text(width / 2, touch ? TOUCH_CONFIG.menuRows.controls.hintY : 76, 'Click a binding, then press a key  ·  ESC cancels', {
             font: `${menuFontPx(this, 13)}px monospace`,
             fill: '#8888aa',
         }).setOrigin(0.5);
 
         const [p1Color, p2Color] = getTeamColors();
-        this.add.text(COL_X[1], 100, 'PLAYER 1', {
-            font: 'bold 16px monospace',
+        this.add.text(COL_X[1], R ? R.headY : 100, 'PLAYER 1', {
+            font: `bold ${menuFontPx(this, 16)}px monospace`,
             fill: '#' + p1Color.toString(16).padStart(6, '0'),
         }).setOrigin(0.5);
-        this.add.text(COL_X[2], 100, 'PLAYER 2', {
-            font: 'bold 16px monospace',
+        this.add.text(COL_X[2], R ? R.headY : 100, 'PLAYER 2', {
+            font: `bold ${menuFontPx(this, 16)}px monospace`,
             fill: '#' + p2Color.toString(16).padStart(6, '0'),
         }).setOrigin(0.5);
 
@@ -70,15 +75,15 @@ export class ControlsScene extends Phaser.Scene {
         this.menuNav = new MenuNav(this, { grid: true, onBack: () => this.goBack() });
 
         BINDABLE_ACTIONS.forEach((action, rowIndex) => {
-            const y = ROW_START_Y + rowIndex * ROW_GAP;
+            const y = this.rowStartY + rowIndex * ROW_GAP;
             this.createRow(1, action, y, rowIndex);
             this.createRow(2, action, y, rowIndex);
         });
 
-        const buttonRow = ROW_START_Y + BINDABLE_ACTIONS.length * ROW_GAP + 20;
+        const buttonRow = this.rowStartY + BINDABLE_ACTIONS.length * ROW_GAP + 20;
 
         const resetBtn = this.add.text(COL_X[1], buttonRow, '[ RESET DEFAULTS ]', {
-            font: '20px monospace',
+            font: `${menuFontPx(this, 20)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#663333',
             padding: { x: 16, y: 8 },
@@ -90,7 +95,7 @@ export class ControlsScene extends Phaser.Scene {
         this.menuNav.add(resetBtn, doReset, { row: BINDABLE_ACTIONS.length, col: 0 });
 
         const backBtn = this.add.text(COL_X[2], buttonRow, '[ BACK ]', {
-            font: '20px monospace',
+            font: `${menuFontPx(this, 20)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#333355',
             padding: { x: 16, y: 8 },
@@ -106,7 +111,7 @@ export class ControlsScene extends Phaser.Scene {
         // back for the next round. Touch only, so not in MenuNav.
         if (isTouchDevice(this)) {
             const tipsBtn = this.add.text(width / 2, buttonRow + TIPS_ROW_OFFSET, '[ SHOW TOUCH TIPS ]', {
-                font: '20px monospace',
+                font: `${menuFontPx(this, 20)}px monospace`,
                 fill: '#ffffff',
                 backgroundColor: '#2a4d66',
                 padding: { x: 16, y: 8 },
@@ -132,13 +137,13 @@ export class ControlsScene extends Phaser.Scene {
     createRow(playerNumber, action, y, rowIndex) {
         const x = COL_X[playerNumber];
 
-        const label = this.add.text(x - 90, y, ACTION_LABELS[action], {
-            font: '14px monospace',
+        const label = this.add.text(x + this.labelDx, y, ACTION_LABELS[action], {
+            font: `${menuFontPx(this, 14)}px monospace`,
             fill: '#aaaacc',
         }).setOrigin(0, 0.5);
 
         const badge = this.add.text(x + 70, y, '', {
-            font: 'bold 16px monospace',
+            font: `bold ${menuFontPx(this, 16)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#1a1a2e',
             padding: { x: 12, y: 4 },

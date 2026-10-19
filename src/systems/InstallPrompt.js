@@ -15,8 +15,8 @@
 // event, no button.
 
 import { TOUCH_CONFIG } from '../config.js';
-import { isInstalledApp } from './Fullscreen.js';
-import { cssPerGamePx, ensureTapTarget, isTouchDevice } from './TouchMenu.js';
+import { isInstalledApp, toggleLeftmostX } from './Fullscreen.js';
+import { cssPerGamePx, ensureTapTarget, isTouchDevice, keepOnCanvas, menuFont } from './TouchMenu.js';
 
 let deferred = null;
 // Menus showing or waiting to show the button (at most the one MenuScene).
@@ -48,7 +48,7 @@ export function iosInstallNote(scene) {
 function addIosNote(scene, toggle) {
     const { iosText, iosFill, iosMinPx, iosRight, iosY, iosGap } = TOUCH_CONFIG.installButton;
     const px = Math.max(iosMinPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(scene)));
-    const right = toggle ? toggle.getBounds().x - iosGap : iosRight;
+    const right = toggle ? toggleLeftmostX(toggle) - iosGap : iosRight;
     const note = scene.add.text(right, iosY, iosText, { font: `${px}px monospace`, fill: iosFill }).setOrigin(1, 0);
     note.name = 'installNote';
     return note;
@@ -71,8 +71,9 @@ export function addInstallButton(scene, menuNav, toggle = null) {
         if (!deferred) { hide(); return; }
         if (btn || !isTouchDevice(scene) || isInstalledApp()) return;
         const { label, x, y, font, padding, fill, hover, bg } = TOUCH_CONFIG.installButton;
-        btn = scene.add.text(x, y, label, { font, fill, backgroundColor: bg, padding })
+        btn = scene.add.text(x, y, label, { font: menuFont(scene, font), fill, backgroundColor: bg, padding })
             .setOrigin(0.5).setInteractive({ useHandCursor: true });
+        keepOnCanvas(scene, btn);
         btn.name = 'installButton';
         const install = () => {
             const e = deferred;

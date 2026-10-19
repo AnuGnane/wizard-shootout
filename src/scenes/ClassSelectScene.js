@@ -77,8 +77,9 @@ export class ClassSelectScene extends Phaser.Scene {
             : this.mode === 'party' ? 'Party — 3 to 4 Wizards'
             : this.mode === 'survival' ? (this.duo ? 'Survival — Co-op Duo' : 'Survival — Solo')
             : '2 Players';
-        this.add.text(width / 2, 72, subtitle, {
-            font: '15px monospace',
+        const touchRows = isTouchDevice(this) ? TOUCH_CONFIG.menuRows.classSelect : null;
+        this.add.text(width / 2, touchRows ? touchRows.subY : 72, subtitle, {
+            font: `${menuFontPx(this, 15)}px monospace`,
             fill: '#8888aa',
         }).setOrigin(0.5);
 
@@ -146,7 +147,7 @@ export class ClassSelectScene extends Phaser.Scene {
         this.add.image(x, top + (touch ? R.spriteY : 62), `wizard_${key}_1`).setScale(touch ? R.spriteScale : 3.5);
 
         const name = this.add.text(x, top + (touch ? R.nameY : 118), cls.name.toUpperCase(), {
-            font: 'bold 15px monospace',
+            font: `bold ${fpx(15)}px monospace`,
             fill: '#ffffff',
         }).setOrigin(0.5);
 
@@ -192,8 +193,16 @@ export class ClassSelectScene extends Phaser.Scene {
     layoutTouchCards(cards) {
         const R = TOUCH_CONFIG.menuRows.classSelect;
         const maxBottom = this.mode === 'party' ? R.partyMaxBottom : R.maxBottom;
+        // Holiday W-58: grown names can be wider than a card's pitch; then
+        // every other name drops a row so neighbours never meet, and every
+        // card's print starts under the lower row.
+        const pitch = CARD_W + CARD_GAP;
+        const crowded = cards.some((c, i) => i > 0
+            && (c.name.width + cards[i - 1].name.width) / 2 > pitch - R.nameGap);
+        if (crowded) cards.forEach((c, i) => { if (i % 2) c.name.setY(c.name.y + c.name.height + R.gap); });
+        const printTop = Math.max(...cards.map((c) => c.name.getBounds().bottom)) + R.gap;
         const stack = (card) => {
-            let y = card.name.getBounds().bottom + R.gap;
+            let y = printTop;
             for (const t of card.lines) {
                 if (!t.visible) continue;
                 t.setOrigin(0.5, 0).setY(y);
@@ -225,14 +234,15 @@ export class ClassSelectScene extends Phaser.Scene {
             fill: '#ffbb55',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, 200, 'Endless escalating waves of dark wizards.\nShared score. The run ends when every hero falls.', {
-            font: '15px monospace',
+        const touchRows = isTouchDevice(this) ? TOUCH_CONFIG.menuRows.classSelect : null;
+        this.add.text(width / 2, touchRows ? touchRows.survivalSubY : 200, 'Endless escalating waves of dark wizards.\nShared score. The run ends when every hero falls.', {
+            font: `${menuFontPx(this, 15)}px monospace`,
             fill: '#8888aa',
             align: 'center',
         }).setOrigin(0.5);
 
         this.add.text(width / 2, 270, 'HOW MANY HEROES?', {
-            font: 'bold 18px monospace',
+            font: `bold ${menuFontPx(this, 18)}px monospace`,
             fill: '#aaaacc',
         }).setOrigin(0.5);
 
@@ -257,7 +267,7 @@ export class ClassSelectScene extends Phaser.Scene {
             (pointer) => secondDevice('duo', pointer, () => choose(true)));
 
         this.add.text(width / 2, height - 25, backHint(this, 'ESC - back', 'BACK - top left'), {
-            font: '14px monospace',
+            font: `${menuFontPx(this, 14)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);
     }
@@ -318,13 +328,13 @@ export class ClassSelectScene extends Phaser.Scene {
         }
 
         this.p1Hint = this.add.text(width / 2 - 220, height - 60, 'P1: A/D + SPACE', {
-            font: 'bold 14px monospace',
+            font: `bold ${menuFontPx(this, 14)}px monospace`,
             fill: p1TeamColorStr,
         }).setOrigin(0.5);
 
         if (this.twoHumans) {
             this.p2Hint = this.add.text(width / 2 + 220, height - 60, 'P2: ←/→ + ENTER', {
-                font: 'bold 14px monospace',
+                font: `bold ${menuFontPx(this, 14)}px monospace`,
                 fill: p2TeamColorStr,
             }).setOrigin(0.5);
         } else {
@@ -333,13 +343,13 @@ export class ClassSelectScene extends Phaser.Scene {
             // rather than "BOT: ?" (1P mode's label is unchanged).
             this.p2Hint = this.add.text(width / 2 + 220, height - 60,
                 this.mode === 'survival' ? 'HORDE: RANDOM' : 'BOT: ?', {
-                font: 'bold 14px monospace',
+                font: `bold ${menuFontPx(this, 14)}px monospace`,
                 fill: p2TeamColorStr,
             }).setOrigin(0.5);
         }
 
         this.add.text(width / 2, height - 25, backHint(this, 'ESC - back', 'BACK - top left'), {
-            font: '14px monospace',
+            font: `${menuFontPx(this, 14)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);
 
@@ -533,20 +543,22 @@ export class ClassSelectScene extends Phaser.Scene {
             seat.frame.setDepth(20);
 
             const x = seatX[n - 1];
-            const lift = this.touchCards ? TOUCH_CONFIG.menuRows.classSelect.partyTitleLift : 0;
-            seat.titleText = this.add.text(x, height - 142 - lift, `P${n} ${TEAM_NAMES[n - 1]}`, {
-                font: 'bold 14px monospace',
+            // Holiday W-58: on a touch device the grown rows under the cards
+            // take TOUCH_CONFIG.menuRows.classSelect.partyRows.
+            const P = this.touchCards ? TOUCH_CONFIG.menuRows.classSelect.partyRows : null;
+            seat.titleText = this.add.text(x, P ? P.titleY : height - 142, `P${n} ${TEAM_NAMES[n - 1]}`, {
+                font: `bold ${menuFontPx(this, 14)}px monospace`,
                 fill: '#' + teamColor.toString(16).padStart(6, '0'),
             }).setOrigin(0.5);
 
-            seat.hint = this.add.text(x, height - 120, '', {
+            seat.hint = this.add.text(x, P ? P.hintY : height - 120, '', {
                 font: `${menuFontPx(this, 13)}px monospace`,
                 fill: '#8888aa',
             }).setOrigin(0.5);
 
             if (n >= 3) {
-                seat.stateLabel = this.add.text(x, height - 96, '', {
-                    font: 'bold 15px monospace',
+                seat.stateLabel = this.add.text(x, P ? P.stateY : height - 96, '', {
+                    font: `bold ${menuFontPx(this, 15)}px monospace`,
                     fill: '#ffffff',
                 }).setOrigin(0.5).setInteractive({ useHandCursor: true });
                 seat.stateLabel.on('pointerdown', () => this.cycleSeat(n));
@@ -554,19 +566,20 @@ export class ClassSelectScene extends Phaser.Scene {
         }
 
         // Holiday W-52: the touch line is shorter, so it fits grown.
-        this.add.text(width / 2, height - 65, backHint(this,
+        const P = this.touchCards ? TOUCH_CONFIG.menuRows.classSelect.partyRows : null;
+        this.add.text(width / 2, P ? P.seatsY : height - 65, backHint(this,
             'Seats 3 & 4: press 3 / 4 (or click) to toggle OFF · BOT · PAD   —   pad A joins an OFF seat',
             'Seats 3 & 4: tap to toggle OFF · BOT · PAD'), {
             font: `${menuFontPx(this, 12)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);
 
-        this.partyHint = this.add.text(width / 2, height - 40, '', {
-            font: 'bold 14px monospace',
+        this.partyHint = this.add.text(width / 2, P ? P.partyHintY : height - 40, '', {
+            font: `bold ${menuFontPx(this, 14)}px monospace`,
             fill: '#ffcc44',
         }).setOrigin(0.5);
 
-        this.add.text(width / 2, height - 16, backHint(this, 'ESC - back', 'BACK - top left'), {
+        this.add.text(width / 2, P ? P.footerY : height - 16, backHint(this, 'ESC - back', 'BACK - top left'), {
             font: `${menuFontPx(this, 13)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);

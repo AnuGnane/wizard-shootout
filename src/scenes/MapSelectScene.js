@@ -40,7 +40,7 @@ export class MapSelectScene extends Phaser.Scene {
                 ? `Survival — ${MATCH_STATE.seatTypes[2] === 'human' ? 'Co-op Duo' : 'Solo'}`
                 : '2 Players';
         this.add.text(width / 2, 78, subtitle, {
-            font: '15px monospace',
+            font: `${menuFontPx(this, 15)}px monospace`,
             fill: '#8888aa',
         }).setOrigin(0.5);
 
@@ -117,7 +117,7 @@ export class MapSelectScene extends Phaser.Scene {
         // Footer / shortcuts
         this.add.text(width / 2, height - 25, backHint(this,
             'Click a map | R - random | ESC - back', 'Tap a map | BACK - top left'), {
-            font: '14px monospace',
+            font: `${menuFontPx(this, 14)}px monospace`,
             fill: '#666688',
         }).setOrigin(0.5);
 
@@ -137,8 +137,8 @@ export class MapSelectScene extends Phaser.Scene {
     }
 
     createDifficultyPicker(cx, y) {
-        this.add.text(cx - 190, y, 'BOT DIFFICULTY:', {
-            font: '14px monospace',
+        const label = this.add.text(cx - 190, y, 'BOT DIFFICULTY:', {
+            font: `${menuFontPx(this, 14)}px monospace`,
             fill: '#aaaacc',
         }).setOrigin(1, 0.5);
 
@@ -146,7 +146,7 @@ export class MapSelectScene extends Phaser.Scene {
         const keys = Object.keys(AI_DIFFICULTY);
         keys.forEach((key, i) => {
             const btn = this.add.text(cx - 160 + i * 120, y, `[ ${AI_DIFFICULTY[key].label} ]`, {
-                font: 'bold 14px monospace',
+                font: `bold ${menuFontPx(this, 14)}px monospace`,
                 fill: '#666688',
             }).setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
 
@@ -163,6 +163,19 @@ export class MapSelectScene extends Phaser.Scene {
 
             this.difficultyButtons[key] = btn;
         });
+        // Holiday W-58: grown labels outgrow the fixed 120 px steps, so on a
+        // touch device the row is laid out by width, centred on cx.
+        if (isTouchDevice(this)) {
+            const gap = TOUCH_CONFIG.menuRows.mapSelect.diffGap;
+            const items = [label, ...Object.values(this.difficultyButtons)];
+            let x = cx - (items.reduce((w, o) => w + o.width, 0) + (items.length - 1) * gap) / 2;
+            label.setX(x + label.width);
+            x += label.width + gap;
+            for (const btn of Object.values(this.difficultyButtons)) {
+                btn.setX(x);
+                x += btn.width + gap;
+            }
+        }
         this.refreshDifficultyButtons();
     }
 
@@ -276,8 +289,10 @@ export class MapSelectScene extends Phaser.Scene {
         objects.push(...(tag ? [tag, sub] : [sub]));
 
         const name = this.add.text(x, top, card.name.toUpperCase(), {
-            font: 'bold 15px monospace',
+            font: `bold ${fpx(15)}px monospace`,
             fill: card.def ? '#ffffff' : '#66ff66',
+            align: 'center',
+            wordWrap: { width: inner },
         }).setOrigin(0.5, 1);
         objects.push(name);
         top = name.y - name.height;
@@ -297,10 +312,15 @@ export class MapSelectScene extends Phaser.Scene {
                 objects.push(...this.drawThumbnail(x, top - thumbH / 2, card.def, false));
             }
         } else {
-            objects.push(this.add.text(x, (y - CARD_H / 2 + top) / 2, '?', {
+            const mark = this.add.text(x, (y - CARD_H / 2 + top) / 2, '?', {
                 font: 'bold 52px monospace',
                 fill: '#66ff66',
-            }).setOrigin(0.5));
+            }).setOrigin(0.5);
+            // Holiday W-58: under a grown name the mark shrinks to the room
+            // left above it.
+            const room = top - (y - CARD_H / 2 + R.pad);
+            if (mark.height > room) mark.setFontSize(Math.floor(52 * room / mark.height));
+            objects.push(mark);
         }
 
         bg.on('pointerover', () => {

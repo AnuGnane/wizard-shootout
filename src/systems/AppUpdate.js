@@ -17,7 +17,7 @@
 //     __BUILD__ define ('dev' on the dev server), shown in the menu footer.
 
 import { APP_UPDATE_CONFIG } from '../config.js';
-import { ensureTapTarget, isTouchDevice, menuFontPx } from './TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, keepOnCanvas, menuFont, menuFontPx } from './TouchMenu.js';
 
 // eslint-disable-next-line no-undef
 export const BUILD_VERSION = typeof __BUILD__ !== 'undefined' ? __BUILD__ : 'dev';
@@ -73,8 +73,9 @@ export function addUpdateButton(scene, menuNav) {
     const show = () => {
         if (!scene.sys.displayList || scene.children.getByName('appUpdateButton')) return;
         const { label, x, y, font, padding, fill, hover, bg } = APP_UPDATE_CONFIG.button;
-        const btn = scene.add.text(x, y, label, { font, fill, backgroundColor: bg, padding })
+        const btn = scene.add.text(x, y, label, { font: menuFont(scene, font), fill, backgroundColor: bg, padding })
             .setOrigin(0.5).setInteractive({ useHandCursor: true });
+        keepOnCanvas(scene, btn);
         btn.name = 'appUpdateButton';
         const reload = () => window.location.reload();
         btn.on('pointerover', () => btn.setStyle({ fill: hover }));
