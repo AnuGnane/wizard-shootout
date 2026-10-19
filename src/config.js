@@ -553,6 +553,13 @@ export const TOUCH_CONFIG = {
         minFontPx: 14,
         fill: '#ffdd44',
     },
+    // Holiday W-54: on a touch device the pause screen's [ QUIT TO MENU ]
+    // asks once: the first tap shows `text` on the button, a second tap
+    // within windowMs quits; the label comes back when the window lapses.
+    quitConfirm: {
+        text: '[ TAP AGAIN TO QUIT ]',
+        windowMs: 2500,
+    },
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers

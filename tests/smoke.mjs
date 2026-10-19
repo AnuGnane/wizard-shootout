@@ -607,7 +607,10 @@ try {
         await tapAt(p.x, p.y);
         if (await isActive('PauseScene')) visited.push('PauseScene'); else failed.push('1P pause button -> PauseScene');
         await measure('PauseScene', '[ FULL SCREEN ]');
-        await tap('PauseScene', '[ QUIT TO MENU ]', M, true);
+        // Holiday W-54: on a phone QUIT asks once; the second tap leaves.
+        if (await tap('PauseScene', '[ QUIT TO MENU ]', 'PauseScene', true)) {
+            await tap('PauseScene', TOUCH_CONFIG.quitConfirm.text, M);
+        }
         // Daily: into the round, pause and resume by tap, then play it out to
         // GameOver (the one non-tap step: the match is decided in code) and
         // tap back to the menu.
@@ -800,7 +803,11 @@ try {
         if (pb) {
             await tapAt(pb.x, pb.y);
             if (!(await isActive('PauseScene'))) failed.push('survival pause button -> PauseScene');
-            else await tap('PauseScene', '[ QUIT TO MENU ]', 'MenuScene');
+            else {
+                // Holiday W-54: on a phone QUIT asks once; the second tap leaves.
+                await tap('PauseScene', '[ QUIT TO MENU ]', 'PauseScene');
+                await tap('PauseScene', TOUCH_CONFIG.quitConfirm.text, 'MenuScene');
+            }
         }
 
         check('phone survival: SURVIVAL -> SOLO -> class -> map by tap, with touch controls',
@@ -4007,6 +4014,91 @@ try {
             d.keys === 2 && d.pad
                 && JSON.stringify(d.sizes) === JSON.stringify({ daily: 11, orb: 11, keys: 13, pad: 12, footer: 14 }),
             JSON.stringify(d));
+    }
+
+    // 3aa0g. Holiday W-54: QUIT TO MENU asks once on a phone. On an 844x390
+    // touch phone a paused 1P round's QUIT tapped once keeps the round paused
+    // and shows TOUCH_CONFIG.quitConfirm.text; a second tap inside the window
+    // reaches the menu; one tap then a wait past the window brings the label
+    // back with the round still paused. A desktop click quits at once (pinned).
+    {
+        const run = async (pg, touch) => {
+            const reached = (fn, arg) => pg.waitForFunction(fn, arg, { timeout: 5000 }).then(() => true, () => false);
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            const pause = async () => {
+                await pg.evaluate(() => {
+                    const M = window.__match;
+                    M.online = false; M.isDailyChallenge = false;
+                    M.mode = '1p';
+                    M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                    M.playerCount = 2;
+                    M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                    M.mapIndex = 0; M.round = 1;
+                    M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                    window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop());
+                    window.__game.scene.start('GameScene');
+                });
+                await reached(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').player1?.isAlive);
+                await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+                await reached(() => window.__game.scene.isActive('PauseScene'));
+                await pg.waitForTimeout(200);
+            };
+            const quitBtn = () => pg.evaluate(() => {
+                const s = window.__game.scene.getScene('PauseScene');
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const b = s.quitBtn.getBounds();
+                return { x: c.left + b.centerX * k, y: c.top + b.centerY * k, label: s.quitBtn.text };
+            });
+            const state = () => pg.evaluate(() => {
+                const sm = window.__game.scene;
+                return {
+                    menu: sm.isActive('MenuScene'), pause: sm.isActive('PauseScene'),
+                    roundPaused: sm.isPaused('GameScene'),
+                    label: sm.isActive('PauseScene') ? sm.getScene('PauseScene').quitBtn.text : null,
+                };
+            });
+            const click = async (p) => {
+                if (touch) await pg.touchscreen.tap(p.x, p.y);
+                else await pg.mouse.click(p.x, p.y);
+                await pg.waitForTimeout(250);
+            };
+            await pause();
+            const first = await quitBtn();
+            await click(first);
+            const once = await state();
+            if (!touch) return { first: first.label, once };
+            await click(await quitBtn());
+            await reached(() => window.__game.scene.isActive('MenuScene'));
+            const twice = await state();
+            await pause();
+            await click(await quitBtn());
+            const armed = await state();
+            await pg.waitForTimeout(TOUCH_CONFIG.quitConfirm.windowMs + 400);
+            const lapsed = await state();
+            return { first: first.label, once, twice, armed, lapsed };
+        };
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('quit confirm pageerror: ' + e.message));
+        const p = await run(phone, true);
+        await ctx.close();
+        const confirm = TOUCH_CONFIG.quitConfirm.text;
+        check('quit confirm: on a phone the first QUIT tap keeps the round paused and asks again; the second quits',
+            p.first === '[ QUIT TO MENU ]' && p.once.pause && p.once.roundPaused && !p.once.menu && p.once.label === confirm
+                && p.twice.menu && !p.twice.pause,
+            JSON.stringify(p));
+        check('quit confirm: one tap and a wait past windowMs brings QUIT TO MENU back, still paused',
+            p.armed.label === confirm && p.lapsed.pause && p.lapsed.roundPaused && p.lapsed.label === '[ QUIT TO MENU ]',
+            JSON.stringify({ armed: p.armed, lapsed: p.lapsed }));
+        const deskCtx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+        const desk = await deskCtx.newPage();
+        desk.on('pageerror', (e) => errors.push('quit confirm desktop pageerror: ' + e.message));
+        const d = await run(desk, false);
+        await deskCtx.close();
+        check('quit confirm: a desktop click on QUIT TO MENU quits at once',
+            d.once.menu && !d.once.pause, JSON.stringify(d.once));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
