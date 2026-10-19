@@ -437,6 +437,20 @@ export const TOUCH_CONFIG = {
             dailyY: 540, orbY: 573, orbScale: 1, orbLabelY: 603, orbSpacing: 92,
             padY: 634, hintY: 664,
         },
+        // SETTINGS (holiday W-55), on a touch device whose rows grow past
+        // 14 px: the desktop's two columns become two pages (ORBS ENABLED,
+        // EFFECTS | ARENA, DEVICE, then PLAYER, MATCH | MUTATORS,
+        // ACCESSIBILITY), each in two columns at colX from `top`. A row is
+        // its measured height plus rowGap, a section head plus headGap, and
+        // sectionGap sits between sections; the label starts labelDx in, the
+        // values valueGap right of the column's widest label, a slider's
+        // [-], [+] and value stepGap apart. pageBtn flips the page, labelled
+        // with the page shown.
+        settings: {
+            top: 86, colX: [40, 530], labelDx: 10, rowGap: 10, headGap: 6, sectionGap: 14,
+            valueGap: 16, stepGap: 24, pageBtn: { x: 870, y: 40 },
+            pageLabels: ['[ PAGE 1/2 > ]', '[ < PAGE 2/2 ]'],
+        },
         online: {
             cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,
             battleY: 352, mapCols: 6, mapSlotW: 162, mapY: 390, mapRowH: 108, nameGap: 2,

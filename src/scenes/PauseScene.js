@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { audio } from '../systems/AudioSystem.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, isTouchDevice, relayoutTapTargets } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, relayoutTapTargets, menuFontPx } from '../systems/TouchMenu.js';
 import { addFullscreenToggle } from '../systems/Fullscreen.js';
 import { FX_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -25,12 +25,13 @@ export class PauseScene extends Phaser.Scene {
         }).setOrigin(0.5).setDepth(101).setStroke('#000000', 6);
 
         // Holiday W-31: say so when AUTO turned this round's effects lite
-        // (W-41: or Reduce Motion did).
+        // (W-41: or Reduce Motion did). Holiday W-55: at least hudMinCss CSS
+        // px on a phone.
         const game = this.scene.get('GameScene');
         if (game && (game.fxAutoLite || game.fxReducedMotion)) {
             const note = game.fxReducedMotion ? FX_CONFIG.pauseNoteReduced : FX_CONFIG.pauseNote;
             this.fxNote = this.add.text(width / 2, height / 2 - 100, note, {
-                font: 'bold 18px monospace',
+                font: `bold ${menuFontPx(this, 18)}px monospace`,
                 fill: '#ffcc66',
             }).setOrigin(0.5).setDepth(101).setStroke('#000000', 4);
         }

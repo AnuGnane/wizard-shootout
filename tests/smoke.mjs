@@ -58,7 +58,8 @@
 //      SOLO, 1P and a desktop the first goes on (W-25),
 //   3u. on that phone the Settings sliders' [-]/[+] take a tap inside their
 //      grown hit areas, stop at the ends, step from the keyboard on the
-//      focused row, and nothing overlaps or moves at 568x320 either (W-26),
+//      focused row, and nothing overlaps or goes missing at 568x320 either
+//      (W-26, W-55),
 //   3v. on a 568x320 phone a tap at the centre of each Wardrobe swatch
 //      equips that swatch and no other, the grown hit areas never intersect
 //      and the rings match them; on a desktop the swatches are as drawn (W-27),
@@ -80,6 +81,10 @@
 //   3y. with navigator.clipboard.readText stubbed on a phone, JOIN's
 //      [ PASTE ] fills the room-code box from a chat line and a refused
 //      read says so; a desktop has no PASTE (W-38),
+//   3aa0h. on a 568x320 phone Settings' grown rows sit on two pages that
+//      read at hudMinCss with nothing overlapping, every row a focus stop
+//      that shows its page, and the pause note reads too; a desktop keeps
+//      one page and today's sizes (W-55),
 //   5. nothing logged a console error or threw during any of the above,
 //   6. the PWA manifest, icons and service worker are served (dev server), and
 //      the production build in dist/ installs its worker and boots offline,
@@ -1383,14 +1388,14 @@ try {
             const s = window.__game.scene.getScene('SettingsScene');
             const label = s.children.list.find((o) => o.type === 'Text' && o.text === 'Vibration: ');
             if (!label) return null;
-            const t = s.children.list.find((o) => o.type === 'Text' && /^\[(ON|OFF)\]$/.test(o.text) && Math.abs(o.y - label.y) < 1 && Math.abs(o.x - label.x - 210) < 1);
+            const t = s.children.list.find((o) => o.type === 'Text' && /^\[(ON|OFF)\]$/.test(o.text) && Math.abs(o.y - label.y) < 1 && o.x > label.x);
             return t ? t.text : null;
         });
         const rowBefore = await vibToggle();
         const toggleAt = await phone.evaluate(() => {
             const s = window.__game.scene.getScene('SettingsScene');
             const label = s.children.list.find((o) => o.type === 'Text' && o.text === 'Vibration: ');
-            const t = label && s.children.list.find((o) => o.type === 'Text' && /^\[(ON|OFF)\]$/.test(o.text) && Math.abs(o.y - label.y) < 1 && Math.abs(o.x - label.x - 210) < 1);
+            const t = label && s.children.list.find((o) => o.type === 'Text' && /^\[(ON|OFF)\]$/.test(o.text) && Math.abs(o.y - label.y) < 1 && o.x > label.x);
             if (!t) return null;
             const c = window.__game.canvas.getBoundingClientRect();
             const k = c.width / 1024;
@@ -2423,8 +2428,8 @@ try {
     // off its glyph steps the value up once; [-] tapped past the minimum
     // stays there; with the keyboard, focusing the row and pressing right
     // steps it up, left down; at 844x390 and 568x320 no two grown hit areas
-    // intersect, and no label or glyph sits anywhere but where the desktop
-    // draws it.
+    // intersect on either Settings page, and every text the desktop draws is
+    // on one of them (W-55 moved the phone's rows; W-26 pinned them).
     {
         // Every interactive object's hit rect and frame, plus Burn's row.
         const layout = (pg) => pg.evaluate(() => {
@@ -2470,15 +2475,17 @@ try {
             const cdp = await ctx.newCDPSession(phone);
             await toSettings(phone);
             const lay = await layout(phone);
-            // The phone-only VIBRATION (W-14) and TOUCH LAYOUT (W-32) rows (TOUCH
-            // SIZE, W-45, shares TOUCH LAYOUT's line; JOYSTICK, W-49, EFFECTS')
-            // have no desktop twin; every other text must sit exactly where
-            // the desktop draws it.
-            const yOf = (f) => f.slice(f.lastIndexOf(',') + 1);
-            const onlyRows = ['Vibration', 'Touch Layout'].map((n) => lay.frames.find((f) => f.startsWith(n))).filter(Boolean);
-            const joystick = (f) => f.startsWith('Joystick: ') || /^\[(FLOATING|FIXED)\]@/.test(f);
-            const phoneOnly = (f) => f.startsWith('PHONE@') || joystick(f) || onlyRows.some((o) => yOf(f) === yOf(o));
-            const r = { bad: lay.bad, moved: lay.frames.filter((f) => !phoneOnly(f) && !deskLayout.frames.includes(f)) };
+            // Holiday W-55: the phone's grown rows sit on two pages, so the
+            // second page's hit areas are checked too, and every text the
+            // desktop draws must be on one of them (W-26 pinned the desktop's
+            // positions; W-55 moves the rows on a phone, never drops one).
+            await phone.evaluate(() => window.__game.scene.getScene('SettingsScene').showPage(1));
+            const lay2 = await layout(phone);
+            await phone.evaluate(() => window.__game.scene.getScene('SettingsScene').showPage(0));
+            const textOf = (f) => f.slice(0, f.lastIndexOf('@'));
+            const phoneTexts = new Set(lay.frames.map(textOf));
+            const r = { bad: lay.bad.concat(lay2.bad), pages: lay.n > 0 && lay2.n > 0,
+                moved: deskLayout.frames.map(textOf).filter((t) => !phoneTexts.has(t)) };
             if (vp.width === 844) {
                 // Burn Duration's row: its [-]/[+] and value, and a point
                 // inside [+]'s hit area that is off the glyph.
@@ -2538,8 +2545,8 @@ try {
             a.before === '4.0' && a.afterPlus === '4.5' && a.atMin === '1.0' && a.stays === '1.0' && a.offGlyph > 2 && a.plusMin
                 && a.keyed >= 0 && a.right === '1.5' && a.left === '1.0',
             JSON.stringify(a));
-        check('settings sliders: no two hit areas intersect and nothing moved from the desktop layout (844x390, 568x320)',
-            !a.bad.length && !b.bad.length && !a.moved.length && !b.moved.length,
+        check('settings sliders: no two hit areas intersect on either page and no desktop text is missing (844x390, 568x320)',
+            !a.bad.length && !b.bad.length && !a.moved.length && !b.moved.length && a.pages && b.pages,
             `844: bad=${a.bad.join(',') || 'none'} moved=${a.moved.join(',') || 'none'}; 568: bad=${b.bad.join(',') || 'none'} moved=${b.moved.join(',') || 'none'}`);
     }
 
@@ -4099,6 +4106,125 @@ try {
         await deskCtx.close();
         check('quit confirm: a desktop click on QUIT TO MENU quits at once',
             d.once.menu && !d.once.pause, JSON.stringify(d.once));
+    }
+
+    // 3aa0h. Holiday W-55: small print on SETTINGS and PAUSE. On a 568x320
+    // touch phone Settings' grown rows sit on two pages: on each, every text
+    // is at least hudMinCss CSS px tall, no two texts' bounds intersect and
+    // all sit on the canvas above SAVE; every row is a MenuNav stop, and
+    // focusing it shows its page. The pause screen's EFFECTS note (Reduce
+    // Motion stubbed) is as tall and clear of the buttons. A 1280x720 desktop
+    // keeps one page at 14/16 px and the note at 18 px (pinned).
+    {
+        const reduce = () => {
+            const real = window.matchMedia.bind(window);
+            window.matchMedia = (q) => (/prefers-reduced-motion:\s*reduce/.test(q)
+                ? { matches: true, media: q, onchange: null, addListener() {}, removeListener() {},
+                    addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; } }
+                : real(q));
+        };
+        const run = async (pg) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(250);
+            // The visible texts' sizes, overlaps and strays, on one page.
+            const look = () => pg.evaluate((min) => {
+                const sc = window.__game.scene.getScene('SettingsScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+                const low = ts.filter((o) => o.displayHeight * k < min - 0.5).map((o) => `${o.text}:${(o.displayHeight * k).toFixed(1)}`);
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text}|${ts[j].text}`);
+                }
+                const save = ts.find((o) => o.text === '[ SAVE ]').getBounds().y;
+                const off = ts.filter((o) => {
+                    const g = o.getBounds();
+                    return g.x < 0 || g.right > 1024 || g.y < 0 || (!o.text.startsWith('[ ') && g.bottom > save);
+                }).map((o) => o.text);
+                const font = (t) => { const o = ts.find((x) => x.text.startsWith(t)); return o ? o.style.fontSize : null; };
+                return { n: ts.length, low, hit, off, row: font('Health') || font('Fire'), head: font('PLAYER') || font('ORBS') };
+            }, TOUCH_CONFIG.hudMinCss);
+            const pages = [await look()];
+            const paged = await pg.evaluate(() => !!window.__game.scene.getScene('SettingsScene').paged);
+            if (paged) {
+                await pg.evaluate(() => window.__game.scene.getScene('SettingsScene').showPage(1));
+                pages.push(await look());
+            }
+            // Every row is a focus stop, and focusing one shows its page.
+            const nav = await pg.evaluate(() => {
+                const sc = window.__game.scene.getScene('SettingsScene');
+                const items = sc.menuNav.items.map((it) => it.gameObject);
+                const rows = sc.controls.filter((c) => {
+                    const o = c.toggle || c.choice || c.valueText;
+                    return items.some((g) => g === o || (Math.abs(g.y - o.y) < 1 && g.x < o.x && g.text.endsWith(': ')));
+                }).length;
+                let wrongPage = 0;
+                sc.menuNav.items.forEach((it, i) => {
+                    sc.menuNav.setFocus(i);
+                    const p = sc.pageOf.get(it.gameObject);
+                    if (p !== undefined && (sc.page !== p || !it.gameObject.visible)) wrongPage += 1;
+                });
+                return { controls: sc.controls.length, rows, wrongPage };
+            });
+            // The pause screen over a 1P round, Reduce Motion making AUTO lite.
+            await pg.evaluate(() => {
+                window.__settings.effects = 'auto';
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop());
+                window.__game.scene.start('GameScene');
+            });
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').player1?.isAlive, null, { timeout: 8000 });
+            await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+            await pg.waitForFunction(() => window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(200);
+            const pause = await pg.evaluate((min) => {
+                const sc = window.__game.scene.getScene('PauseScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const note = sc.fxNote;
+                if (!note) return null;
+                const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+                const n = note.getBounds();
+                const hit = ts.filter((o) => o !== note).filter((o) => {
+                    const b = o.getBounds();
+                    return n.x < b.right && b.x < n.right && n.y < b.bottom && b.y < n.bottom;
+                }).map((o) => o.text);
+                return { px: note.style.fontSize, css: +(note.displayHeight * k).toFixed(1), tall: note.displayHeight * k >= min - 0.5, hit };
+            }, TOUCH_CONFIG.hudMinCss);
+            return { pages, paged, nav, pause };
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(reduce);
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('settings small print pageerror: ' + e.message));
+        const p = await run(phone);
+        await ctx.close();
+        const dctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+        await dctx.addInitScript(reduce);
+        const desk = await dctx.newPage();
+        desk.on('pageerror', (e) => errors.push('settings small print desktop pageerror: ' + e.message));
+        const d = await run(desk);
+        await dctx.close();
+        const clean = (r) => r.n > 0 && !r.low.length && !r.hit.length && !r.off.length;
+        check('settings small print: at 568x320 both Settings pages read at hudMinCss, nothing overlaps, every row a focus stop on its page; the pause note too, clear of the buttons',
+            p.paged && p.pages.length === 2 && p.pages.every(clean)
+                && p.nav.rows === p.nav.controls && p.nav.wrongPage === 0
+                && !!p.pause && p.pause.tall && !p.pause.hit.length,
+            JSON.stringify(p));
+        check('settings small print: a 1280x720 desktop keeps one Settings page at 14/16 px and the pause note at 18 px',
+            !d.paged && d.pages.length === 1 && d.pages[0].row === '14px' && d.pages[0].head === '16px'
+                && !d.pages[0].hit.length && d.nav.rows === d.nav.controls && !!d.pause && d.pause.px === '18px',
+            JSON.stringify({ paged: d.paged, page: d.pages[0], nav: d.nav, pause: d.pause }));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
