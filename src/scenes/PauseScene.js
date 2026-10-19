@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import { audio } from '../systems/AudioSystem.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { addFullscreenToggle } from '../systems/Fullscreen.js';
-import { FX_CONFIG } from '../config.js';
+import { FX_CONFIG, TOUCH_CONFIG } from '../config.js';
 
 // Launched (not started) on top of a paused GameScene, so the arena stays
 // visible behind the dark overlay. See MenuScene.makeButton for the button
@@ -45,16 +45,23 @@ export class PauseScene extends Phaser.Scene {
         // (holiday W-5) without reaching RESTART between them.
         ensureTapTarget(this, this.makeButton(width / 2, height / 2 - 40, '[ RESUME ]', '#336633', '#66ff66', () => this.resumeGame()));
         this.makeButton(width / 2, height / 2 + 30, '[ RESTART ROUND ]', '#333355', '#5599ff', () => this.restartRound());
-        ensureTapTarget(this, this.makeButton(width / 2, height / 2 + 100, '[ QUIT TO MENU ]', '#663333', '#ff6666', () => this.quitToMenu()));
+        // Holiday W-54: a tap on QUIT asks once on a phone (tapQuit); the
+        // keyboard and a pad quit at once.
+        this.quitArmed = false;
+        this.quitArmedAt = 0;
+        this.quitBtn = ensureTapTarget(this, this.makeButton(width / 2, height / 2 + 100, '[ QUIT TO MENU ]', '#663333', '#ff6666',
+            () => this.quitToMenu(), undefined, () => this.tapQuit()));
         // Holiday W-15: the same full-screen toggle as the menu, on a phone.
         addFullscreenToggle(this, 'pause', 101);
     }
 
     update() {
         this.menuNav.pollPad();
+        if (this.quitArmed && performance.now() - this.quitArmedAt >= TOUCH_CONFIG.quitConfirm.windowMs) this.disarmQuit();
     }
 
-    makeButton(x, y, label, bgColor, hoverColor, onClick, fontSize = '24px') {
+    // `onTap` is the pointer's action when it differs from MenuNav's select.
+    makeButton(x, y, label, bgColor, hoverColor, onClick, fontSize = '24px', onTap = onClick) {
         const btn = this.add.text(x, y, label, {
             font: `${fontSize} monospace`,
             fill: '#ffffff',
@@ -65,13 +72,14 @@ export class PauseScene extends Phaser.Scene {
         btn.setInteractive({ useHandCursor: true });
         btn.on('pointerover', () => btn.setStyle({ fill: hoverColor }));
         btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' }));
-        btn.on('pointerdown', onClick);
+        btn.on('pointerdown', onTap);
         this.menuNav.add(btn, onClick);
         return btn;
     }
 
     resumeGame() {
         audio.uiClick();
+        if (this.quitArmed) this.disarmQuit();
         this.scene.stop();
         this.scene.resume('GameScene');
     }
@@ -82,6 +90,29 @@ export class PauseScene extends Phaser.Scene {
         // MATCH_STATE scores persist across a GameScene restart — that's correct,
         // a round restart shouldn't wipe match progress.
         this.scene.get('GameScene').scene.restart();
+    }
+
+    // Holiday W-54: on a touch device the first tap turns the label into
+    // TOUCH_CONFIG.quitConfirm.text and a second within windowMs quits; a
+    // mouse quits at once, as before. The window is wall-clock time (update()
+    // lapses it), so a phone dropping frames does not stretch it.
+    tapQuit() {
+        const armed = this.quitArmed && performance.now() - this.quitArmedAt < TOUCH_CONFIG.quitConfirm.windowMs;
+        if (!isTouchDevice(this) || armed) {
+            this.quitToMenu();
+            return;
+        }
+        audio.uiClick();
+        this.quitArmed = true;
+        this.quitBtn.setText(TOUCH_CONFIG.quitConfirm.text);
+        relayoutTapTargets(this);
+        this.quitArmedAt = performance.now();
+    }
+
+    disarmQuit() {
+        this.quitArmed = false;
+        this.quitBtn.setText('[ QUIT TO MENU ]');
+        relayoutTapTargets(this);
     }
 
     quitToMenu() {
