@@ -17,7 +17,7 @@ import { MATCH_STATE } from './MatchState.js';
 import { NetSession } from './NetSession.js';
 import { audio } from './AudioSystem.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
-import { growBannerLine } from './TouchMenu.js';
+import { growBannerLine, isTouchDevice } from './TouchMenu.js';
 import { recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from './Stats.js';
 
 export class RoundFlow {
@@ -133,6 +133,8 @@ export class RoundFlow {
         }).setOrigin(0.5).setDepth(40).setStroke('#000000', 6);
 
         const lines = [];
+        // Holiday W-65: on a touch device each grown line stacks under the one above.
+        let above = banner;
         scene.players.forEach((p, i) => {
             const seat = p.playerNumber;
             const st = scene.roundStats[seat];
@@ -143,6 +145,7 @@ export class RoundFlow {
                 `${TEAM_NAMES[seat - 1]}   DMG ${Math.round(st.damage)} · ORBS ${st.orbs}`,
                 { font: '15px monospace', fill: lineColor }
             ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+            if (growBannerLine(scene, line, 15, 3, above)) above = line;
             lines.push(line);
         });
 
@@ -167,6 +170,8 @@ export class RoundFlow {
             font: '16px monospace',
             fill: '#bbbbbb',
         }).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+        // Holiday W-65: on a touch device, at the floor and clear of DRAW.
+        growBannerLine(scene, sub, 16, 4, banner);
 
         banner.setScale(0.3);
         scene.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.easeOut' });
@@ -232,6 +237,15 @@ export class RoundFlow {
                 fill: p2ColorStr,
             }
         ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+        // Holiday W-65: on a touch device the score clears a two-line WINS
+        // THE MATCH! title, and the two summaries grow to the floor and stack
+        // under the score.
+        if (isTouchDevice(scene)) {
+            const top = banner.y + banner.height / 2 + TOUCH_CONFIG.banners.gap + score.height / 2;
+            if (score.y < top) score.setY(top);
+        }
+        growBannerLine(scene, p1Summary, 13, 3, score);
+        growBannerLine(scene, p2Summary, 13, 3, p1Summary);
 
         banner.setScale(0.3);
         scene.tweens.add({

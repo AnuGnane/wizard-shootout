@@ -13,6 +13,7 @@ import { MATCH_STATE } from './MatchState.js';
 import { audio } from './AudioSystem.js';
 import { recordOrb, checkAchievements } from './Stats.js';
 import { NET_RUNE_POOL } from './NetGameSync.js';
+import { growBannerLine } from './TouchMenu.js';
 
 export class SpawnDirector {
     constructor(scene) {
@@ -161,6 +162,8 @@ export class SpawnDirector {
                 fill: '#ffeeaa',
             }
         ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+        // Holiday W-65: on a touch device, at the floor and clear of the title.
+        growBannerLine(this.scene, sub, 16, 4, banner);
 
         banner.setScale(0.3);
         this.scene.tweens.add({
