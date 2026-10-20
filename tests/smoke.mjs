@@ -4846,7 +4846,7 @@ try {
                 window.__game.scene.getScene('GameScene').scene.restart();
             });
             await pg.waitForFunction(() => window.__game.scene.getScene('GameScene')?.children?.list
-                .some((o) => o.type === 'Text' && o.depth === 40 && /^WAVE /.test(o.text)), null, { timeout: 10000 });
+                .some((o) => o.type === 'Text' && o.depth === 40 && /^WAVE /.test(o.text) && o.scaleX === 1), null, { timeout: 10000 });
             const wave = await read('WAVE ');
             await ctx.close();
             return { round, wave };
