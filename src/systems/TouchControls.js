@@ -51,6 +51,7 @@
 // a press beside them.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
+import { hudFloorCss } from './TouchMenu.js';
 
 const BUTTONS = [
     { key: 'shoot', size: 'fire', label: 'FIRE', color: 0x5599ff },
@@ -350,7 +351,9 @@ export class TouchControls {
             // Outer-edge-aligned with FIRE, above it.
             ability: { x: this._mx(W - margin - sr), y: fire.y - fr - gap - sr, radius: sr },
         };
-        const labelScale = Math.max(1, (sr / TOUCH_CONFIG.small.radius) * 0.8);
+        // Holiday W-69: and never under the text floor (labels are 11 px).
+        const labelScale = Math.max(1, (sr / TOUCH_CONFIG.small.radius) * 0.8,
+            hudFloorCss(this.scene) / this._cssPerGamePx() / 11);
         for (const btn of BUTTONS) {
             const b = this.buttons[btn.key];
             this.buttonCircles[btn.key].setPosition(b.x, b.y).setRadius(b.radius);
