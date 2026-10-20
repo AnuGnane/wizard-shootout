@@ -116,6 +116,9 @@
 //   3aa0q. on an 844x390 phone a thumb on the letterbox bar drives the
 //      joystick (FLOATING and FIXED) and one on the right bar at FIRE's
 //      height fires; a desktop has no touch controls to drive (W-64),
+//   3aa0r. on a 568x320 phone the round-end and match-end score banners'
+//      summaries, the party lines, DRAW's and ORB SURGE's sub lines read at
+//      hudMinCss, nothing overlapping; a desktop keeps its sizes (W-65),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5024,6 +5027,98 @@ try {
         await desk.close();
         check('letterbox: a 1280x720 desktop round has no touch controls and a press dragged from the bar moves nobody',
             dc.left > 40 && !d.touch && d.moved < 1, JSON.stringify(d));
+    }
+
+    // 3aa0r. Holiday W-65: the round-end and match-end summaries. On a
+    // 568x320 touch phone a 1P round ended by a kill shows NAME SCORES!, the
+    // score and the two DMG / ACC / ORBS lines; one ended on match point shows
+    // the WINS THE MATCH! banner and the same; the party banner's per-player
+    // lines, DRAW's and ORB SURGE's sub lines are called on the scene. Every
+    // small line is at least hudMinCss CSS px, inside the canvas, and no two
+    // of a banner's texts intersect. On a 1280x720 desktop the sizes and
+    // offsets are today's: 13 px at +78 / +96, 15 px at +20 + i * 22, 16 px.
+    {
+        const run = async (vp, touch) => {
+            const ctx = await browser.newContext(touch ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('summary pageerror: ' + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            // Every visible banner text (depth 40) with its size and bounds;
+            // clears them after, so the next moment reads alone.
+            const read = () => pg.evaluate(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = s.children.list.filter((o) => o.type === 'Text' && o.visible && o.depth === 40 && o.text && o.alpha > 0);
+                // The arena's centre, from the banner's anchor text (the score
+                // sits at +40, the party title at -60, DRAW and ORB SURGE! at 0).
+                const at = (re, dy) => { const o = ts.find((t) => re.test(t.text)); return o ? o.y - dy : null; };
+                const cy = at(/^\d+  -  \d+$/, 40) ?? at(/SCORES!$/, -60) ?? at(/^(DRAW|ORB SURGE!)$/, 0);
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 16)} | ${ts[j].text.slice(0, 16)}`);
+                }
+                const out = ts.map((o) => {
+                    const b = o.getBounds();
+                    return { text: o.text.replace(/\n/g, ' ').slice(0, 24), px: parseFloat(o.style.fontSize), y: Math.round(o.y),
+                        css: +(parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k).toFixed(2), on: b.x >= 0 && b.right <= 1024 && b.y >= 0 && b.bottom <= 700 };
+                });
+                ts.forEach((o) => { s.tweens.killTweensOf(o); o.destroy(); });
+                return { texts: out, hit, cy };
+            });
+            const start = (scores) => pg.evaluate((scores) => {
+                const M = window.__match;
+                Object.assign(M, { online: false, isDailyChallenge: false, mode: '1p', playerCount: 2,
+                    seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' },
+                    classes: { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' },
+                    mapIndex: 0, round: 1, scores: { 1: scores, 2: 0, 3: 0, 4: 0 }, targetScore: 5 });
+                const g = window.__game.scene;
+                (g.isActive('GameScene') ? g.getScene('GameScene') : g.getScene('MenuScene')).scene.start('GameScene');
+            }, scores);
+            const ready = async () => {
+                await pg.waitForFunction(() => { const s = window.__game.scene.getScene('GameScene'); return window.__game.scene.isActive('GameScene') && s.player2 && s.roundFlow; }, null, { timeout: 8000 });
+                await pg.waitForTimeout(1500);
+            };
+            // Clear the round's own banner, run fn on the scene, read.
+            const call = async (fn, wait) => {
+                await pg.evaluate((fn) => {
+                    const s = window.__game.scene.getScene('GameScene');
+                    s.children.list.filter((o) => o.type === 'Text' && o.depth === 40).forEach((o) => { s.tweens.killTweensOf(o); o.destroy(); });
+                    if (fn === 'kill') { s.player2.lastHitBy = { by: 1, element: 'arcane' }; s.player2.takeDamage(1000); }
+                    if (fn === 'party') s.roundFlow.showPartyScoreBanner(1, false);
+                    if (fn === 'draw') s.roundFlow.showDrawBanner();
+                    if (fn === 'surge') s.spawnDirector.showSurgeBanner();
+                }, fn);
+                await pg.waitForTimeout(wait);
+                return read();
+            };
+            await start(0);
+            await ready();
+            const party = await call('party', 700);
+            const draw = await call('draw', 700);
+            const surge = await call('surge', 700);
+            const roundEnd = await call('kill', 1100);
+            await start(4);
+            await ready();
+            const matchEnd = await call('kill', 1100);
+            await ctx.close();
+            return { roundEnd, matchEnd, party, draw, surge };
+        };
+        const min = TOUCH_CONFIG.hudMinCss;
+        const ph = await run({ width: 568, height: 320 }, true);
+        const dk = await run({ width: 1280, height: 720 }, false);
+        const small = (m) => m.texts.filter((t) => /^(DMG|no wizard|orbs flood)|DMG \d/.test(t.text));
+        const moments = ['roundEnd', 'matchEnd', 'party', 'draw', 'surge'];
+        const counts = { roundEnd: 2, matchEnd: 2, party: 2, draw: 1, surge: 1 };
+        const won = (r) => r.matchEnd.texts.some((t) => /WINS THE/.test(t.text));
+        const okPhone = won(ph) && won(dk) && moments.every((m) => small(ph[m]).length === counts[m] && ph[m].hit.length === 0
+            && small(ph[m]).every((t) => t.css >= min - 0.5) && ph[m].texts.every((t) => t.on));
+        const offs = (m) => small(dk[m]).map((t) => `${t.px}@${t.y - dk[m].cy}`).join();
+        const okDesk = offs('roundEnd') === '13@78,13@96' && offs('matchEnd') === '13@78,13@96'
+            && offs('party') === '15@20,15@42' && offs('draw') === '16@44' && offs('surge') === '16@44';
+        check('summaries: at 568x320 the round-end and match-end DMG / ACC / ORBS lines, the party lines and the DRAW and ORB SURGE sub lines read at hudMinCss, on the canvas, no banner text overlapping; a desktop keeps 13 / 15 / 16 px at today\'s offsets',
+            okPhone && okDesk, JSON.stringify({ phone: ph, desktop: moments.map(offs) }));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
