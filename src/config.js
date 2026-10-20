@@ -674,6 +674,12 @@ export const TOUCH_CONFIG = {
     // Its Settings choice, on EFFECTS' line (game px from the column).
     joystickRow: { labelDx: 290, valueDx: 380 },
     floatZone: { maxX: 0.5, minY: 80 }, // minY clears the pause button's hit area on a phone
+    // Holiday W-64: a touch that lands on a letterbox bar beside the FIT
+    // canvas. Phaser hears its down (window events) but not its moves, so
+    // TouchControls follows them itself. A press from a bar is taken insetCss
+    // CSS px inside the canvas edge (past marginCss, so beside FIRE or PWR it
+    // lands inside the rim), and a base dropped from it sits that far in.
+    bars: { enabled: true, insetCss: 20 },
     // Portrait on a phone: the page shows a rotate prompt (index.html mirrors
     // this query in CSS) and a running round pauses.
     rotateQuery: '(orientation: portrait) and (pointer: coarse) and (max-width: 599px)',
