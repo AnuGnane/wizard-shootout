@@ -24,6 +24,7 @@ import { CLASS_KEYS } from './Classes.js';
 import { Player } from '../entities/Player.js';
 import { audio } from './AudioSystem.js';
 import { STATS, recordSurvivalRun } from './Stats.js';
+import { growBannerLine } from './TouchMenu.js';
 
 // Every survival tunable lives here (Working agreements: no magic numbers in
 // scenes). Seat layout is fixed: 1-2 are the co-op humans, 3-4 are the two
@@ -404,6 +405,8 @@ export class SurvivalDirector {
             font: '16px monospace',
             fill: '#ccccdd',
         }).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+        // Holiday W-62: on a touch device, at the floor and clear of the title.
+        growBannerLine(scene, subText, 16, 4, banner);
 
         banner.setScale(0.3);
         scene.tweens.add({ targets: banner, scale: 1, duration: 300, ease: 'Back.easeOut' });

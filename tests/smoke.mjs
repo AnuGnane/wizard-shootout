@@ -107,6 +107,9 @@
 //   3aa0n. with TEXT: LARGE on a 568x320 phone the main menu's floor texts,
 //      the HUD and the first-round tips read hudMinCss x 1.3, all through
 //      hudFloorCss; a desktop is unchanged (W-61),
+//   3aa0o. on a 568x320 phone the round banner's first-to and mutators lines
+//      and the wave banner's sub line read at hudMinCss, clear of the title,
+//      each other and MATCH POINT; a desktop keeps 16 / 13 / 16 px (W-62),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4788,6 +4791,78 @@ try {
                 && pl.round.tips !== null && pl.round.tips >= big - 0.5 && pn.round.hud < big
                 && JSON.stringify(dn.menu) === JSON.stringify(dl.menu),
             JSON.stringify({ onFloor: onFloor.length, grownLow, roundN: pn.round, roundL: pl.round, desktopSame: JSON.stringify(dn.menu) === JSON.stringify(dl.menu) }));
+    }
+
+    // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a
+    // 568x320 touch phone a 1P round on match point with all five mutators
+    // on opens with ROUND n, its "first to N wins" line, the mutators line
+    // (wrapped) and MATCH POINT, the three small ones at least hudMinCss CSS
+    // px and no two intersecting; a survival run's WAVE 1 sub line too. On a
+    // 1280x720 desktop the lines keep 16, 13 and 16 px.
+    {
+        const banners = async (vp, touch) => {
+            const ctx = await browser.newContext(touch ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('banner pageerror: ' + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            const read = (first) => pg.evaluate((first) => {
+                const s = window.__game.scene.getScene('GameScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = s.children.list.filter((o) => o.type === 'Text' && o.visible && o.depth === 40 && o.text);
+                const top = ts.find((o) => o.text.startsWith(first));
+                if (!top) return null;
+                const lines = ts.filter((o) => o !== top && Math.abs(o.x - top.x) < 1 && o.y > top.y && o.y < top.y + 200);
+                const box = (o) => o.getBounds();
+                const hit = [];
+                const all = [top, ...lines];
+                for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+                    const a = box(all[i]), b = box(all[j]);
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${all[i].text.slice(0, 16)} | ${all[j].text.slice(0, 16)}`);
+                }
+                return {
+                    lines: lines.map((o) => ({ text: o.text.replace(/\n/g, ' ').slice(0, 28), px: parseFloat(o.style.fontSize),
+                        css: +(parseFloat(o.style.fontSize) * k).toFixed(2), right: box(o).right, left: box(o).x })),
+                    hit,
+                };
+            }, first);
+            await pg.evaluate(() => {
+                Object.assign(window.__settings, { suddenDeath: true, mutGiantShots: true, mutOrbRain: true, mutLowCooldowns: true, mutMirrorMaps: true });
+                const M = window.__match;
+                Object.assign(M, { online: false, isDailyChallenge: false, mode: '1p', playerCount: 2,
+                    seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' },
+                    classes: { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' },
+                    mapIndex: 0, round: 5, scores: { 1: 4, 2: 0, 3: 0, 4: 0 }, targetScore: 5 });
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            });
+            await pg.waitForFunction(() => window.__game.scene.getScene('GameScene')?.children?.list
+                .some((o) => o.type === 'Text' && o.text === 'MATCH POINT'), null, { timeout: 8000 });
+            const round = await read('ROUND ');
+            await pg.evaluate(() => {
+                Object.assign(window.__settings, { suddenDeath: false, mutGiantShots: false, mutOrbRain: false, mutLowCooldowns: false, mutMirrorMaps: false });
+                const M = window.__match;
+                Object.assign(M, { mode: 'survival', playerCount: 1, seatTypes: { 1: 'human', 2: 'off', 3: 'off', 4: 'off' },
+                    round: 1, scores: { 1: 0, 2: 0, 3: 0, 4: 0 } });
+                window.__game.scene.getScene('GameScene').scene.restart();
+            });
+            await pg.waitForFunction(() => window.__game.scene.getScene('GameScene')?.children?.list
+                .some((o) => o.type === 'Text' && o.depth === 40 && /^WAVE /.test(o.text)), null, { timeout: 10000 });
+            const wave = await read('WAVE ');
+            await ctx.close();
+            return { round, wave };
+        };
+        const min = TOUCH_CONFIG.hudMinCss;
+        const ph = await banners({ width: 568, height: 320 }, true);
+        const dk = await banners({ width: 1280, height: 720 }, false);
+        const okPhone = ph.round && ph.wave && ph.round.lines.length === 3 && ph.wave.lines.length === 1
+            && ph.round.hit.length === 0 && ph.wave.hit.length === 0
+            && ph.round.lines.filter((l) => l.text !== 'MATCH POINT').every((l) => l.css >= min - 0.01)
+            && ph.wave.lines[0].css >= min - 0.01
+            && [...ph.round.lines, ...ph.wave.lines].every((l) => l.left >= 0 && l.right <= 1024);
+        const okDesk = dk.round && dk.wave && dk.round.lines.map((l) => l.px).join() === '16,13,24'
+            && dk.wave.lines.map((l) => l.px).join() === '16';
+        check('banners: at 568x320 the round banner\'s first-to and mutators lines and the wave banner\'s sub line read at hudMinCss, clear of the title, each other and MATCH POINT; a desktop keeps 16 / 13 / 16 px',
+            okPhone && okDesk, JSON.stringify({ phone: ph, desktop: { round: dk.round && dk.round.lines.map((l) => l.px), wave: dk.wave && dk.wave.lines.map((l) => l.px) } }));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

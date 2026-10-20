@@ -578,6 +578,11 @@ export const TOUCH_CONFIG = {
         death: [120, 60, 240],
         win: [50, 60, 50, 60, 160],
     },
+    // The round and wave banners' small lines on a touch device (holiday
+    // W-62): grown to the floor (menuFontPx), each stacked gap game px under
+    // the line above it by its grown height, wrapping at wrapW; a desktop
+    // keeps 16 / 13 px at the fixed offsets.
+    banners: { gap: 4, wrapW: 960 },
     // First-round touch tips (holiday W-16): short labels beside the touch
     // controls in a player's first round with them. They fade once the
     // player has both moved and fired, or after timeoutMs; fadeMs is the
