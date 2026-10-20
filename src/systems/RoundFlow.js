@@ -10,13 +10,14 @@
 // Note: `this.scene` is the Phaser Scene; `this.scene.scene` is its ScenePlugin
 // (start/restart/isActive).
 
-import { GAME_CONFIG, PLAYER_CONFIG, MATCH_CONFIG, TEAM_NAMES, BALANCE_TALLY_CONFIG } from '../config.js';
+import { GAME_CONFIG, PLAYER_CONFIG, MATCH_CONFIG, TEAM_NAMES, BALANCE_TALLY_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { getTeamColors } from './TeamColors.js';
 import { ARENA } from './Maps.js';
 import { MATCH_STATE } from './MatchState.js';
 import { NetSession } from './NetSession.js';
 import { audio } from './AudioSystem.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
+import { growBannerLine } from './TouchMenu.js';
 import { recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from './Stats.js';
 
 export class RoundFlow {
@@ -48,6 +49,8 @@ export class RoundFlow {
                 fill: '#aaaacc',
             }
         ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+        // Holiday W-62: on a touch device, at the floor and clear of the title.
+        let below = growBannerLine(scene, sub, 16, 4, banner);
 
         const bannerTexts = [banner, sub];
 
@@ -67,6 +70,7 @@ export class RoundFlow {
                     fill: '#ccaa66',
                 }
             ).setOrigin(0.5).setDepth(40).setStroke('#000000', 3);
+            below = growBannerLine(scene, mutatorsLine, 13, 3, sub) || below;
             bannerTexts.push(mutatorsLine);
             matchPointY += 24;
         }
@@ -82,6 +86,8 @@ export class RoundFlow {
                     fill: '#ffdd44',
                 }
             ).setOrigin(0.5).setDepth(40).setStroke('#000000', 4);
+            // Holiday W-62: under the grown lines, where they grew.
+            if (below) matchPoint.setY(below + TOUCH_CONFIG.banners.gap + matchPoint.height / 2);
             bannerTexts.push(matchPoint);
             // Phase 6e: crank the music to its match-point layer (faster
             // hi-hat + higher arp) — this round already set intensity 1 in

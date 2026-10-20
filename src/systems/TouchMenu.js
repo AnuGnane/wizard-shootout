@@ -208,6 +208,20 @@ export function menuFontFloor(scene) {
     return Math.max(STORAGE_CONFIG.minFontPx, Math.ceil(hudFloorCss(scene) / cssPerGamePx(scene)));
 }
 
+// Holiday W-62: a banner's small line (`basePx`, stroke `strokePx`) on a
+// touch device: grown to the floor, its stroke with it, wrapped at
+// TOUCH_CONFIG.banners.wrapW, and centred banners.gap under `above`. Returns
+// its bottom edge, or 0 where it keeps its desktop size and place.
+export function growBannerLine(scene, t, basePx, strokePx, above) {
+    const px = menuFontPx(scene, basePx);
+    if (px <= basePx) return 0;
+    const { gap, wrapW } = TOUCH_CONFIG.banners;
+    t.setFontSize(px).setStroke('#000000', strokePx * px / basePx)
+        .setWordWrapWidth(wrapW).setAlign('center');
+    t.setY(above.y + above.height / 2 + gap + t.height / 2);
+    return t.y + t.height / 2;
+}
+
 // Holiday W-50: a menu text's font size in game px. `basePx` on a desktop;
 // on a touch device, grown to menuFontFloor() where it would fall below it.
 export function menuFontPx(scene, basePx) {
