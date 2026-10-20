@@ -4923,7 +4923,8 @@ try {
     // 3aa0q. Holiday W-64: the letterbox bars. On an 844x390 touch phone the
     // FIT canvas leaves a bar either side; a touch that starts on the left
     // bar in the float zone drops the base on the canvas (radius plus
-    // TOUCH_CONFIG.bars.insetCss in) and a move of that touch to the right
+    // TOUCH_CONFIG.bars.insetCss in), a resting thumb's jitter there stays
+    // centred, and a move of that touch to the right
     // pushes the thumb right; with a FIXED joystick the same touch drives the
     // base at its home; a touch on the right bar at FIRE's height fires. On a
     // 1280x720 desktop the round has no touch controls and the same presses
@@ -4973,6 +4974,10 @@ try {
             await touch('touchStart', [{ x: c.left / 2, y, id: 1 }]);
             await pg.waitForTimeout(60);
             r.down = await read(pg);
+            // A resting thumb's jitter on the bar stays in the dead zone.
+            await touch('touchMove', [{ x: c.left / 2 + 2, y: y + 1, id: 1 }]);
+            await pg.waitForTimeout(60);
+            r.jitter = await read(pg);
             await touch('touchMove', [{ x: c.left / 2 + 300, y, id: 1 }]);
             await pg.waitForTimeout(60);
             r.moved = await read(pg);
@@ -4993,7 +4998,7 @@ try {
         const fl = await bar('floating');
         check('letterbox: on an 844x390 phone a touch on the left bar drops the base radius plus the inset onto the canvas, centred, a move right pushes the thumb right, and a touch on the right bar at FIRE\'s height fires',
             fl.bars.left > 40 && fl.bars.right > 40 && fl.down.held && Math.abs(fl.down.base.x - (fl.down.radius + fl.down.inset)) < 1
-                && fl.down.thumbDx === 0 && !fl.down.left && !fl.down.right
+                && fl.down.thumbDx === 0 && !fl.down.left && !fl.down.right && !fl.jitter.left && !fl.jitter.right
                 && fl.moved.right && !fl.moved.left && fl.moved.thumbDx > fl.moved.radius * 0.5
                 && !fl.released.held && !fl.released.right && fl.fire && fl.fireUp,
             JSON.stringify(fl));

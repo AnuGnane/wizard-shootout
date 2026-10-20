@@ -386,7 +386,8 @@ export class TouchControls {
     _handlePointerDown(pointer) {
         const W = GAME_CONFIG.width;
         // Holiday W-64: a down on a letterbox bar is taken just inside the edge.
-        const fromBar = this._barsOn && (pointer.x < 0 || pointer.x > W);
+        // A mouse on a touch laptop's letterbox is not a thumb.
+        const fromBar = this._barsOn && pointer.wasTouch && (pointer.x < 0 || pointer.x > W);
         // Any other down off the canvas (pointerdownoutside) is not ours.
         if (!fromBar && pointer.downElement && pointer.downElement !== this.scene.sys.game.canvas) return;
         const inset = TOUCH_CONFIG.bars.insetCss / this._cssPerGamePx();
@@ -398,9 +399,10 @@ export class TouchControls {
             return;
         }
 
-        // Put away for a gamepad: this touch only brings the controls back.
+        // Put away for a gamepad: this touch only brings the controls back
+        // (one on a bar does nothing, as before W-64).
         if (this.hidden) {
-            this.setHidden(false);
+            if (!fromBar) this.setHidden(false);
             return;
         }
 
@@ -427,6 +429,7 @@ export class TouchControls {
         if (this._dist(x, y, homeX, homeY) <= radius * 1.25) {
             this.joyPointerId = pointer.id;
             this._joyIdentifier = pointer.identifier;
+            this._barShiftX = x - pointer.x;
             this._updateJoystick({ x, y });
         } else if (this._mx(x) <= W * zone.maxX && y >= zone.minY) {
             this.joyPointerId = pointer.id;
@@ -438,13 +441,16 @@ export class TouchControls {
                 );
             }
             // A base dropped from a bar starts centred, as one under the thumb does.
-            this._updateJoystick(fromBar && !this.fixedJoystick ? { x: this.joy.x, y } : { x, y });
+            const at = fromBar && !this.fixedJoystick ? { x: this.joy.x, y } : { x, y };
+            this._barShiftX = at.x - pointer.x;
+            this._updateJoystick(at);
         }
     }
 
     // Holiday W-64: a move of the joystick's touch that Phaser did not hear
     // (it began off the canvas, so its events never target it), mapped from
-    // the page into game px and kept on the canvas.
+    // the page into game px, shifted by what the down was moved onto the
+    // canvas (so a thumb resting on the bar stays centred), and kept on it.
     _handleBarMove(event) {
         if (this._destroyed || this.joyPointerId === null) return;
         const canvas = this.scene.sys.game.canvas;
@@ -456,7 +462,7 @@ export class TouchControls {
             const k = this._cssPerGamePx();
             const clamp = (v, hi) => Math.min(Math.max(v, 0), hi);
             this._updateJoystick({
-                x: clamp((t.pageX - b.left) / k, GAME_CONFIG.width),
+                x: clamp((t.pageX - b.left) / k + this._barShiftX, GAME_CONFIG.width),
                 y: clamp((t.pageY - b.top) / k, GAME_CONFIG.height),
             });
         }
