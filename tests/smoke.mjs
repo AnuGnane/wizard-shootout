@@ -113,6 +113,9 @@
 //   3aa0p. on a 568x320 phone CONTROLS opens with the touch sentence and
 //      SHOW TOUCH TIPS above the bindings, at the floor, nothing overlapping;
 //      a desktop keeps the keyboard sentence and no tips button (W-63),
+//   3aa0q. on an 844x390 phone a thumb on the letterbox bar drives the
+//      joystick (FLOATING and FIXED) and one on the right bar at FIRE's
+//      height fires; a desktop has no touch controls to drive (W-64),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4915,6 +4918,112 @@ try {
             p.hint === TOUCH_CONFIG.menuRows.controls.touchHint && !p.keyHint && p.tipsAbove && p.min >= TOUCH_CONFIG.hudMinCss - 0.5
                 && p.hit.length === 0 && p.off.length === 0 && d.keyHint && d.hint === null && !d.tips,
             JSON.stringify({ phone: p, desktop: { keyHint: d.keyHint, tips: d.tips } }));
+    }
+
+    // 3aa0q. Holiday W-64: the letterbox bars. On an 844x390 touch phone the
+    // FIT canvas leaves a bar either side; a touch that starts on the left
+    // bar in the float zone drops the base on the canvas (radius plus
+    // TOUCH_CONFIG.bars.insetCss in), a resting thumb's jitter there stays
+    // centred, and a move of that touch to the right
+    // pushes the thumb right; with a FIXED joystick the same touch drives the
+    // base at its home; a touch on the right bar at FIRE's height fires. On a
+    // 1280x720 desktop the round has no touch controls and the same presses
+    // on the bar change nothing.
+    {
+        const start = async (pg, mode) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate((mode) => {
+                window.__settings.joystickMode = mode;
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            }, mode);
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').player1, null, { timeout: 8000 });
+            await pg.waitForTimeout(300);
+            return pg.evaluate(() => {
+                const c = window.__game.canvas.getBoundingClientRect();
+                return { left: c.left, right: c.right, top: c.top, k: c.width / 1024 };
+            });
+        };
+        const read = (pg) => pg.evaluate((insetCss) => {
+            const tc = window.__game.scene.getScene('GameScene').touchControls;
+            return {
+                held: tc.joyPointerId !== null, base: { x: tc.joy.x, y: tc.joy.y }, home: { x: tc.joy.homeX, y: tc.joy.homeY },
+                thumbDx: tc.joyThumbGfx.x - tc.joy.x, radius: tc.joy.radius,
+                right: tc.state.right, left: tc.state.left, shoot: tc.state.shoot,
+                inset: insetCss / (window.__game.canvas.getBoundingClientRect().width / 1024),
+            };
+        }, TOUCH_CONFIG.bars.insetCss);
+        const bar = async (mode) => {
+            const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('letterbox pageerror: ' + e.message));
+            const c = await start(pg, mode);
+            const cdp = await ctx.newCDPSession(pg);
+            const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+            // Mid float zone, well above the resting base, on the left bar.
+            const y = c.top + 350 * c.k;
+            const r = { bars: { left: c.left, right: 844 - c.right } };
+            await touch('touchStart', [{ x: c.left / 2, y, id: 1 }]);
+            await pg.waitForTimeout(60);
+            r.down = await read(pg);
+            // A resting thumb's jitter on the bar stays in the dead zone.
+            await touch('touchMove', [{ x: c.left / 2 + 2, y: y + 1, id: 1 }]);
+            await pg.waitForTimeout(60);
+            r.jitter = await read(pg);
+            await touch('touchMove', [{ x: c.left / 2 + 300, y, id: 1 }]);
+            await pg.waitForTimeout(60);
+            r.moved = await read(pg);
+            await touch('touchEnd', []);
+            await pg.waitForTimeout(60);
+            r.released = await read(pg);
+            // The right bar at FIRE's height.
+            const fireY = await pg.evaluate(() => window.__game.scene.getScene('GameScene').touchControls.buttons.shoot.y);
+            await touch('touchStart', [{ x: c.right + (844 - c.right) / 2, y: c.top + fireY * c.k, id: 2 }]);
+            await pg.waitForTimeout(60);
+            r.fire = (await read(pg)).shoot;
+            await touch('touchEnd', []);
+            await pg.waitForTimeout(60);
+            r.fireUp = !(await read(pg)).shoot;
+            await ctx.close();
+            return r;
+        };
+        const fl = await bar('floating');
+        check('letterbox: on an 844x390 phone a touch on the left bar drops the base radius plus the inset onto the canvas, centred, a move right pushes the thumb right, and a touch on the right bar at FIRE\'s height fires',
+            fl.bars.left > 40 && fl.bars.right > 40 && fl.down.held && Math.abs(fl.down.base.x - (fl.down.radius + fl.down.inset)) < 1
+                && fl.down.thumbDx === 0 && !fl.down.left && !fl.down.right && !fl.jitter.left && !fl.jitter.right
+                && fl.moved.right && !fl.moved.left && fl.moved.thumbDx > fl.moved.radius * 0.5
+                && !fl.released.held && !fl.released.right && fl.fire && fl.fireUp,
+            JSON.stringify(fl));
+        const fx = await bar('fixed');
+        check('letterbox: with a FIXED joystick the same touch on the bar drives the base at its home',
+            fx.down.held && fx.down.base.x === fx.down.home.x && fx.down.base.y === fx.down.home.y
+                && fx.moved.right && fx.moved.thumbDx > 0 && !fx.released.held,
+            JSON.stringify(fx));
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('letterbox desktop pageerror: ' + e.message));
+        const dc = await start(desk, 'floating');
+        const before = await desk.evaluate(() => { const p = window.__game.scene.getScene('GameScene').player1; return { x: p.x, y: p.y }; });
+        await desk.mouse.move(dc.left / 2, dc.top + 520 * dc.k);
+        await desk.mouse.down();
+        await desk.mouse.move(dc.left / 2 + 160, dc.top + 520 * dc.k, { steps: 4 });
+        await desk.waitForTimeout(200);
+        const d = await desk.evaluate((before) => {
+            const s = window.__game.scene.getScene('GameScene');
+            const p = s.player1;
+            return { touch: !!s.touchControls, moved: Math.hypot(p.x - before.x, p.y - before.y) };
+        }, before);
+        await desk.mouse.up();
+        await desk.close();
+        check('letterbox: a 1280x720 desktop round has no touch controls and a press dragged from the bar moves nobody',
+            dc.left > 40 && !d.touch && d.moved < 1, JSON.stringify(d));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

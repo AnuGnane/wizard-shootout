@@ -40,6 +40,15 @@
 // Holiday W-49 (fixed joystick): with `opts.fixedJoystick` the base stays at
 // its home; a touch anywhere in the float zone drives the thumb from there
 // instead of dropping the base under it.
+//
+// Holiday W-64 (letterbox bars): on a wide phone FIT leaves a bar beside the
+// canvas. A touch that starts there reaches pointerdown through Phaser's
+// window listener (as pointerdownoutside / pointerupoutside in Phaser 3.90),
+// but its moves stay with the element it started on and Phaser only hears
+// the canvas's, so a window touchmove listener follows
+// that touch into the canvas and drives the joystick from it; its down is
+// taken TOUCH_CONFIG.bars.insetCss inside the edge, so FIRE and PWR answer
+// a press beside them.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -133,6 +142,16 @@ export class TouchControls {
         // A touch that slides off-canvas still needs to release its control.
         // ('gameout' passes (time, event), not a pointer, so release all.)
         input.on('gameout', this._onGameOut);
+        // Holiday W-64: only while Phaser's window events give the bar's down
+        // (the default), so nothing here makes a second one.
+        this._onBarMove = this._handleBarMove.bind(this);
+        this._barsOn = TOUCH_CONFIG.bars.enabled && scene.sys.game.config.inputWindowEvents !== false
+            && typeof window !== 'undefined';
+        if (this._barsOn) {
+            input.on('pointerdownoutside', this._onPointerDown);
+            input.on('pointerupoutside', this._onPointerUp);
+            window.addEventListener('touchmove', this._onBarMove, { passive: true });
+        }
         // FIT rescales the canvas on rotation and when mobile browser chrome
         // shows/hides; the CSS-pixel minimums need the new scale.
         scene.scale.on('resize', this._onResize);
@@ -365,7 +384,14 @@ export class TouchControls {
     }
 
     _handlePointerDown(pointer) {
-        const x = pointer.x;
+        const W = GAME_CONFIG.width;
+        // Holiday W-64: a down on a letterbox bar is taken just inside the edge.
+        // A mouse on a touch laptop's letterbox is not a thumb.
+        const fromBar = this._barsOn && pointer.wasTouch && (pointer.x < 0 || pointer.x > W);
+        // Any other down off the canvas (pointerdownoutside) is not ours.
+        if (!fromBar && pointer.downElement && pointer.downElement !== this.scene.sys.game.canvas) return;
+        const inset = TOUCH_CONFIG.bars.insetCss / this._cssPerGamePx();
+        const x = fromBar ? (pointer.x < 0 ? inset : W - inset) : pointer.x;
         const y = pointer.y;
 
         if (this._dist(x, y, this.pauseBtn.x, this.pauseBtn.y) <= this.pauseBtn.hit) {
@@ -373,9 +399,10 @@ export class TouchControls {
             return;
         }
 
-        // Put away for a gamepad: this touch only brings the controls back.
+        // Put away for a gamepad: this touch only brings the controls back
+        // (one on a bar does nothing, as before W-64).
         if (this.hidden) {
-            this.setHidden(false);
+            if (!fromBar) this.setHidden(false);
             return;
         }
 
@@ -398,18 +425,46 @@ export class TouchControls {
         // the base where it rests.
         const { homeX, homeY, radius } = this.joy;
         const zone = TOUCH_CONFIG.floatZone;
+        const edge = fromBar ? radius + inset : radius;
         if (this._dist(x, y, homeX, homeY) <= radius * 1.25) {
             this.joyPointerId = pointer.id;
-            this._updateJoystick(pointer);
-        } else if (this._mx(x) <= GAME_CONFIG.width * zone.maxX && y >= zone.minY) {
+            this._joyIdentifier = pointer.identifier;
+            this._barShiftX = x - pointer.x;
+            this._updateJoystick({ x, y });
+        } else if (this._mx(x) <= W * zone.maxX && y >= zone.minY) {
             this.joyPointerId = pointer.id;
+            this._joyIdentifier = pointer.identifier;
             if (!this.fixedJoystick) {
                 this._placeJoystick(
-                    Math.min(Math.max(x, radius), GAME_CONFIG.width - radius),
+                    Math.min(Math.max(x, edge), W - edge),
                     Math.min(Math.max(y, radius), GAME_CONFIG.height - radius),
                 );
             }
-            this._updateJoystick(pointer);
+            // A base dropped from a bar starts centred, as one under the thumb does.
+            const at = fromBar && !this.fixedJoystick ? { x: this.joy.x, y } : { x, y };
+            this._barShiftX = at.x - pointer.x;
+            this._updateJoystick(at);
+        }
+    }
+
+    // Holiday W-64: a move of the joystick's touch that Phaser did not hear
+    // (it began off the canvas, so its events never target it), mapped from
+    // the page into game px, shifted by what the down was moved onto the
+    // canvas (so a thumb resting on the bar stays centred), and kept on it.
+    _handleBarMove(event) {
+        if (this._destroyed || this.joyPointerId === null) return;
+        const canvas = this.scene.sys.game.canvas;
+        if (event.target === canvas) return;
+        const scale = this.scene.scale;
+        for (const t of event.changedTouches) {
+            if (t.identifier !== this._joyIdentifier) continue;
+            const b = scale.canvasBounds;
+            const k = this._cssPerGamePx();
+            const clamp = (v, hi) => Math.min(Math.max(v, 0), hi);
+            this._updateJoystick({
+                x: clamp((t.pageX - b.left) / k + this._barShiftX, GAME_CONFIG.width),
+                y: clamp((t.pageY - b.top) / k, GAME_CONFIG.height),
+            });
         }
     }
 
@@ -570,6 +625,13 @@ export class TouchControls {
             input.off('pointermove', this._onPointerMove);
             input.off('pointerup', this._onPointerUp);
             input.off('gameout', this._onGameOut);
+        }
+        if (this._barsOn) {
+            if (input) {
+                input.off('pointerdownoutside', this._onPointerDown);
+                input.off('pointerupoutside', this._onPointerUp);
+            }
+            window.removeEventListener('touchmove', this._onBarMove);
         }
         if (this.scene && this.scene.scale) {
             this.scene.scale.off('resize', this._onResize);
