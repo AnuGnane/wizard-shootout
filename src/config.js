@@ -402,7 +402,15 @@ export const TOUCH_CONFIG = {
         // CONTROLS (W-58): the PLAYER headers' y, the first binding row's y
         // and an action label's x from its column, for the grown print (a
         // badge reading PRESS A KEY stays clear of its label).
-        controls: { hintY: 74, headY: 108, rowStartY: 144, labelDx: -130 },
+        // Holiday W-63: on a touch device the hint is touchHint, its top at
+        // hintTop and wrapped at hintWrapW; [ SHOW TOUCH TIPS ] sits tipsGap
+        // under it and the PLAYER headers headGap under the button, the rows
+        // headY to rowStartY apart as W-58 set them.
+        controls: {
+            hintY: 74, headY: 108, rowStartY: 144, labelDx: -130,
+            touchHint: 'touch controls are on screen · a connected keyboard or pad rebinds below: tap a binding, then press its key',
+            hintTop: 62, hintWrapW: 960, tipsGap: 10, headGap: 22,
+        },
         // MAP SELECT (holiday W-51): a card's inner margin at its foot, the
         // gap between the custom tag and the size note on one line, and the
         // gap between the thumbnail and the theme name.

@@ -110,6 +110,9 @@
 //   3aa0o. on a 568x320 phone the round banner's first-to and mutators lines
 //      and the wave banner's sub line read at hudMinCss, clear of the title,
 //      each other and MATCH POINT; a desktop keeps 16 / 13 / 16 px (W-62),
+//   3aa0p. on a 568x320 phone CONTROLS opens with the touch sentence and
+//      SHOW TOUCH TIPS above the bindings, at the floor, nothing overlapping;
+//      a desktop keeps the keyboard sentence and no tips button (W-63),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -3761,7 +3764,7 @@ try {
                     low, hit, off,
                     sizes: key === 'StatsScene'
                         ? { head: size('KILLS BY'), name: size('First Blood'), desc: size('Land your'), tally: size('BALANCE') }
-                        : { hint: size('Click a binding') },
+                        : { hint: size('Click a binding'), touchHint: size('touch controls') },
                 };
             }, key);
         };
@@ -3804,12 +3807,12 @@ try {
         await desk.close();
         const clean = (r) => r.low.length === 0 && r.hit.length === 0 && r.off.length === 0;
         check('small print: at 568x320 STATS and CONTROLS text under 14 game px is at least hudMinCss CSS px, none overlaps, all above BACK',
-            clean(pStats) && clean(pControls) && pStats.sizes.desc >= 14 && pControls.sizes.hint >= 14
+            clean(pStats) && clean(pControls) && pStats.sizes.desc >= 14 && pControls.sizes.touchHint >= 14 && pControls.sizes.hint === null
                 && clean(pNote) && pNote.note === STORAGE_CONFIG.statsNote,
             JSON.stringify({ pStats, pControls, pNote }));
         check('small print: a 1280x720 desktop keeps STATS and CONTROLS at today\'s sizes',
             JSON.stringify(dStats.sizes) === JSON.stringify({ head: 12, name: 13, desc: 10, tally: 12 })
-                && dControls.sizes.hint === 13 && dStats.hit.length === 0,
+                && dControls.sizes.hint === 13 && dControls.sizes.touchHint === null && dStats.hit.length === 0,
             JSON.stringify({ dStats: dStats.sizes, dControls: dControls.sizes, hit: dStats.hit }));
     }
 
@@ -4863,6 +4866,55 @@ try {
             && dk.wave.lines.map((l) => l.px).join() === '16';
         check('banners: at 568x320 the round banner\'s first-to and mutators lines and the wave banner\'s sub line read at hudMinCss, clear of the title, each other and MATCH POINT; a desktop keeps 16 / 13 / 16 px',
             okPhone && okDesk, JSON.stringify({ phone: ph, desktop: { round: dk.round && dk.round.lines.map((l) => l.px), wave: dk.wave && dk.wave.lines.map((l) => l.px) } }));
+    }
+
+    // 3aa0p. Holiday W-63: CONTROLS on a phone. On a 568x320 touch phone the
+    // screen opens with the touch sentence (TOUCH_CONFIG.menuRows.controls.
+    // touchHint), [ SHOW TOUCH TIPS ] sits under it and above PLAYER 1, every
+    // text keeps the floor, none overlaps and all are on the canvas; a 1280x720
+    // desktop keeps the keyboard sentence and has no tips button.
+    {
+        const look = async (pg) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('ControlsScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('ControlsScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(200);
+            return pg.evaluate(() => {
+                const sc = window.__game.scene.getScene('ControlsScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+                const find = (t) => ts.find((o) => o.text.startsWith(t));
+                const css = (o) => parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k;
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${ts[i].text.slice(0, 14)} | ${ts[j].text.slice(0, 14)}`);
+                }
+                const off = ts.filter((o) => { const g = o.getBounds(); return g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700; }).map((o) => o.text.slice(0, 14));
+                const tips = ts.find((o) => o.name === 'showTouchTips');
+                const p1 = find('PLAYER 1');
+                const hint = find('touch controls');
+                return {
+                    hint: hint ? hint.text.replace(/\n/g, ' ') : null, keyHint: !!find('Click a binding'),
+                    tipsAbove: !!(tips && p1 && tips.getBounds().bottom <= p1.getBounds().y && hint && hint.getBounds().bottom <= tips.getBounds().y),
+                    tips: !!tips, min: +Math.min(...ts.map(css)).toFixed(2), hit, off,
+                };
+            });
+        };
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('controls touch pageerror: ' + e.message));
+        const p = await look(phone);
+        await ctx.close();
+        const desk = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        desk.on('pageerror', (e) => errors.push('controls desktop pageerror: ' + e.message));
+        const d = await look(desk);
+        await desk.close();
+        check('controls on a phone: at 568x320 CONTROLS opens with the touch sentence, SHOW TOUCH TIPS under it and above PLAYER 1, all at the floor, none overlapping; a desktop keeps the keyboard sentence and no tips button',
+            p.hint === TOUCH_CONFIG.menuRows.controls.touchHint && !p.keyHint && p.tipsAbove && p.min >= TOUCH_CONFIG.hudMinCss - 0.5
+                && p.hit.length === 0 && p.off.length === 0 && d.keyHint && d.hint === null && !d.tips,
+            JSON.stringify({ phone: p, desktop: { keyHint: d.keyHint, tips: d.tips } }));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

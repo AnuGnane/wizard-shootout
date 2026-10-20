@@ -18,9 +18,6 @@ const ACTION_LABELS = {
 const ROW_START_Y = 130;
 const ROW_GAP = 42;
 const COL_X = { 1: 300, 2: 700 };
-// Holiday W-16: SHOW TOUCH TIPS sits this far below RESET/BACK, clear of
-// BACK's 44 CSS px hit area on a phone.
-const TIPS_ROW_OFFSET = 100;
 
 // Rebindable keyboard controls (Phase 8 accessibility). Two columns (P1/P2)
 // x seven action rows. Click a row (or focus it + ENTER/pad A) to enter
@@ -52,17 +49,32 @@ export class ControlsScene extends Phaser.Scene {
         const R = touch ? TOUCH_CONFIG.menuRows.controls : null;
         this.rowStartY = R ? R.rowStartY : ROW_START_Y;
         this.labelDx = R ? R.labelDx : -90;
-        this.add.text(width / 2, touch ? TOUCH_CONFIG.menuRows.controls.hintY : 76, 'Click a binding, then press a key  ·  ESC cancels', {
-            font: `${menuFontPx(this, 13)}px monospace`,
-            fill: '#8888aa',
-        }).setOrigin(0.5);
+        // Holiday W-63: a touch device reads what it can do here first: the
+        // touch sentence, then [ SHOW TOUCH TIPS ], then the bindings.
+        let headY = R ? R.headY : 100;
+        if (touch) {
+            const hint = this.add.text(width / 2, R.hintTop, R.touchHint, {
+                font: `${menuFontPx(this, 13)}px monospace`,
+                fill: '#8888aa',
+                align: 'center',
+                wordWrap: { width: R.hintWrapW },
+            }).setOrigin(0.5, 0);
+            this.addTipsButton(width / 2, hint.y + hint.height + R.tipsGap);
+            headY = this.tipsBtn.getBounds().bottom + R.headGap;
+            this.rowStartY = headY + R.rowStartY - R.headY;
+        } else {
+            this.add.text(width / 2, 76, 'Click a binding, then press a key  ·  ESC cancels', {
+                font: `${menuFontPx(this, 13)}px monospace`,
+                fill: '#8888aa',
+            }).setOrigin(0.5);
+        }
 
         const [p1Color, p2Color] = getTeamColors();
-        this.add.text(COL_X[1], R ? R.headY : 100, 'PLAYER 1', {
+        this.add.text(COL_X[1], headY, 'PLAYER 1', {
             font: `bold ${menuFontPx(this, 16)}px monospace`,
             fill: '#' + p1Color.toString(16).padStart(6, '0'),
         }).setOrigin(0.5);
-        this.add.text(COL_X[2], R ? R.headY : 100, 'PLAYER 2', {
+        this.add.text(COL_X[2], headY, 'PLAYER 2', {
             font: `bold ${menuFontPx(this, 16)}px monospace`,
             fill: '#' + p2Color.toString(16).padStart(6, '0'),
         }).setOrigin(0.5);
@@ -107,27 +119,29 @@ export class ControlsScene extends Phaser.Scene {
         ensureTapTarget(this, backBtn);
         this.menuNav.add(backBtn, doBack, { row: BINDABLE_ACTIONS.length, col: 1 });
 
-        // Holiday W-16: on a touch device, bring the first-round touch tips
-        // back for the next round. Touch only, so not in MenuNav.
-        if (isTouchDevice(this)) {
-            const tipsBtn = this.add.text(width / 2, buttonRow + TIPS_ROW_OFFSET, '[ SHOW TOUCH TIPS ]', {
-                font: `${menuFontPx(this, 20)}px monospace`,
-                fill: '#ffffff',
-                backgroundColor: '#2a4d66',
-                padding: { x: 16, y: 8 },
-            }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            tipsBtn.name = 'showTouchTips';
-            tipsBtn.on('pointerover', () => tipsBtn.setStyle({ fill: '#66ccff' }));
-            tipsBtn.on('pointerout', () => tipsBtn.setStyle({ fill: '#ffffff' }));
-            tipsBtn.on('pointerdown', () => {
-                audio.uiClick();
-                saveTouchTipsSeen(false);
-                tipsBtn.setText('[ TIPS NEXT ROUND ]');
-            });
-            ensureTapTarget(this, tipsBtn);
-        }
-
         this.refreshAllBadges();
+    }
+
+    // Holiday W-16: on a touch device, bring the first-round touch tips
+    // back for the next round. Touch only, so not in MenuNav. Its top at
+    // `top` (holiday W-63: under the touch hint, above the bindings).
+    addTipsButton(x, top) {
+        const tipsBtn = this.add.text(x, top, '[ SHOW TOUCH TIPS ]', {
+            font: `${menuFontPx(this, 20)}px monospace`,
+            fill: '#ffffff',
+            backgroundColor: '#2a4d66',
+            padding: { x: 16, y: 8 },
+        }).setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
+        tipsBtn.name = 'showTouchTips';
+        tipsBtn.on('pointerover', () => tipsBtn.setStyle({ fill: '#66ccff' }));
+        tipsBtn.on('pointerout', () => tipsBtn.setStyle({ fill: '#ffffff' }));
+        tipsBtn.on('pointerdown', () => {
+            audio.uiClick();
+            saveTouchTipsSeen(false);
+            tipsBtn.setText('[ TIPS NEXT ROUND ]');
+        });
+        ensureTapTarget(this, tipsBtn);
+        this.tipsBtn = tipsBtn;
     }
 
     update() {
