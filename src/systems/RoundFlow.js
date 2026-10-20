@@ -17,7 +17,7 @@ import { MATCH_STATE } from './MatchState.js';
 import { NetSession } from './NetSession.js';
 import { audio } from './AudioSystem.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
-import { growBannerLine, isTouchDevice } from './TouchMenu.js';
+import { growBannerLine, isTouchDevice, menuFontPx } from './TouchMenu.js';
 import { recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from './Stats.js';
 
 export class RoundFlow {
@@ -288,25 +288,40 @@ export class RoundFlow {
         const scene = this.scene;
         audio.uiClick();
 
-        const panelW = 260;
-        const panelH = 54;
-        const y = 90;
+        let panelW = 260;
+        let panelH = 54;
+        let y = 90;
+
+        const label = scene.add.text(0, y - 13, '★ ACHIEVEMENT UNLOCKED', {
+            font: `bold ${menuFontPx(scene, 11)}px monospace`,
+            fill: '#ffdd44',
+        }).setOrigin(0.5).setDepth(61);
+
+        const nameText = scene.add.text(0, y + 10, ach.name, {
+            font: `bold ${menuFontPx(scene, 16)}px monospace`,
+            fill: '#ffffff',
+        }).setOrigin(0.5).setDepth(61);
+
+        // Holiday W-66: on a touch device the grown lines size the panel
+        // (the desktop's 260x54 the minimum), the label stays above the name,
+        // and the panel drops to clear the top bar.
+        if (isTouchDevice(scene)) {
+            const { padX, padY, gap, minTop } = TOUCH_CONFIG.toast;
+            panelW = Math.max(panelW, Math.max(label.width, nameText.width) + 2 * padX);
+            panelH = Math.max(panelH, label.height + gap + nameText.height + 2 * padY);
+            y = Math.max(y, minTop + panelH / 2);
+            const top = y - (label.height + gap + nameText.height) / 2;
+            label.setY(top + label.height / 2);
+            nameText.setY(top + label.height + gap + nameText.height / 2);
+        }
         const targetX = GAME_CONFIG.width - panelW / 2 - 16;
         const startX = GAME_CONFIG.width + panelW / 2 + 10;
+        label.setX(startX);
+        nameText.setX(startX);
 
         const panel = scene.add.rectangle(startX, y, panelW, panelH, 0x1a1a2e, 0.95);
         panel.setStrokeStyle(2, 0xffdd44, 1);
         panel.setDepth(60);
-
-        const label = scene.add.text(startX, y - 13, '★ ACHIEVEMENT UNLOCKED', {
-            font: 'bold 11px monospace',
-            fill: '#ffdd44',
-        }).setOrigin(0.5).setDepth(61);
-
-        const nameText = scene.add.text(startX, y + 10, ach.name, {
-            font: 'bold 16px monospace',
-            fill: '#ffffff',
-        }).setOrigin(0.5).setDepth(61);
 
         const parts = [panel, label, nameText];
 
