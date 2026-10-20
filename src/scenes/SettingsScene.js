@@ -50,6 +50,11 @@ export const RUNTIME_SETTINGS = {
     // Holiday W-45 — 'small' | 'normal' | 'large' (TOUCH_CONFIG.sizes): the
     // touch controls' size. Touch devices only.
     touchSize: 'normal',
+    // Holiday W-61 — 'normal' | 'large' (TOUCH_CONFIG.textSizes): the floor
+    // every phone text reads (TouchMenu's hudFloorCss). Stored and read, not
+    // yet offered in Settings: its TEXT row lands once every screen fits
+    // LARGE (holiday W-73).
+    textSize: 'normal',
     // Holiday W-49 — 'floating' | 'fixed' (TOUCH_CONFIG.joystickModes): where
     // the joystick's base sits while a thumb drives it. Touch devices only.
     joystickMode: 'floating',

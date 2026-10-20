@@ -11,6 +11,7 @@
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { MATCH_STATE } from './MatchState.js';
+import { hudFloorCss } from './TouchMenu.js';
 
 const W = GAME_CONFIG.width;
 const H = GAME_CONFIG.height;
@@ -82,7 +83,7 @@ export class TouchHud {
         if (this._destroyed) return;
         const s = this.scene;
         const k = this.cssPerGamePx();
-        const minPx = Math.ceil(TOUCH_CONFIG.hudMinCss / k);
+        const minPx = Math.ceil(hudFloorCss(s) / k);
         for (const t of Object.values(this.texts())) {
             if (t._hudBasePx === undefined) t._hudBasePx = parseFloat(t.style.fontSize) || 12;
             // The 28 px numeric score (targets over 7) would push row B out

@@ -104,6 +104,9 @@
 //      SETTINGS, ONLINE, the map editor, PAUSE over a 1P round and a survival
 //      result card) reads at hudMinCss, half a pixel of rounding aside, and
 //      no two overlap; misses only by a reasoned allowlist (W-60),
+//   3aa0n. with TEXT: LARGE on a 568x320 phone the main menu's floor texts,
+//      the HUD and the first-round tips read hudMinCss x 1.3, all through
+//      hudFloorCss; a desktop is unchanged (W-61),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4627,7 +4630,14 @@ try {
     // own variants (party, HOST / JOIN, custom maps, Settings' second page)
     // and layout rules; this is the default state of every screen, and the
     // net for a text the next package adds under the floor.
-    {
+    // Holiday W-61: the step takes a TEXT size (TOUCH_CONFIG.textSizes), its
+    // floor hudMinCss times the size's factor; it runs at NORMAL until W-73.
+    //
+    // 3aa0n. Holiday W-61: one owner of the floor, hudFloorCss. With TEXT:
+    // LARGE on a 568x320 touch phone the main menu's texts that sit on the
+    // floor at NORMAL, the round's HUD and the first-round tips all read
+    // hudMinCss x 1.3; a 1280x720 desktop's menu is unchanged by it.
+    const menuFloorRun = async (textSize) => {
         // `scene: text prefix` -> why it may stay under the floor. Empty:
         // nothing needs it.
         const allow = {};
@@ -4638,8 +4648,11 @@ try {
         phone.on('pageerror', (e) => errors.push('menu floor pageerror: ' + e.message));
         await phone.goto(url, { waitUntil: 'networkidle' });
         await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await phone.evaluate((t) => { window.__settings.textSize = t; }, textSize);
+        const min = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[textSize];
         const misses = [];
         const seen = {};
+        const heights = {};
         for (const key of scenes) {
             await phone.evaluate(() => {
                 const g = window.__game.scene;
@@ -4693,9 +4706,10 @@ try {
                     const a = ts[i].getBounds(), b = ts[j].getBounds();
                     if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${name(ts[i])} | ${name(ts[j])}`);
                 }
-                return { n: ts.length, low, hit };
-            }, { key, min: TOUCH_CONFIG.hudMinCss });
+                return { n: ts.length, low, hit, heights: ts.map((o) => +css(o).toFixed(2)) };
+            }, { key, min });
             seen[key] = r.n;
+            heights[key] = r.heights;
             for (const l of r.low) {
                 if (!Object.keys(allow).some((a) => `${key}: ${l.text}`.startsWith(a))) {
                     misses.push(`${key}: "${l.text}" is ${l.css} CSS px`);
@@ -4705,9 +4719,75 @@ try {
             if (r.n === 0) misses.push(`${key}: no text found`);
         }
         await ctx.close();
-        check('menu floor: at 568x320 every text on all eleven menu scenes is at least hudMinCss CSS px and none overlaps (allowlist: none)',
-            misses.length === 0 && Object.keys(seen).length === scenes.length,
-            misses.length ? misses.join('; ') : JSON.stringify(seen));
+        return { misses, seen, heights, ok: misses.length === 0 && Object.keys(seen).length === scenes.length };
+    };
+    {
+        // Holiday W-73 widens this to every TEXT size, once each screen fits
+        // LARGE (W-70 to W-72).
+        const runs = {};
+        for (const t of ['normal']) {
+            const r = runs[t] = await menuFloorRun(t);
+            check(`menu floor: at 568x320 with TEXT: ${t.toUpperCase()} every text on all eleven menu scenes is at least hudMinCss x ${TOUCH_CONFIG.textSizes[t]} CSS px and none overlaps (allowlist: none)`,
+                r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
+        }
+
+        // 3aa0n: one owner of the floor. LARGE set on a 568x320 phone: the
+        // main menu's texts that sit on the floor at NORMAL, the round's HUD
+        // and its first-round tips all read hudMinCss x 1.3; on a 1280x720
+        // desktop LARGE changes no menu text.
+        const big = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes.large;
+        const measure = async (vp, touch, textSize) => {
+            const ctx = await browser.newContext(touch ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('text size pageerror: ' + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            const css = () => {
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                return (o) => +(parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k).toFixed(2);
+            };
+            await pg.evaluate((t) => {
+                window.__settings.textSize = t;
+                window.__game.scene.getScene('MenuScene').scene.restart();
+            }, textSize);
+            await pg.waitForTimeout(400);
+            const menu = await pg.evaluate(`(() => { const c = (${css})();
+                return window.__game.scene.getScene('MenuScene').children.list
+                    .filter((o) => o.type === 'Text' && o.visible && o.text).map((o) => [o.text.slice(0, 24), c(o)]); })()`);
+            let round = null;
+            if (touch) {
+                await pg.evaluate(() => {
+                    try { localStorage.removeItem('wizard-shootout-touch-tips-v1'); } catch (e) { /* none */ }
+                    const M = window.__match;
+                    Object.assign(M, { online: false, isDailyChallenge: false, mode: '1p', playerCount: 2,
+                        seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' },
+                        classes: { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' },
+                        mapIndex: 0, round: 1, scores: { 1: 0, 2: 0, 3: 0, 4: 0 }, targetScore: 5 });
+                    window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+                });
+                await pg.waitForFunction(() => window.__game.scene.getScene('GameScene')?.touchHud, null, { timeout: 8000 });
+                await pg.waitForTimeout(300);
+                round = await pg.evaluate(`(() => { const c = (${css})(); const s = window.__game.scene.getScene('GameScene');
+                    const hud = Object.values(s.touchHud.texts()).filter((o) => o && o.visible).map(c);
+                    const tips = s.touchTips && s.touchTips.texts ? Object.values(s.touchTips.texts).map(c) : [];
+                    return { hud: Math.min(...hud), tips: tips.length ? Math.min(...tips) : null }; })()`);
+            }
+            await ctx.close();
+            return { menu, round };
+        };
+        const phone = { width: 568, height: 320 };
+        const pn = await measure(phone, true, 'normal');
+        const pl = await measure(phone, true, 'large');
+        const floorN = Math.min(...pn.menu.map(([, h]) => h));
+        const onFloor = pn.menu.filter(([, h]) => h < floorN + 0.6).map(([t]) => t);
+        const grownLow = pl.menu.filter(([t, h]) => onFloor.includes(t) && h < big - 0.5);
+        const dn = await measure({ width: 1280, height: 720 }, false, 'normal');
+        const dl = await measure({ width: 1280, height: 720 }, false, 'large');
+        check('text size: LARGE on a 568x320 phone lifts the main menu\'s floor texts, the HUD and the tips to hudMinCss x 1.3 through hudFloorCss; a desktop is unchanged',
+            onFloor.length > 0 && grownLow.length === 0 && pl.round && pl.round.hud >= big - 0.5
+                && pl.round.tips !== null && pl.round.tips >= big - 0.5 && pn.round.hud < big
+                && JSON.stringify(dn.menu) === JSON.stringify(dl.menu),
+            JSON.stringify({ onFloor: onFloor.length, grownLow, roundN: pn.round, roundL: pl.round, desktopSame: JSON.stringify(dn.menu) === JSON.stringify(dl.menu) }));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

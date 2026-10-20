@@ -13,6 +13,7 @@
 // control added later (OnlineScene's lobby cards) does not move it.
 
 import { GAME_CONFIG, TOUCH_CONFIG, STORAGE_CONFIG } from '../config.js';
+import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
 
 // CSS pixels per game pixel right now (FIT keeps the aspect ratio).
 export function cssPerGamePx(scene) {
@@ -192,10 +193,19 @@ export function isTouchDevice(scene) {
         || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 }
 
-// The smallest menu text that reads on this screen: hudMinCss CSS px, and
+// Holiday W-61: the smallest text a phone shows, in CSS px: hudMinCss, times
+// Settings' TEXT factor (TOUCH_CONFIG.textSizes) on a touch device. Every
+// floor (menus, HUD, tips, notes, the blip banner) reads it, and nothing
+// else reads the factor.
+export function hudFloorCss(scene) {
+    const f = isTouchDevice(scene) ? TOUCH_CONFIG.textSizes[RUNTIME_SETTINGS.textSize] : 1;
+    return TOUCH_CONFIG.hudMinCss * (f || 1);
+}
+
+// The smallest menu text that reads on this screen: hudFloorCss CSS px, and
 // never below STORAGE_CONFIG.minFontPx game px (holiday W-42's rule).
 export function menuFontFloor(scene) {
-    return Math.max(STORAGE_CONFIG.minFontPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(scene)));
+    return Math.max(STORAGE_CONFIG.minFontPx, Math.ceil(hudFloorCss(scene) / cssPerGamePx(scene)));
 }
 
 // Holiday W-50: a menu text's font size in game px. `basePx` on a desktop;
