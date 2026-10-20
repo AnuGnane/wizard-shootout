@@ -122,6 +122,10 @@
 //   3aa0s. on a 568x320 phone the achievement toast's two lines read at
 //      hudMinCss inside a panel on the canvas, clear of the top bar's HUD
 //      texts and the pause button; a desktop keeps 260x54 at y 90 (W-66),
+//   3aa0t. on a 568x320 phone the five first-round tips, at TOUCH SIZE
+//      NORMAL and LARGE and LAYOUT RIGHT and LEFT, read at hudMinCss on the
+//      canvas, clear of the controls by tips.gapCss, the HUD and each other,
+//      and fade on move-and-fire (W-68),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5195,6 +5199,104 @@ try {
                 && ph.others.length === 0 && ph.pauseClear
                 && dk.panel.w === 260 && dk.panel.h === 54 && dk.panel.y === 90 && dk.panel.x === 1024 - 130 - 16 && dk.px.join() === '11,16' && dk.inside,
             JSON.stringify({ longest, phone: ph, desktop: dk }));
+    }
+
+    // 3aa0t. Holiday W-68: the first-round tips on a small phone. On a
+    // 568x320 touch phone with fresh storage, four bot rounds, TOUCH SIZE
+    // NORMAL and LARGE by TOUCH LAYOUT RIGHT and LEFT, each show the five
+    // tips at least hudMinCss CSS px, inside the canvas, clear of every
+    // touch control's hit circle by TOUCH_CONFIG.tips.gapCss, of the HUD and
+    // of each other; moving and then firing fades them once.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('small-tips pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('small-tips console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+        let last = null;
+        const joyR = {};
+        for (const [touchSize, touchLayout] of [['normal', 'right'], ['normal', 'left'], ['large', 'right'], ['large', 'left']]) {
+            await phone.evaluate(([size, layout]) => {
+                localStorage.removeItem('wizard-shootout-touch-tips-v1');
+                window.__settings.touchSize = size;
+                window.__settings.touchLayout = layout;
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop());
+            }, [touchSize, touchLayout]);
+            await reached(() => !window.__game.scene.isActive('GameScene'));
+            await phone.evaluate(() => window.__game.scene.start('GameScene'));
+            const ready = await reached(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                return window.__game.scene.isActive('GameScene') && s.touchControls && s.player1?.isAlive && s.touchTips?.texts;
+            });
+            await phone.waitForTimeout(150);
+            const m = await phone.evaluate((gapCss) => {
+                const s = window.__game.scene.getScene('GameScene');
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const gap = gapCss / k - 0.5;
+                const tips = s.children.list.filter((o) => o.type === 'Text' && /^touchTip_/.test(o.name) && o.active)
+                    .map((o) => {
+                        const b = o.getBounds();
+                        return { name: o.name.slice(9), css: parseFloat(o.style.fontSize) * o.scaleY * k,
+                            r: { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom } };
+                    });
+                const tc = s.touchControls;
+                const circ = (name, x, y, r) => ({ name, r: { x0: x - r - gap, y0: y - r - gap, x1: x + r + gap, y1: y + r + gap } });
+                const ctrls = [
+                    circ('joystick', tc.joy.homeX, tc.joy.homeY, tc.joy.radius),
+                    ...Object.entries(tc.buttons).map(([key, b]) => circ(key, b.x, b.y, b.radius)),
+                    circ('pause', tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.hit),
+                ];
+                const hud = s.touchHud ? Object.entries(s.touchHud.texts()).filter(([, t]) => t && t.active && t.visible && t.text)
+                    .map(([name, t]) => { const b = t.getBounds(); return { name, r: { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom } }; }) : [];
+                return { tips, ctrls, hud, k, left: c.left, top: c.top, mirrored: !!tc.mirrored, joyR: tc.joy.radius,
+                    joy: { x: c.left + tc.joy.homeX * k, y: c.top + tc.joy.homeY * k },
+                    fire: { x: c.left + tc.buttons.shoot.x * k, y: c.top + tc.buttons.shoot.y * k } };
+            }, TOUCH_CONFIG.tips.gapCss);
+            last = m;
+            joyR[touchSize] = m.joyR;
+            const names = m.tips.map((t) => t.name).sort().join(',');
+            const misses = [];
+            m.tips.forEach((a, i) => {
+                if (a.css < TOUCH_CONFIG.hudMinCss - 0.01) misses.push(`${a.name} ${a.css.toFixed(1)} CSS px`);
+                if (a.r.x0 < 0 || a.r.y0 < 0 || a.r.x1 > 1024 || a.r.y1 > 700) misses.push(`${a.name} off the canvas`);
+                m.tips.slice(i + 1).forEach((b) => { if (hit(a.r, b.r)) misses.push(`${a.name}/${b.name}`); });
+                m.ctrls.forEach((b) => { if (hit(a.r, b.r)) misses.push(`${a.name}/${b.name}`); });
+                m.hud.forEach((b) => { if (hit(a.r, b.r)) misses.push(`${a.name}/hud ${b.name}`); });
+            });
+            check(`small-phone tips: 568x320 TOUCH SIZE ${touchSize.toUpperCase()}, LAYOUT ${touchLayout.toUpperCase()}: five tips at hudMinCss, on the canvas, clear of the controls by gapCss, the HUD and each other`,
+                ready && names === 'ability,move,pause,runeShoot,shoot' && m.mirrored === (touchLayout === 'left') && misses.length === 0,
+                `joystick r=${m.joyR.toFixed(0)} tips=${names} sizes=${m.tips.map((t) => `${t.name}:${t.css.toFixed(1)}`).join(' ')}` + (misses.length ? ` misses=${misses.join('; ')}` : ''));
+        }
+
+        check('small-phone tips: TOUCH SIZE LARGE grew the controls the tips are laid out beside', joyR.large > joyR.normal,
+            `joystick radius normal=${joyR.normal} large=${joyR.large}`);
+
+        // Move with the joystick, then tap FIRE: the tips fade.
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: last.joy.x, y: last.joy.y, id: 1 }] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: last.joy.x + 30, y: last.joy.y, id: 1 }] });
+        await phone.waitForTimeout(100);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const stillUp = await phone.evaluate(() => !!window.__game.scene.getScene('GameScene').touchTips?.texts);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: last.fire.x, y: last.fire.y, id: 2 }] });
+        await phone.waitForTimeout(100);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const gone = await reached(() => !window.__game.scene.getScene('GameScene').children.list
+            .some((o) => /^touchTip_/.test(o.name)), 3000);
+        check('small-phone tips: moving and then firing fades them', stillUp && gone, `up after move only=${stillUp} gone after fire=${gone}`);
+        await ctx.close();
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
