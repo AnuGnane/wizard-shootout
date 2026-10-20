@@ -117,15 +117,21 @@
 //      joystick (FLOATING and FIXED) and one on the right bar at FIRE's
 //      height fires; a desktop has no touch controls to drive (W-64),
 //   3aa0r. on a 568x320 phone the round-end and match-end score banners'
-//      summaries, the party lines, DRAW's and ORB SURGE's sub lines read at
-//      hudMinCss, nothing overlapping; a desktop keeps its sizes (W-65),
-//   3aa0s. on a 568x320 phone the achievement toast's two lines read at
-//      hudMinCss inside a panel on the canvas, clear of the top bar's HUD
+//      summaries, the party lines, DRAW's and ORB SURGE's sub lines sit on
+//      the canvas, nothing overlapping; a desktop keeps its sizes (W-65),
+//   3aa0s. on a 568x320 phone the achievement toast's two lines sit
+//      inside a panel on the canvas, clear of the top bar's HUD
 //      texts and the pause button; a desktop keeps 260x54 at y 90 (W-66),
 //   3aa0t. on a 568x320 phone the five first-round tips, at TOUCH SIZE
 //      NORMAL and LARGE and LAYOUT RIGHT and LEFT, read at hudMinCss on the
 //      canvas, clear of the controls by tips.gapCss, the HUD and each other,
 //      and fade on move-and-fire (W-68),
+//   3aa0u. on a 568x320 phone every in-round text of a 1P round (its
+//      banner, the tips, ORB SURGE, party, DRAW, the achievement toast, a
+//      round and a match end) and of a survival round (wave banner, heal
+//      pop) reads at hudMinCss with none overlapping, the touch buttons'
+//      labels inside their buttons; the floor of 3aa0r's and 3aa0s's lines
+//      is held here (W-69),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -231,7 +237,7 @@ try {
     }, SCENES);
     check('all scenes registered', missing.length === 0, missing.length ? 'missing: ' + missing.join(', ') : `${SCENES.length} scenes`);
 
-    // Holiday W-22: the menu footer names the build; 'dev' on the dev server,
+    // 3q. Holiday W-22: the menu footer names the build; 'dev' on the dev server,
     // and no reload button without a newer deploy.
     const devVersion = await page.evaluate(() => {
         const s = window.__game.scene.getScene('MenuScene');
@@ -5050,7 +5056,8 @@ try {
     // the WINS THE MATCH! banner and the same; the party banner's per-player
     // lines, DRAW's and ORB SURGE's sub lines are called on the scene. Every
     // small line is at least hudMinCss CSS px, inside the canvas, and no two
-    // of a banner's texts intersect. On a 1280x720 desktop the sizes and
+    // of a banner's texts intersect (W-69: the floor is now asserted by
+    // 3aa0u, which samples the same moments). On a 1280x720 desktop the sizes and
     // offsets are today's: 13 px at +78 / +96, 15 px at +20 + i * 22, 16 px.
     {
         const run = async (vp, touch) => {
@@ -5120,7 +5127,6 @@ try {
             await ctx.close();
             return { roundEnd, matchEnd, party, draw, surge };
         };
-        const min = TOUCH_CONFIG.hudMinCss;
         const ph = await run({ width: 568, height: 320 }, true);
         const dk = await run({ width: 1280, height: 720 }, false);
         const small = (m) => m.texts.filter((t) => /^(DMG|no wizard|orbs flood)|DMG \d/.test(t.text));
@@ -5128,17 +5134,17 @@ try {
         const counts = { roundEnd: 2, matchEnd: 2, party: 2, draw: 1, surge: 1 };
         const won = (r) => r.matchEnd.texts.some((t) => /WINS THE/.test(t.text));
         const okPhone = won(ph) && won(dk) && moments.every((m) => small(ph[m]).length === counts[m] && ph[m].hit.length === 0
-            && small(ph[m]).every((t) => t.css >= min - 0.5) && ph[m].texts.every((t) => t.on));
+            && ph[m].texts.every((t) => t.on));
         const offs = (m) => small(dk[m]).map((t) => `${t.px}@${t.y - dk[m].cy}`).join();
         const okDesk = offs('roundEnd') === '13@78,13@96' && offs('matchEnd') === '13@78,13@96'
             && offs('party') === '15@20,15@42' && offs('draw') === '16@44' && offs('surge') === '16@44';
-        check('summaries: at 568x320 the round-end and match-end DMG / ACC / ORBS lines, the party lines and the DRAW and ORB SURGE sub lines read at hudMinCss, on the canvas, no banner text overlapping; a desktop keeps 13 / 15 / 16 px at today\'s offsets',
+        check('summaries: at 568x320 the round-end and match-end DMG / ACC / ORBS lines, the party lines and the DRAW and ORB SURGE sub lines are on the canvas, no banner text overlapping (their floor: 3aa0u); a desktop keeps 13 / 15 / 16 px at today\'s offsets',
             okPhone && okDesk, JSON.stringify({ phone: ph, desktop: moments.map(offs) }));
     }
 
     // 3aa0s. Holiday W-66: the achievement toast. On a 568x320 touch phone a
     // toast for the longest-named achievement, once slid in, has its label
-    // and name at least hudMinCss CSS px, both inside the panel, the label
+    // and name (their floor: 3aa0u, W-69) both inside the panel, the label
     // above the name, the panel inside the canvas and clear of every other
     // visible text and of the pause button's hit circle. On a 1280x720
     // desktop the panel is 260x54 at y 90 with 11 and 16 px lines (pinned).
@@ -5192,9 +5198,8 @@ try {
         };
         const ph = await toast({ width: 568, height: 320 }, true);
         const dk = await toast({ width: 1280, height: 720 }, false);
-        const min = TOUCH_CONFIG.hudMinCss;
-        check('toast: at 568x320 the achievement toast\'s label and longest name read at hudMinCss inside its panel, label above name, the panel on the canvas below the top bar and clear of the HUD and the pause button; a desktop keeps 260x54 at y 90 with 11 / 16 px',
-            !!ph && !!dk && names.length > 5 && ph.css.every((c) => c >= min - 0.5) && ph.inside && ph.order
+        check('toast: at 568x320 the achievement toast\'s label and longest name (their floor: 3aa0u) sit inside its panel, label above name, the panel on the canvas below the top bar and clear of the HUD and the pause button; a desktop keeps 260x54 at y 90 with 11 / 16 px',
+            !!ph && !!dk && names.length > 5 && ph.inside && ph.order
                 && ph.panel.left >= 0 && ph.panel.right <= 1024 && ph.panel.top >= 60 && ph.panel.bottom <= 700
                 && ph.others.length === 0 && ph.pauseClear
                 && dk.panel.w === 260 && dk.panel.h === 54 && dk.panel.y === 90 && dk.panel.x === 1024 - 130 - 16 && dk.px.join() === '11,16' && dk.inside,
@@ -5297,6 +5302,146 @@ try {
             .some((o) => /^touchTip_/.test(o.name)), 3000);
         check('small-phone tips: moving and then firing fades them', stillUp && gone, `up after move only=${stillUp} gone after fire=${gone}`);
         await ctx.close();
+    }
+
+    // 3aa0u. Holiday W-69: every in-round text reaches the floor at 568x320.
+    // On a touch phone with fresh storage a 1P bot round is sampled at its
+    // moments: the round banner as it opens, mid-round with the first-round
+    // tips up, the ORB SURGE, party and DRAW banners and the achievement
+    // toast called on the scene, a round end and a match end by a kill; then
+    // a SURVIVAL SOLO round at its wave banner and after a heal pop. At each
+    // sample every visible Text with text, inside containers too and through
+    // their scale, is at least hudMinCss CSS px tall, half a pixel of
+    // rounding aside, and no two visible texts' bounds intersect. The W-13
+    // to W-68 steps keep their own layout rules; this is the net for a text
+    // the next package adds to the round under the floor.
+    {
+        // [why, test on a text's { text, depth, px }]: may stay under the
+        // floor and float over others. Nothing else without a reason.
+        const allow = [
+            ['the floating damage and heal numbers stay 14 px (W-62 ruling: a glance at a hero\'s feet)',
+                (t) => t.depth === 35 && /^[+-]\d+$/.test(t.text) && t.px === 14],
+            ['the pause button\'s II is an icon in a 16 px circle drawn to fit the top bar; its hit area is the CSS minimum and its tip names it',
+                (t) => t.name === 'touchButtonLabel_pause' && t.text === 'II'],
+        ];
+        const src = readFileSync(new URL('../src/systems/Stats.js', import.meta.url), 'utf8');
+        const block = src.slice(src.indexOf('export const ACHIEVEMENTS'));
+        const longest = [...block.slice(0, block.indexOf('\n];') + 1 || undefined).matchAll(/name: '([^']+)'/g)]
+            .map((m) => m[1]).reduce((a, b) => (b.length > a.length ? b : a), '');
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('round floor pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await pg.evaluate(() => localStorage.removeItem('wizard-shootout-touch-tips-v1'));
+        const min = TOUCH_CONFIG.hudMinCss;
+        const misses = [];
+        const seen = {};
+        const sample = async (mode, moment) => {
+            const ts = await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const out = [];
+                const walk = (list, sc) => list.forEach((o) => {
+                    if (o.type === 'Container') { if (o.visible && o.alpha > 0) walk(o.list, sc * Math.abs(o.scaleY)); } else if (o.type === 'Text' && o.visible && o.active && o.alpha > 0 && o.text) {
+                        const b = o.getBounds();
+                        out.push({ text: o.text.replace(/\n/g, ' ').slice(0, 24), name: o.name, depth: o.depth, px: parseFloat(o.style.fontSize),
+                            css: +(parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * sc * k).toFixed(2), b: [b.x, b.y, b.right, b.bottom] });
+                    }
+                });
+                walk(s.children.list, 1);
+                return out;
+            });
+            const why = (t) => allow.find(([, test]) => test(t));
+            const held = ts.filter((t) => !why(t));
+            seen[`${mode} ${moment}`] = ts.length;
+            for (const t of held) if (t.css < min - 0.5) misses.push(`${mode} ${moment}: "${t.text}" is ${t.css} CSS px`);
+            for (let i = 0; i < held.length; i++) for (let j = i + 1; j < held.length; j++) {
+                const [a, b] = [held[i].b, held[j].b];
+                if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) misses.push(`${mode} ${moment}: "${held[i].text}" | "${held[j].text}" overlap`);
+            }
+            if (!ts.length) misses.push(`${mode} ${moment}: no text found`);
+        };
+        const start = (mode, scores) => pg.evaluate(({ mode, scores }) => {
+            const M = window.__match;
+            Object.assign(M, { online: false, isDailyChallenge: false, mode, round: 1, targetScore: 5,
+                classes: { 1: 'stonecaller', 2: 'stonecaller', 3: 'arcanist', 4: 'arcanist' }, mapIndex: 0,
+                scores: { 1: scores, 2: 0, 3: 0, 4: 0 } },
+            mode === 'survival'
+                ? { playerCount: 1, seatTypes: { 1: 'human', 2: 'off', 3: 'off', 4: 'off' } }
+                : { playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } });
+            const g = window.__game.scene;
+            (g.isActive('GameScene') ? g.getScene('GameScene') : g.getScene('MenuScene')).scene.start('GameScene');
+        }, { mode, scores });
+        const ready = () => pg.waitForFunction(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return window.__game.scene.isActive('GameScene') && s.player1?.isAlive && s.touchHud;
+        }, null, { timeout: 8000 }).then(() => true, () => false);
+        // Clear the banners (depth 40) and the toast (60 / 61), so each
+        // moment reads alone.
+        const clear = () => pg.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            s.children.list.filter((o) => [40, 60, 61].includes(o.depth) && (o.type === 'Text' || o.type === 'Rectangle'))
+                .forEach((o) => { s.tweens.killTweensOf(o); o.destroy(); });
+        });
+        const call = async (fn, arg, wait) => {
+            await clear();
+            await pg.evaluate(([fn, arg]) => {
+                const s = window.__game.scene.getScene('GameScene');
+                if (fn === 'kill') { s.player2.lastHitBy = { by: 1, element: 'arcane' }; s.player2.takeDamage(1000); }
+                if (fn === 'surge') s.spawnDirector.showSurgeBanner();
+                if (fn === 'party') s.roundFlow.showPartyScoreBanner(1, false);
+                if (fn === 'draw') s.roundFlow.showDrawBanner();
+                if (fn === 'toast') s.roundFlow.showAchievementToast({ id: 'smoke', name: arg });
+                if (fn === 'heal') s.survivalDirector.showHealPop(s.player1, 25);
+            }, [fn, arg]);
+            await pg.waitForTimeout(wait);
+        };
+
+        await start('1p', 0);
+        let up = await ready();
+        const opened = up && await pg.waitForFunction(() => window.__game.scene.getScene('GameScene').children.list
+            .some((o) => o.type === 'Text' && o.depth === 40 && /^ROUND /.test(o.text) && o.scaleX === 1), null, { timeout: 5000 }).then(() => true, () => false);
+        if (opened) await sample('1p', 'round banner'); else misses.push('1p: the round banner never opened');
+        const tipsUp = up && await pg.waitForFunction(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            return !s.children.list.some((o) => o.depth === 40 && o.type === 'Text') && s.touchTips?.texts;
+        }, null, { timeout: 6000 }).then(() => true, () => false);
+        if (tipsUp) await sample('1p', 'mid-round, tips up'); else misses.push('1p: no mid-round moment with the tips up');
+        await pg.evaluate(() => window.__game.scene.getScene('GameScene').touchTips?.destroy());
+        // The grown button labels stay inside their buttons, ORB's with a
+        // held orb's second line.
+        await pg.evaluate(() => { const p = window.__game.scene.getScene('GameScene').player1; p.heldRune = 'lightning'; p.runeShots = 10; });
+        await pg.waitForTimeout(250);
+        const spill = await pg.evaluate(() => {
+            const tc = window.__game.scene.getScene('GameScene').touchControls;
+            return Object.entries(tc.buttons).filter(([key, b]) => {
+                const l = tc.buttonLabels[key].getBounds();
+                return Math.hypot(Math.max(Math.abs(l.x - b.x), Math.abs(l.right - b.x)), Math.max(Math.abs(l.y - b.y), Math.abs(l.bottom - b.y))) > b.radius;
+            }).map(([key, b]) => `${key} "${tc.buttonLabels[key].text.replace(/\n/g, ' ')}" r=${b.radius.toFixed(0)}`);
+        });
+        for (const k of spill) misses.push(`1p: the ${k} label leaves its button`);
+        for (const [fn, arg, wait, moment] of [['surge', null, 700, 'ORB SURGE'], ['party', null, 700, 'party banner'],
+            ['draw', null, 700, 'DRAW'], ['toast', longest, 600, 'achievement toast'], ['kill', null, 1100, 'round end']]) {
+            await call(fn, arg, wait);
+            await sample('1p', moment);
+        }
+        await start('1p', 4);
+        up = await ready();
+        await pg.waitForTimeout(1500);
+        await call('kill', null, 1100);
+        await sample('1p', 'match end');
+
+        await start('survival', 0);
+        up = await ready();
+        const wave = up && await pg.waitForFunction(() => window.__game.scene.getScene('GameScene').children.list
+            .some((o) => o.type === 'Text' && o.depth === 40 && /^WAVE /.test(o.text) && o.scaleX === 1), null, { timeout: 10000 }).then(() => true, () => false);
+        if (wave) await sample('survival', 'wave banner'); else misses.push('survival: the wave banner never opened');
+        await call('heal', null, 100);
+        await sample('survival', 'heal pop');
+        await ctx.close();
+        check('round floor: at 568x320 every text of a 1P round (banner, tips, ORB SURGE, party, DRAW, toast, round and match end) and a survival round (wave banner, heal pop) is at least hudMinCss CSS px and none overlaps, the button labels inside their buttons (allowlist: the damage and heal numbers, W-62; the pause icon)',
+            misses.length === 0, misses.length ? misses.join('; ') : JSON.stringify(seen));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch
