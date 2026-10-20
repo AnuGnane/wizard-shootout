@@ -119,6 +119,9 @@
 //   3aa0r. on a 568x320 phone the round-end and match-end score banners'
 //      summaries, the party lines, DRAW's and ORB SURGE's sub lines read at
 //      hudMinCss, nothing overlapping; a desktop keeps its sizes (W-65),
+//   3aa0s. on a 568x320 phone the achievement toast's two lines read at
+//      hudMinCss inside a panel on the canvas, clear of the top bar's HUD
+//      texts and the pause button; a desktop keeps 260x54 at y 90 (W-66),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5119,6 +5122,71 @@ try {
             && offs('party') === '15@20,15@42' && offs('draw') === '16@44' && offs('surge') === '16@44';
         check('summaries: at 568x320 the round-end and match-end DMG / ACC / ORBS lines, the party lines and the DRAW and ORB SURGE sub lines read at hudMinCss, on the canvas, no banner text overlapping; a desktop keeps 13 / 15 / 16 px at today\'s offsets',
             okPhone && okDesk, JSON.stringify({ phone: ph, desktop: moments.map(offs) }));
+    }
+
+    // 3aa0s. Holiday W-66: the achievement toast. On a 568x320 touch phone a
+    // toast for the longest-named achievement, once slid in, has its label
+    // and name at least hudMinCss CSS px, both inside the panel, the label
+    // above the name, the panel inside the canvas and clear of every other
+    // visible text and of the pause button's hit circle. On a 1280x720
+    // desktop the panel is 260x54 at y 90 with 11 and 16 px lines (pinned).
+    {
+        const src = readFileSync(new URL('../src/systems/Stats.js', import.meta.url), 'utf8');
+        const block = src.slice(src.indexOf('export const ACHIEVEMENTS'));
+        const names = [...block.slice(0, block.indexOf('\n];') + 1 || undefined).matchAll(/name: '([^']+)'/g)].map((m) => m[1]);
+        const longest = names.reduce((a, b) => (b.length > a.length ? b : a), '');
+        const toast = async (vp, touch) => {
+            const ctx = await browser.newContext(touch ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('toast pageerror: ' + e.message));
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => {
+                const M = window.__match;
+                Object.assign(M, { online: false, isDailyChallenge: false, mode: '1p', playerCount: 2,
+                    seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' },
+                    classes: { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' },
+                    mapIndex: 0, round: 1, scores: { 1: 0, 2: 0, 3: 0, 4: 0 }, targetScore: 5 });
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            });
+            await pg.waitForFunction(() => { const s = window.__game.scene.getScene('GameScene'); return window.__game.scene.isActive('GameScene') && s.player1 && s.roundFlow; }, null, { timeout: 8000 });
+            await pg.waitForTimeout(500);
+            await pg.evaluate((name) => window.__game.scene.getScene('GameScene').roundFlow.showAchievementToast({ id: 'smoke', name }), longest);
+            await pg.waitForTimeout(600);
+            const r = await pg.evaluate((pause) => {
+                const s = window.__game.scene.getScene('GameScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const panel = s.children.list.find((o) => o.type === 'Rectangle' && o.depth === 60);
+                const ts = s.children.list.filter((o) => o.type === 'Text' && o.depth === 61);
+                const label = ts.find((o) => o.text.includes('ACHIEVEMENT'));
+                const name = ts.find((o) => o !== label);
+                if (!panel || !label || !name) return null;
+                const P = panel.getBounds();
+                const inside = (o) => { const b = o.getBounds(); return b.x >= P.x && b.right <= P.right && b.y >= P.y && b.bottom <= P.bottom; };
+                const over = (b) => P.x < b.right && b.x < P.right && P.y < b.bottom && b.y < P.bottom;
+                const others = s.children.list.filter((o) => o.type === 'Text' && o.visible && o.text && o.depth !== 61 && o.alpha > 0 && over(o.getBounds()));
+                const pr = Math.max(pause.radius, pause.minCss / 2 / k);
+                const nx = Math.max(P.x, Math.min(pause.x, P.right)), ny = Math.max(P.y, Math.min(pause.y, P.bottom));
+                const css = (o) => +(parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k).toFixed(2);
+                return {
+                    panel: { x: Math.round(panel.x), y: Math.round(panel.y), w: Math.round(panel.width), h: Math.round(panel.height), left: P.x, right: P.right, top: P.y, bottom: P.bottom },
+                    px: [parseFloat(label.style.fontSize), parseFloat(name.style.fontSize)], css: [css(label), css(name)],
+                    inside: inside(label) && inside(name), order: label.getBounds().bottom <= name.getBounds().y,
+                    others: others.map((o) => o.text.slice(0, 16)), pauseClear: Math.hypot(pause.x - nx, pause.y - ny) > pr,
+                };
+            }, TOUCH_CONFIG.pause);
+            await ctx.close();
+            return r;
+        };
+        const ph = await toast({ width: 568, height: 320 }, true);
+        const dk = await toast({ width: 1280, height: 720 }, false);
+        const min = TOUCH_CONFIG.hudMinCss;
+        check('toast: at 568x320 the achievement toast\'s label and longest name read at hudMinCss inside its panel, label above name, the panel on the canvas below the top bar and clear of the HUD and the pause button; a desktop keeps 260x54 at y 90 with 11 / 16 px',
+            !!ph && !!dk && names.length > 5 && ph.css.every((c) => c >= min - 0.5) && ph.inside && ph.order
+                && ph.panel.left >= 0 && ph.panel.right <= 1024 && ph.panel.top >= 60 && ph.panel.bottom <= 700
+                && ph.others.length === 0 && ph.pauseClear
+                && dk.panel.w === 260 && dk.panel.h === 54 && dk.panel.y === 90 && dk.panel.x === 1024 - 130 - 16 && dk.px.join() === '11,16' && dk.inside,
+            JSON.stringify({ longest, phone: ph, desktop: dk }));
     }
 
     // 3aa. Holiday W-32: the left-handed touch layout. On an 844x390 touch

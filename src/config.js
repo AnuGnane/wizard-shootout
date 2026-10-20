@@ -591,6 +591,11 @@ export const TOUCH_CONFIG = {
     // the line above it by its grown height, wrapping at wrapW; a desktop
     // keeps 16 / 13 px at the fixed offsets.
     banners: { gap: 4, wrapW: 960 },
+    // The achievement toast on a touch device (holiday W-66): its two lines
+    // grow to the floor and the panel grows around them, padX / padY game px
+    // of margin, gap between the lines; its top stays minTop clear of the
+    // top bar. A desktop keeps the 260x54 panel at y 90.
+    toast: { padX: 16, padY: 6, gap: 2, minTop: 64 },
     // First-round touch tips (holiday W-16): short labels beside the touch
     // controls in a player's first round with them. They fade once the
     // player has both moved and fired, or after timeoutMs; fadeMs is the
