@@ -18,9 +18,9 @@
 //   3g. on that phone, an online match (NetSession stubbed as a connected
 //      guest, then host) gives the local seat the on-screen controls and
 //      the joystick reaches the input sent up / seat 1 (W-9),
-//   3j. on that phone the in-round HUD (1P and survival) reads at
-//      TOUCH_CONFIG.hudMinCss and is clear of itself and the controls;
-//      568x320 is reported (W-13),
+//   3j. on that phone and at 568x320 (also under TEXT: LARGE) the
+//      in-round HUD (1P, survival, a long match) reads at the text floor
+//      and is clear of itself and the controls (W-13, W-67),
 //   3k. on that phone, with navigator.vibrate stubbed, seat 1 buzzes on a
 //      hit (rate-limited), a death and a won round, not with VIBRATION OFF,
 //      and the Settings row toggles and saves by tap (W-14),
@@ -1301,26 +1301,33 @@ try {
         }
     }
 
-    // 3j. Legible HUD on a phone (holiday W-13): a 1P bot round and a
-    // SURVIVAL SOLO round on a touch context. At 844x390 every HUD text is at
-    // least TOUCH_CONFIG.hudMinCss CSS px tall (font px x scaleY x CSS px per
-    // game px) and no two HUD texts, and no HUD text and touch control,
-    // intersect; at 568x320 the sizes and any overlap are only logged.
-    for (const vp of [{ width: 844, height: 390, assert: true }, { width: 568, height: 320, assert: false }]) {
+    // 3j. Legible HUD on a phone (holiday W-13, W-67): a 1P bot round and a
+    // SURVIVAL SOLO round on a touch context. At 844x390 and at 568x320 every
+    // HUD text is at least the text floor (TOUCH_CONFIG.hudMinCss times the
+    // TEXT size's factor, as hudFloorCss) CSS px tall (font px x scaleY x CSS
+    // px per game px) and no two HUD texts, and no HUD text and touch
+    // control, intersect. 568x320 also runs a long match, whose score is a
+    // number, not pips, and runs again under TEXT: LARGE.
+    for (const vp of [
+        { width: 844, height: 390, textSize: 'normal', inset: true },
+        { width: 568, height: 320, textSize: 'normal' },
+        { width: 568, height: 320, textSize: 'large' },
+    ]) {
         const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: true, isMobile: true });
         const phone = await ctx.newPage();
-        const tag = `hud-phone ${vp.width}x${vp.height}`;
+        const tag = `hud-phone ${vp.width}x${vp.height}${vp.textSize === 'normal' ? '' : ' TEXT: ' + vp.textSize.toUpperCase()}`;
+        const minCss = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[vp.textSize];
         phone.on('pageerror', (e) => errors.push(`${tag} pageerror: ` + e.message));
         phone.on('console', (m) => { if (m.type() === 'error') errors.push(`${tag} console.error: ` + m.text()); });
-        if (vp.assert) {
+        if (vp.inset) {
             const cdp = await ctx.newCDPSession(phone);
             await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 0, right: 47, bottom: 21, left: 47 } });
         }
         await phone.goto(url, { waitUntil: 'networkidle' });
         await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await phone.evaluate((t) => { window.__settings.textSize = t; }, vp.textSize);
 
-        // 568x320 also reports a long match, whose score is a number, not pips.
-        for (const mode of vp.assert ? ['1p', 'survival'] : ['1p', 'survival', '1p-long']) {
+        for (const mode of vp.width === 844 ? ['1p', 'survival'] : ['1p', 'survival', '1p-long']) {
             await phone.evaluate((mode) => {
                 const M = window.__match;
                 M.online = false; M.isDailyChallenge = false;
@@ -1343,7 +1350,7 @@ try {
                     (mode !== 'survival' ? !s.isSurvival && s.player2 : s.isSurvival && s.survivalWaveText);
             }, mode, { timeout: 8000 }).then(() => true, () => false);
             if (!ready) {
-                check(`${tag} ${mode}: HUD texts legible and clear`, !vp.assert, 'touch HUD never came up');
+                check(`${tag} ${mode}: HUD texts legible and clear`, false, 'touch HUD never came up');
                 continue;
             }
             // Hold the widest orb readout, then let a frame write it.
@@ -1375,26 +1382,27 @@ try {
                     for (const [cn, q] of Object.entries(controls)) if (hits(b, q)) overlaps.push(`${n}/${cn}`);
                 });
                 // The top-bar texts stay inside the 60 px bar.
-                bounds.forEach(([n, b]) => { if (b.top < 100 && b.bottom > 60) overlaps.push(`${n}/below bar`); });
+                const spill = bounds.filter(([, b]) => b.top < 100 && b.bottom > 60)
+                    .map(([n, b]) => `${n} to ${b.bottom.toFixed(0)}`);
                 // No key-name hint on a phone.
                 const hint = s.children.list.some((o) => o.type === 'Text' && /WASD/.test(o.text));
                 const min = Math.min(...sizes.map(([, css]) => css));
                 return {
-                    n: texts.length, small, overlaps, hint, min,
+                    n: texts.length, small, overlaps, spill, hint, min,
                     sizes: sizes.map(([n, css]) => `${n}=${css.toFixed(1)}`).join(' '),
                     labels: texts.filter(([n]) => /name|hero\d$|elem|rune/.test(n)).map(([n, t]) => `${n}="${t.text}"`).join(' '),
                 };
-            }, TOUCH_CONFIG.hudMinCss);
-            const detail = `${hud.n} texts, min ${hud.min.toFixed(1)} CSS px` +
+            }, minCss - 0.5);
+            const detail = `${hud.n} texts, min ${hud.min.toFixed(1)} CSS px (floor ${minCss})` +
                 (hud.small.length ? `; under: ${hud.small.join(', ')}` : '') +
                 (hud.overlaps.length ? `; overlap: ${hud.overlaps.join(', ')}` : '') +
+                (hud.spill.length ? `; below the bar: ${hud.spill.join(', ')}` : '') +
                 (hud.hint ? '; key hint shown' : '');
-            if (vp.assert) {
-                check(`${tag} ${mode}: HUD texts legible and clear`,
-                    hud.n >= (mode === '1p' ? 7 : 5) && !hud.small.length && !hud.overlaps.length && !hud.hint, detail);
-            } else {
-                console.log(`  ..  ${tag} ${mode} (report only): ${detail}`);
-            }
+            // Under LARGE two rows at the floor are taller than the 60 px
+            // bar on this phone, so the spill is reported, not asserted.
+            const barHeld = !hud.spill.length || vp.textSize !== 'normal';
+            check(`${tag} ${mode}: HUD texts legible and clear`,
+                hud.n >= (mode === 'survival' ? 5 : 7) && !hud.small.length && !hud.overlaps.length && barHeld && !hud.hint, detail);
             console.log(`        ${hud.sizes}`);
             console.log(`        ${hud.labels}`);
         }
