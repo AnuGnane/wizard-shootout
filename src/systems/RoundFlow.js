@@ -304,8 +304,9 @@ export class RoundFlow {
 
         // Holiday W-66: on a touch device the grown lines size the panel
         // (the desktop's 260x54 the minimum), the label stays above the name,
-        // and the panel drops to clear the top bar.
-        if (isTouchDevice(scene)) {
+        // and the panel drops to clear the top bar; where nothing grew (a big
+        // touch screen) it keeps the desktop layout.
+        if (isTouchDevice(scene) && menuFontPx(scene, 11) > 11) {
             const { padX, padY, gap, minTop } = TOUCH_CONFIG.toast;
             panelW = Math.max(panelW, Math.max(label.width, nameText.width) + 2 * padX);
             panelH = Math.max(panelH, label.height + gap + nameText.height + 2 * padY);
