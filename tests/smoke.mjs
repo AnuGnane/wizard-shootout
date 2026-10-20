@@ -5111,7 +5111,8 @@ try {
         const small = (m) => m.texts.filter((t) => /^(DMG|no wizard|orbs flood)|DMG \d/.test(t.text));
         const moments = ['roundEnd', 'matchEnd', 'party', 'draw', 'surge'];
         const counts = { roundEnd: 2, matchEnd: 2, party: 2, draw: 1, surge: 1 };
-        const okPhone = moments.every((m) => small(ph[m]).length === counts[m] && ph[m].hit.length === 0
+        const won = (r) => r.matchEnd.texts.some((t) => /WINS THE/.test(t.text));
+        const okPhone = won(ph) && won(dk) && moments.every((m) => small(ph[m]).length === counts[m] && ph[m].hit.length === 0
             && small(ph[m]).every((t) => t.css >= min - 0.5) && ph[m].texts.every((t) => t.on));
         const offs = (m) => small(dk[m]).map((t) => `${t.px}@${t.y - dk[m].cy}`).join();
         const okDesk = offs('roundEnd') === '13@78,13@96' && offs('matchEnd') === '13@78,13@96'
