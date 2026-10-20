@@ -78,6 +78,9 @@ export function loadSettings(settings) {
     if (Object.keys(TOUCH_CONFIG.sizes).includes(saved.touchSize)) {
         settings.touchSize = saved.touchSize;
     }
+    if (Object.keys(TOUCH_CONFIG.textSizes).includes(saved.textSize)) {
+        settings.textSize = saved.textSize;
+    }
     if (TOUCH_CONFIG.joystickModes.includes(saved.joystickMode)) {
         settings.joystickMode = saved.joystickMode;
     }
@@ -122,6 +125,7 @@ export function saveSettings(settings) {
     payload.effects = settings.effects;
     payload.touchLayout = settings.touchLayout;
     payload.touchSize = settings.touchSize;
+    payload.textSize = settings.textSize;
     payload.joystickMode = settings.joystickMode;
     for (const key of MUTATOR_KEYS) {
         payload[key] = settings[key];

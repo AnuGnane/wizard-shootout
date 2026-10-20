@@ -16,7 +16,7 @@
 
 import { TOUCH_CONFIG } from '../config.js';
 import { isInstalledApp, toggleLeftmostX } from './Fullscreen.js';
-import { cssPerGamePx, ensureTapTarget, isTouchDevice, keepOnCanvas, menuFont } from './TouchMenu.js';
+import { cssPerGamePx, ensureTapTarget, hudFloorCss, isTouchDevice, keepOnCanvas, menuFont } from './TouchMenu.js';
 
 let deferred = null;
 // Menus showing or waiting to show the button (at most the one MenuScene).
@@ -47,7 +47,7 @@ export function iosInstallNote(scene) {
 // full-screen toggle if `toggle` is given.
 function addIosNote(scene, toggle) {
     const { iosText, iosFill, iosMinPx, iosRight, iosY, iosGap } = TOUCH_CONFIG.installButton;
-    const px = Math.max(iosMinPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(scene)));
+    const px = Math.max(iosMinPx, Math.ceil(hudFloorCss(scene) / cssPerGamePx(scene)));
     const right = toggle ? toggleLeftmostX(toggle) - iosGap : iosRight;
     const note = scene.add.text(right, iosY, iosText, { font: `${px}px monospace`, fill: iosFill }).setOrigin(1, 0);
     note.name = 'installNote';

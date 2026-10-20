@@ -647,6 +647,11 @@ export const TOUCH_CONFIG = {
     // wins, so the base alone would change nothing). SMALL keeps `small` at
     // 44.2 CSS px, over the 44-pt floor. NORMAL is the default.
     sizes: { small: 0.85, normal: 1, large: 1.2 },
+    // Holiday W-61: Settings' TEXT choices and their factors on hudMinCss,
+    // applied in TouchMenu's hudFloorCss alone, so every phone text that
+    // reads the floor grows together. No SMALL: it would go under the floor.
+    // NORMAL is the default; Settings offers the choice from holiday W-73.
+    textSizes: { normal: 1, large: 1.3 },
     // Its Settings choice, on TOUCH LAYOUT's line (game px from the column).
     sizeRow: { labelDx: 330, valueDx: 380 },
     // Holiday W-49: Settings' JOYSTICK choices. 'floating' drops the base

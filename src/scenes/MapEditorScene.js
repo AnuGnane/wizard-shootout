@@ -8,7 +8,7 @@ import { MenuNav } from '../systems/MenuNav.js';
 import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
-import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx, menuFontPx, addTapObstacle, hitRect } from '../systems/TouchMenu.js';
+import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx, hudFloorCss, menuFontPx, addTapObstacle, hitRect } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG, STORAGE_CONFIG } from '../config.js';
 import { writeFailed } from '../systems/Storage.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
@@ -590,7 +590,7 @@ export class MapEditorScene extends Phaser.Scene {
         if (writeFailed()) {
             this.flashStatus(STORAGE_CONFIG.editorNote, STORAGE_CONFIG.fill, STORAGE_CONFIG.holdMs);
             this.statusText.setFontSize(Math.max(STORAGE_CONFIG.minFontPx,
-                Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(this))));
+                Math.ceil(hudFloorCss(this) / cssPerGamePx(this))));
             this.statusText.setWordWrapWidth(STORAGE_CONFIG.maxWidthPx).setAlign('center');
             this.statusResized();
             return;

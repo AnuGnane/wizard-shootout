@@ -19,6 +19,7 @@ import { NetSession, clearSession } from './NetSession.js';
 import { NetInput } from './NetInput.js';
 import { WIZARD_CLASSES } from './Classes.js';
 import { audio } from './AudioSystem.js';
+import { hudFloorCss } from './TouchMenu.js';
 
 // Orbs allowed to spawn in a net match. Phase 10.3: ALL SIX. Earth (conjures a
 // collidable wall) and ice (frosts the floor) used to be excluded because the
@@ -649,7 +650,7 @@ export class NetGameSync {
         const { label, y, basePx, padding, fill, bg } = NET_CONFIG.blip;
         const display = scene.scale.displaySize;
         const k = display && display.width ? display.width / GAME_CONFIG.width : 1;
-        const px = Math.max(basePx, Math.ceil(TOUCH_CONFIG.hudMinCss / (k > 0 ? k : 1)));
+        const px = Math.max(basePx, Math.ceil(hudFloorCss(scene) / (k > 0 ? k : 1)));
         this._blipText = scene.add.text(GAME_CONFIG.width / 2, y, label, {
             font: `bold ${px}px monospace`, fill, backgroundColor: bg, padding,
         }).setOrigin(0.5).setDepth(50);

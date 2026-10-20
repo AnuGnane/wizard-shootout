@@ -17,6 +17,7 @@
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { loadTouchTipsSeen, saveTouchTipsSeen } from './Storage.js';
+import { hudFloorCss } from './TouchMenu.js';
 
 const DEPTH = 60; // above the touch controls (50-51), below PauseScene (100+)
 
@@ -62,7 +63,7 @@ export class TouchTips {
         if (!this.texts) return;
         const display = this.scene.scale.displaySize;
         const k = display && display.width ? display.width / GAME_CONFIG.width : 1;
-        const px = Math.ceil(TOUCH_CONFIG.hudMinCss / k);
+        const px = Math.ceil(hudFloorCss(this.scene) / k);
         const gap = TOUCH_CONFIG.tips.gapCss / k;
         for (const t of Object.values(this.texts)) t.setFontSize(px);
 

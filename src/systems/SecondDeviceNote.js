@@ -9,7 +9,7 @@
 // (no pointer), the first tap goes on.
 
 import { TOUCH_CONFIG } from '../config.js';
-import { cssPerGamePx, isTouchDevice } from './TouchMenu.js';
+import { cssPerGamePx, hudFloorCss, isTouchDevice } from './TouchMenu.js';
 
 // A pad is connected now. Not the plugin's `total`: its list keeps a pad
 // that has disconnected (Phaser 3.90; holiday W-24).
@@ -37,7 +37,7 @@ export function secondDeviceGate(scene, x, y, replaces = null) {
             return;
         }
         armed = key;
-        const px = Math.max(cfg.minFontPx, Math.ceil(TOUCH_CONFIG.hudMinCss / cssPerGamePx(scene)));
+        const px = Math.max(cfg.minFontPx, Math.ceil(hudFloorCss(scene) / cssPerGamePx(scene)));
         if (!note) {
             note = scene.add.text(x, y, cfg.text, { font: `${px}px monospace`, fill: cfg.fill })
                 .setOrigin(0.5).setName('secondDeviceNote').setDepth(20);
