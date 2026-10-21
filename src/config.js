@@ -472,11 +472,12 @@ export const TOUCH_CONFIG = {
         // game px (TEXT: LARGE on a small phone; NORMAL's 568x320 floor is
         // 22): SURVIVAL, ONLINE and SETTINGS in one row at rowY, laid out by
         // width rowGap apart; the rows below at these places in place of
-        // `menu`'s; the footer hint kept hintGap left of the build version.
+        // `menu`'s; the build version (right-aligned, as on every menu) at
+        // versionY, the Daily line's row, out of the grown footer hint's way.
         menuLarge: {
             fromFloor: 23, rowY: 427, rowGap: 18, smallY: 483,
             dailyY: 528, orbY: 566, orbLabelY: 600, orbSpacing: 118,
-            padY: 638, hintGap: 18,
+            padY: 638, versionY: 528,
         },
         // SETTINGS (holiday W-55), on a touch device whose rows grow past
         // 14 px: the desktop's two columns become two pages (ORBS ENABLED,

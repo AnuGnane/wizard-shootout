@@ -274,9 +274,9 @@ export class MenuScene extends Phaser.Scene {
         // Holiday W-22: the build's version in the footer, and a reload
         // button once a newer deploy's service worker has taken over.
         const version = addVersionText(this);
-        // Holiday W-70: a grown hint that would reach the build version
-        // moves left until it is hintGap clear of it.
-        if (large) hint.setX(Math.min(hint.x, version.x - version.width - R.hintGap - hint.width / 2));
+        // Holiday W-70: the grown hint leaves the build version no room on
+        // its row, so the version takes the Daily line's row, on the right.
+        if (large) version.setY(R.versionY);
         addUpdateButton(this, this.menuNav);
         // Holiday W-34: [ INSTALL ] under the full-screen toggle where the
         // browser offered an install (Android Chrome, not yet installed);
