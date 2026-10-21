@@ -170,8 +170,18 @@ export class SettingsScene extends Phaser.Scene {
             // Holiday W-45: on TOUCH LAYOUT's line, since the column already
             // reaches SAVE.
             this.addChoice('Size', 'touchSize', Object.keys(TOUCH_CONFIG.sizes), TOUCH_CONFIG.sizeRow);
+            // Holiday W-73: TEXT after SIZE, a row of its own on a paged
+            // phone or where VIBRATION does not show.
+            if (this.paged || !canVibrate()) this.addChoice('Text', 'textSize', Object.keys(TOUCH_CONFIG.textSizes));
         }
+        const vibrationY = this.yPos;
         if (canVibrate()) this.addToggle('Vibration', 'vibration');
+        // Holiday W-73: on an unpaged touch screen, inline on VIBRATION's
+        // line, since a row of its own pushes into SAVE.
+        if (isTouchDevice(this) && !this.paged && canVibrate()) {
+            this.lastChoiceY = vibrationY;
+            this.addChoice('Text', 'textSize', Object.keys(TOUCH_CONFIG.textSizes), TOUCH_CONFIG.textRow);
+        }
 
         // === RIGHT COLUMN ===
         this.colX = 530;

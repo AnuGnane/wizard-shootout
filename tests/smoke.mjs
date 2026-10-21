@@ -140,6 +140,9 @@
 //   3aa0x. the same for the map editor (size menu, editor, LOAD list),
 //      PAUSE and the survival GAME OVER card; every menu-floor run reads
 //      the editor in those three states (W-72),
+//   3aa0y. on a 568x320 phone Settings' TEXT row steps NORMAL -> LARGE and
+//      saves it; the main menu then reads at hudMinCss x 1.3, and back at
+//      NORMAL its heights are NORMAL's again; a desktop has no TEXT row (W-73),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4672,7 +4675,7 @@ try {
     // and layout rules; this is the default state of every screen, and the
     // net for a text the next package adds under the floor.
     // Holiday W-61: the step takes a TEXT size (TOUCH_CONFIG.textSizes), its
-    // floor hudMinCss times the size's factor; it runs at NORMAL until W-73.
+    // floor hudMinCss times the size's factor; from W-73 it runs at each.
     //
     // 3aa0n. Holiday W-61: one owner of the floor, hudFloorCss. With TEXT:
     // LARGE on a 568x320 touch phone the main menu's texts that sit on the
@@ -4799,10 +4802,10 @@ try {
         return { misses, seen, heights, ok: misses.length === 0 && visited.size === scenes.length };
     };
     {
-        // Holiday W-73 widens this to every TEXT size, once each screen fits
-        // LARGE (W-70 to W-72).
+        // Holiday W-73: every TEXT size, now that each screen fits LARGE
+        // (W-70 to W-72).
         const runs = {};
-        for (const t of ['normal']) {
+        for (const t of Object.keys(TOUCH_CONFIG.textSizes)) {
             const r = runs[t] = await menuFloorRun(t);
             check(`menu floor: at 568x320 with TEXT: ${t.toUpperCase()} every text on all eleven menu scenes (each page of a paged one, the editor's size menu and LOAD list) is at least hudMinCss x ${TOUCH_CONFIG.textSizes[t]} CSS px, on the canvas, and none overlaps (allowlist: none)`,
                 r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
@@ -4899,6 +4902,70 @@ try {
                 && pl.round.tips !== null && pl.round.tips >= big - 0.5 && pn.round.hud < big
                 && JSON.stringify(dn.menu) === JSON.stringify(dl.menu),
             JSON.stringify({ onFloor: onFloor.length, grownLow, roundN: pn.round, roundL: pl.round, desktopSame: JSON.stringify(dn.menu) === JSON.stringify(dl.menu) }));
+    }
+
+    // 3aa0y. Holiday W-73: the TEXT row. On a 568x320 touch phone
+    // Settings' TEXT steps NORMAL -> LARGE, SAVE's applySettings writes it
+    // to localStorage, and every main menu text then reads at hudMinCss x
+    // 1.3; stepped back to NORMAL the main menu's heights are NORMAL's
+    // again. A 1280x720 desktop's Settings has no TEXT row.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('text row pageerror: ' + e.message));
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const menuHeights = () => pg.evaluate(() => {
+            const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+            return window.__game.scene.getScene('MenuScene').children.list
+                .filter((o) => o.type === 'Text' && o.visible && o.text)
+                .map((o) => [o.text.slice(0, 24), +(parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k).toFixed(2)]);
+        });
+        const step = async () => {
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+            const r = await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('SettingsScene');
+                const c = s.controls.find((x) => x.key === 'textSize');
+                if (!c) return null;
+                const before = c.choice.text;
+                c.choice.emit('pointerdown');
+                const after = c.choice.text;
+                s.applySettings();
+                let saved = null;
+                try { saved = JSON.parse(localStorage.getItem('wizard-shootout-settings-v1') || '{}').textSize; } catch (e) { /* none */ }
+                s.scene.start('MenuScene');
+                return { before, after, saved };
+            });
+            await pg.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(300);
+            return r;
+        };
+        const normal = await menuHeights();
+        const toLarge = await step();
+        const large = await menuHeights();
+        const toNormal = await step();
+        const back = await menuHeights();
+        await ctx.close();
+        const big = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes.large;
+        const low = large.filter(([, h]) => h < big - 0.5);
+
+        const dctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+        const dpg = await dctx.newPage();
+        dpg.on('pageerror', (e) => errors.push('text row desktop pageerror: ' + e.message));
+        await dpg.goto(url, { waitUntil: 'networkidle' });
+        await dpg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await dpg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('SettingsScene'));
+        await dpg.waitForFunction(() => window.__game.scene.isActive('SettingsScene'), null, { timeout: 5000 });
+        const deskRow = await dpg.evaluate(() => window.__game.scene.getScene('SettingsScene').controls.some((x) => x.key === 'textSize'));
+        await dctx.close();
+
+        check('text row: at 568x320 Settings\' TEXT steps NORMAL -> LARGE and saves it, the main menu then reads at hudMinCss x 1.3, back at NORMAL its heights are NORMAL\'s again; a desktop has no TEXT row',
+            toLarge && toLarge.before === '[NORMAL]' && toLarge.after === '[LARGE]' && toLarge.saved === 'large'
+                && large.length > 0 && low.length === 0
+                && toNormal && toNormal.after === '[NORMAL]' && toNormal.saved === 'normal'
+                && JSON.stringify(back) === JSON.stringify(normal) && !deskRow,
+            JSON.stringify({ toLarge, toNormal, low, same: JSON.stringify(back) === JSON.stringify(normal), deskRow }));
     }
 
     // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a

@@ -710,6 +710,9 @@ export const TOUCH_CONFIG = {
     // reads the floor grows together. No SMALL: it would go under the floor.
     // NORMAL is the default; Settings offers the choice from holiday W-73.
     textSizes: { normal: 1, large: 1.3 },
+    // Its Settings choice, on VIBRATION's line where that shows (game px
+    // from the column).
+    textRow: { labelDx: 290, valueDx: 380 },
     // Its Settings choice, on TOUCH LAYOUT's line (game px from the column).
     sizeRow: { labelDx: 330, valueDx: 380 },
     // Holiday W-49: Settings' JOYSTICK choices. 'floating' drops the base
