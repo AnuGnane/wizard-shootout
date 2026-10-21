@@ -64,7 +64,7 @@ export class PauseScene extends Phaser.Scene {
     // `onTap` is the pointer's action when it differs from MenuNav's select.
     makeButton(x, y, label, bgColor, hoverColor, onClick, fontSize = '24px', onTap = onClick) {
         const btn = this.add.text(x, y, label, {
-            font: `${fontSize} monospace`,
+            font: `${menuFontPx(this, parseInt(fontSize, 10))}px monospace`,
             fill: '#ffffff',
             backgroundColor: bgColor,
             padding: { x: 25, y: 10 },
