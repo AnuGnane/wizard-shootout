@@ -3,7 +3,7 @@ import { ELEMENT_COLORS, BALANCE_TALLY_CONFIG, STORAGE_CONFIG, TOUCH_CONFIG } fr
 import { writeFailed } from '../systems/Storage.js';
 import { STATS, ACHIEVEMENTS } from '../systems/Stats.js';
 import { audio } from '../systems/AudioSystem.js';
-import { ensureTapTarget, isTouchDevice, menuFont, menuFontPx, menuFontFloor } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFont, menuFontPx, menuFontFloor, menuLarge, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { balanceRows, balanceMarkdown, formatRate } from '../systems/BalanceTally.js';
 import { canShare, shareOrCopy } from '../systems/Share.js';
 
@@ -28,13 +28,20 @@ export class StatsScene extends Phaser.Scene {
         // from the measured heights (TOUCH_CONFIG.menuRows.stats) instead of
         // the desktop's fixed y. A desktop draws exactly as before.
         this.touch = isTouchDevice(this);
-        const R = TOUCH_CONFIG.menuRows.stats;
+        // Holiday W-71: under TEXT: LARGE the page takes two pages (stats,
+        // kills by element and the tally | achievements) and the large*
+        // rows (TOUCH_CONFIG.menuRows.stats), as W-55's Settings does.
+        this.large = menuLarge(this);
+        const R = this.large ? { ...TOUCH_CONFIG.menuRows.stats, ...TOUCH_CONFIG.menuRows.stats.large } : TOUCH_CONFIG.menuRows.stats;
+        this.rowsCfg = R;
         const fpx = (base) => menuFontPx(this, base);
 
         this.add.text(width / 2, this.touch ? R.titleY : 32, 'YOUR STATS', {
             font: 'bold 32px monospace',
             fill: '#5599ff',
         }).setOrigin(0.5);
+        const shown = new Set(this.children.list);
+        const created = () => this.children.list.filter((o) => !shown.has(o) && shown.add(o));
 
         const s = STATS;
         const totalMatches = s.matchWins + s.matchLosses;
@@ -77,11 +84,14 @@ export class StatsScene extends Phaser.Scene {
         y = elemHead.y + elemHead.height;
 
         const elemColW = this.touch ? R.elemColW : 90;
-        const elemStartX = width / 2 - ((ELEMENT_KEYS.length - 1) * elemColW) / 2;
+        // W-71: LARGE wraps the row every elemCols.
+        const elemCols = R.elemCols || ELEMENT_KEYS.length;
+        const elemStartX = width / 2 - ((Math.min(elemCols, ELEMENT_KEYS.length) - 1) * elemColW) / 2;
         let elemBottom = y;
         ELEMENT_KEYS.forEach((el, i) => {
             const color = '#' + ELEMENT_COLORS[el].toString(16).padStart(6, '0');
-            const t = this.add.text(elemStartX + i * elemColW, this.touch ? y : 260,
+            if (i && i % elemCols === 0) y = elemBottom;
+            const t = this.add.text(elemStartX + (i % elemCols) * elemColW, this.touch ? y : 260,
                 `${el}${this.touch ? ' ' : '\n'}${s.killsByElement[el]}`, {
                     font: `${fpx(12)}px monospace`,
                     fill: color,
@@ -90,6 +100,9 @@ export class StatsScene extends Phaser.Scene {
             elemBottom = Math.max(elemBottom, t.y + t.height);
         });
         y = elemBottom + R.gap;
+        const page1 = created();
+        const tallyTop = y;
+        if (this.large) y = R.achTop;
 
         // Achievements grid: 4 columns, one row per 4 achievements.
         const achHead = this.add.text(width / 2, this.touch ? y : 300, 'ACHIEVEMENTS', {
@@ -127,6 +140,8 @@ export class StatsScene extends Phaser.Scene {
         // Holiday W-50: on a phone the grown tally reaches down to [ BACK ],
         // so a storage note there takes the tally's lines instead (the tally
         // could not be saved either; its button still copies it).
+        const page2 = created();
+        if (this.large) y = tallyTop;
         const noteHere = this.touch && writeFailed();
         this.drawBalance(width, this.touch ? y : null, fpx, !noteHere);
 
@@ -144,7 +159,7 @@ export class StatsScene extends Phaser.Scene {
 
         // Back button + ESC, matching SettingsScene's convention.
         const backBtn = this.add.text(width / 2, height - 34, '[ BACK ]', {
-            font: '24px monospace',
+            font: `${menuFontPx(this, 24)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#333355',
             padding: { x: 20, y: 10 },
@@ -154,6 +169,7 @@ export class StatsScene extends Phaser.Scene {
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
         backBtn.on('pointerdown', () => this.goBack());
         ensureTapTarget(this, backBtn);
+        if (this.large) this.addPages([[...page1, ...created().filter((o) => o !== backBtn)], page2]);
 
         this.input.keyboard.once('keydown-ESC', () => this.goBack());
     }
@@ -170,7 +186,7 @@ export class StatsScene extends Phaser.Scene {
     // `rows` false draws the heading and button only.
     drawBalance(width, top = null, fpx = (base) => base, rows = true) {
         const cfg = BALANCE_TALLY_CONFIG;
-        const R = TOUCH_CONFIG.menuRows.stats;
+        const R = this.rowsCfg;
         const head = this.add.text(width / 2, top === null ? cfg.titleY : top, cfg.heading, {
             font: `bold ${fpx(12)}px monospace`,
             fill: '#8888aa',
@@ -231,6 +247,32 @@ export class StatsScene extends Phaser.Scene {
         this.tallyBtn = btn;
     }
 
+    // Holiday W-71: `pages` are lists of objects shown one list at a time;
+    // the flip (top right, as Settings' W-55 one) steps through them.
+    addPages(pages) {
+        const { x, y } = this.rowsCfg.pageBtn;
+        this.pages = pages;
+        this.pageBtn = this.add.text(x, y, '', {
+            font: `${menuFontPx(this, 18)}px monospace`,
+            fill: '#ffffff',
+            backgroundColor: '#333355',
+            padding: { x: 12, y: 8 },
+        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        this.pageBtn.on('pointerdown', () => {
+            audio.uiClick();
+            this.showPage((this.page + 1) % pages.length);
+        });
+        ensureTapTarget(this, this.pageBtn);
+        this.showPage(0);
+    }
+
+    showPage(page) {
+        this.page = page;
+        this.pages.forEach((list, i) => list.forEach((o) => o.setVisible(i === page)));
+        this.pageBtn.setText(this.rowsCfg.pageLabels[page]);
+        relayoutTapTargets(this);
+    }
+
     goBack() {
         audio.uiClick();
         this.scene.start('MenuScene');
@@ -245,7 +287,7 @@ export class StatsScene extends Phaser.Scene {
                 font: `${menuFontPx(this, 15)}px monospace`,
                 fill: '#aaaacc',
             });
-            const t = this.add.text(x + (this.touch ? TOUCH_CONFIG.menuRows.stats.valueDx : 210), yPos, `${value}`, {
+            const t = this.add.text(x + (this.touch ? this.rowsCfg.valueDx : 210), yPos, `${value}`, {
                 font: `bold ${menuFontPx(this, 15)}px monospace`,
                 fill: '#ffffff',
             }).setOrigin(1, 0);
@@ -260,9 +302,12 @@ export class StatsScene extends Phaser.Scene {
     // once the row's height is known (drawAchievementBox).
     drawAchievementText(cx, top, w, ach, fpx) {
         const unlocked = !!STATS.unlocked[ach.id];
+        // W-71: a grown starred name wraps inside its cell, as its text does.
         const name = this.add.text(cx, top, unlocked ? `★ ${ach.name}` : ach.name, {
             font: `bold ${fpx(13)}px monospace`,
             fill: unlocked ? '#ffdd44' : '#666677',
+            wordWrap: { width: w - 4 },
+            align: 'center',
         }).setOrigin(0.5, 0);
         const desc = this.add.text(cx, name.y + name.height, ach.desc, {
             font: `${fpx(10)}px monospace`,

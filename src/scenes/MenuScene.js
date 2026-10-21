@@ -10,7 +10,7 @@ import { addUpdateButton, addVersionText } from '../systems/AppUpdate.js';
 import { addInstallButton, iosInstallNote } from '../systems/InstallPrompt.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 import { takePendingJoin } from '../systems/Share.js';
-import { isTouchDevice, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
+import { isTouchDevice, layoutRow, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG } from '../config.js';
 
 export class MenuScene extends Phaser.Scene {
@@ -119,7 +119,7 @@ export class MenuScene extends Phaser.Scene {
             audio.uiClick();
             this.scene.start('SettingsScene');
         }, '20px');
-        if (large) this.layoutRow([survivalBtn, onlineBtn, settingsBtn], R.rowY, R.rowGap);
+        if (large) layoutRow(this, [survivalBtn, onlineBtn, settingsBtn], R.rowY, R.rowGap);
 
         // Secondary row: compact utility buttons. Phase 6a adds STATS; the
         // row is centered/sized for THREE slots up front (Daily + Wardrobe
@@ -191,7 +191,7 @@ export class MenuScene extends Phaser.Scene {
         // device the row is laid out by width, smallGap apart, and the Daily
         // line follows its button.
         if (R) {
-            this.layoutRow(secondary, secondaryY, R.smallGap);
+            layoutRow(this, secondary, secondaryY, R.smallGap);
             dailyLine.setX(secondary[1].x);
         }
 
@@ -308,17 +308,6 @@ export class MenuScene extends Phaser.Scene {
         btn.on('pointerdown', onClick);
         this.menuNav.add(btn, onClick);
         return btn;
-    }
-
-    // Holiday W-58: a row of buttons laid out by width at y, `gap` apart and
-    // centred on the screen.
-    layoutRow(btns, y, gap) {
-        const rowW = btns.reduce((w, b) => w + b.width, 0) + (btns.length - 1) * gap;
-        let x = this.cameras.main.width / 2 - rowW / 2;
-        for (const b of btns) {
-            b.setPosition(x + b.width / 2, y);
-            x += b.width + gap;
-        }
     }
 
     // Holiday W-53: on a touch device the gamepad line shows only while a

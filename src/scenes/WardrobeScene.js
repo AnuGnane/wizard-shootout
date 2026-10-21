@@ -9,7 +9,7 @@ import {
 import { ensureCosmeticWizardTexture } from '../systems/PixelSprites.js';
 import { STATS } from '../systems/Stats.js';
 import { TOUCH_CONFIG } from '../config.js';
-import { ensureTapTarget, isTouchDevice, menuFontPx, cssPerGamePx } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx, menuLarge, cssPerGamePx } from '../systems/TouchMenu.js';
 
 // Phase 6c — the Wardrobe: preview + equip the seat-1 (blue team) cosmetics.
 // Two rows of swatches (robe base + staff material); unlocked ones are
@@ -78,11 +78,15 @@ export class WardrobeScene extends Phaser.Scene {
         y = staffHead.y + staffHead.height;
         y = this.buildRow('staff', STAFF_OPTIONS, width, this.touch ? y + this.halfHit : 455) + R.gap;
 
-        this.add.text(width / 2, this.touch ? y : 560,
-            'Click an unlocked swatch to equip. Locked swatches show how to earn them.', {
-            font: `${menuFontPx(this, 13)}px monospace`,
-            fill: '#8888aa',
-        }).setOrigin(0.5, this.touch ? 0 : 0.5);
+        // Holiday W-71: under TEXT: LARGE the rows reach [ BACK ], so the
+        // footer is left out; each locked swatch still shows how to earn it.
+        if (!menuLarge(this)) {
+            this.add.text(width / 2, this.touch ? y : 560,
+                'Click an unlocked swatch to equip. Locked swatches show how to earn them.', {
+                font: `${menuFontPx(this, 13)}px monospace`,
+                fill: '#8888aa',
+            }).setOrigin(0.5, this.touch ? 0 : 0.5);
+        }
 
         // Back button + ESC, matching StatsScene's convention.
         const backBtn = this.add.text(width / 2, this.touch ? R.backY : height - 40, '[ BACK ]', {
