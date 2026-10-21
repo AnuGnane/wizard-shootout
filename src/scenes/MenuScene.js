@@ -10,7 +10,7 @@ import { addUpdateButton, addVersionText } from '../systems/AppUpdate.js';
 import { addInstallButton, iosInstallNote } from '../systems/InstallPrompt.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 import { takePendingJoin } from '../systems/Share.js';
-import { isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
+import { isTouchDevice, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG } from '../config.js';
 
 export class MenuScene extends Phaser.Scene {
@@ -71,7 +71,7 @@ export class MenuScene extends Phaser.Scene {
         });
 
         const subtitle = this.add.text(width / 2, 210, 'Last Wizard Standing', {
-            font: '24px monospace',
+            font: `${menuFontPx(this, 24)}px monospace`,
             fill: '#aaaacc',
         });
         subtitle.setOrigin(0.5);
@@ -91,8 +91,13 @@ export class MenuScene extends Phaser.Scene {
         // Holiday W-58: on a touch device the 20px buttons and the secondary
         // row grow to menuFontPx() and take the touch rows below PARTY
         // (TOUCH_CONFIG.menuRows.menu).
+        // Holiday W-70: where the floor passes menuLarge.fromFloor (TEXT:
+        // LARGE on a small phone) SURVIVAL, ONLINE and SETTINGS share one row
+        // and the rows below take menuLarge's places.
         const touch = isTouchDevice(this);
-        const R = touch ? TOUCH_CONFIG.menuRows.menu : null;
+        const { menu } = TOUCH_CONFIG.menuRows;
+        const large = menuLarge(this);
+        const R = touch ? (large ? { ...menu, ...TOUCH_CONFIG.menuRows.menuLarge } : menu) : null;
         this.makeButton(width / 2, 258, '[ 1 PLAYER  vs BOT ]', '#336633', '#66ff66', () => this.startGame('1p'));
         this.makeButton(width / 2, 314, '[ 2 PLAYERS ]', '#336633', '#66ff66',
             (pointer) => secondDevice('2p', pointer, () => this.startGame('2p')));
@@ -104,16 +109,17 @@ export class MenuScene extends Phaser.Scene {
         // compact 20px buttons: SURVIVAL is ~194px wide and ONLINE ~218px, so
         // at ±112 from center they span 303-497 and 515-733, an 18px gap
         // between them and ~290px clear on either outer edge.
-        this.makeButton(width / 2 - (R ? R.pairDx : 112), R ? R.pairY : 421, '[ SURVIVAL ]', '#5a3a1a', '#ffbb55',
+        const survivalBtn = this.makeButton(width / 2 - (R ? R.pairDx : 112), R ? R.pairY : 421, '[ SURVIVAL ]', '#5a3a1a', '#ffbb55',
             () => this.startGame('survival'), '20px');
-        this.makeButton(width / 2 + (R ? R.pairDx : 112), R ? R.pairY : 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
+        const onlineBtn = this.makeButton(width / 2 + (R ? R.pairDx : 112), R ? R.pairY : 421, '[ ONLINE 1v1 ]', '#2a4d66', '#66ccff', () => {
             audio.uiClick();
             this.scene.start('OnlineScene');
         }, '20px');
-        this.makeButton(width / 2, R ? R.settingsY : 468, '[ SETTINGS ]', '#333355', '#5599ff', () => {
+        const settingsBtn = this.makeButton(width / 2, R ? R.settingsY : 468, '[ SETTINGS ]', '#333355', '#5599ff', () => {
             audio.uiClick();
             this.scene.start('SettingsScene');
         }, '20px');
+        if (large) this.layoutRow([survivalBtn, onlineBtn, settingsBtn], R.rowY, R.rowGap);
 
         // Secondary row: compact utility buttons. Phase 6a adds STATS; the
         // row is centered/sized for THREE slots up front (Daily + Wardrobe
@@ -185,12 +191,7 @@ export class MenuScene extends Phaser.Scene {
         // device the row is laid out by width, smallGap apart, and the Daily
         // line follows its button.
         if (R) {
-            const rowW = secondary.reduce((w, b) => w + b.width, 0) + (secondary.length - 1) * R.smallGap;
-            let x = width / 2 - rowW / 2;
-            for (const b of secondary) {
-                b.setX(x + b.width / 2);
-                x += b.width + R.smallGap;
-            }
+            this.layoutRow(secondary, secondaryY, R.smallGap);
             dailyLine.setX(secondary[1].x);
         }
 
@@ -272,7 +273,10 @@ export class MenuScene extends Phaser.Scene {
 
         // Holiday W-22: the build's version in the footer, and a reload
         // button once a newer deploy's service worker has taken over.
-        addVersionText(this);
+        const version = addVersionText(this);
+        // Holiday W-70: a grown hint that would reach the build version
+        // moves left until it is hintGap clear of it.
+        if (large) hint.setX(Math.min(hint.x, version.x - version.width - R.hintGap - hint.width / 2));
         addUpdateButton(this, this.menuNav);
         // Holiday W-34: [ INSTALL ] under the full-screen toggle where the
         // browser offered an install (Android Chrome, not yet installed);
@@ -304,6 +308,17 @@ export class MenuScene extends Phaser.Scene {
         btn.on('pointerdown', onClick);
         this.menuNav.add(btn, onClick);
         return btn;
+    }
+
+    // Holiday W-58: a row of buttons laid out by width at y, `gap` apart and
+    // centred on the screen.
+    layoutRow(btns, y, gap) {
+        const rowW = btns.reduce((w, b) => w + b.width, 0) + (btns.length - 1) * gap;
+        let x = this.cameras.main.width / 2 - rowW / 2;
+        for (const b of btns) {
+            b.setPosition(x + b.width / 2, y);
+            x += b.width + gap;
+        }
     }
 
     // Holiday W-53: on a touch device the gamepad line shows only while a

@@ -132,6 +132,8 @@
 //      pop) reads at hudMinCss with none overlapping, the touch buttons'
 //      labels inside their buttons; the floor of 3aa0r's and 3aa0s's lines
 //      is held here (W-69),
+//   3aa0v. on a 568x320 phone with TEXT: LARGE the main menu, CLASS SELECT,
+//      MAP SELECT and WARDROBE read at hudMinCss x 1.3, none overlapping (W-70),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4670,12 +4672,14 @@ try {
     // LARGE on a 568x320 touch phone the main menu's texts that sit on the
     // floor at NORMAL, the round's HUD and the first-round tips all read
     // hudMinCss x 1.3; a 1280x720 desktop's menu is unchanged by it.
-    const menuFloorRun = async (textSize) => {
+    // Holiday W-70: an optional scene list runs the step over those scenes
+    // alone (all eleven by default).
+    const menuFloorScenes = ['MenuScene', 'ClassSelectScene', 'MapSelectScene', 'WardrobeScene', 'StatsScene',
+        'ControlsScene', 'SettingsScene', 'OnlineScene', 'MapEditorScene', 'PauseScene', 'GameOverScene'];
+    const menuFloorRun = async (textSize, scenes = menuFloorScenes) => {
         // `scene: text prefix` -> why it may stay under the floor. Empty:
         // nothing needs it.
         const allow = {};
-        const scenes = ['MenuScene', 'ClassSelectScene', 'MapSelectScene', 'WardrobeScene', 'StatsScene',
-            'ControlsScene', 'SettingsScene', 'OnlineScene', 'MapEditorScene', 'PauseScene', 'GameOverScene'];
         const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
         const phone = await ctx.newPage();
         phone.on('pageerror', (e) => errors.push('menu floor pageerror: ' + e.message));
@@ -4761,6 +4765,18 @@ try {
         for (const t of ['normal']) {
             const r = runs[t] = await menuFloorRun(t);
             check(`menu floor: at 568x320 with TEXT: ${t.toUpperCase()} every text on all eleven menu scenes is at least hudMinCss x ${TOUCH_CONFIG.textSizes[t]} CSS px and none overlaps (allowlist: none)`,
+                r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
+        }
+
+        // 3aa0v. Holiday W-70: TEXT: LARGE fits, part 1. With LARGE on a
+        // 568x320 touch phone the main menu, CLASS SELECT, MAP SELECT and
+        // WARDROBE each reach hudMinCss x 1.3 with no two texts overlapping
+        // (W-71 and W-72 add the other screens; W-73 folds them into the run
+        // above).
+        {
+            const part1 = ['MenuScene', 'ClassSelectScene', 'MapSelectScene', 'WardrobeScene'];
+            const r = await menuFloorRun('large', part1);
+            check(`menu floor LARGE part 1: at 568x320 with TEXT: LARGE every text on ${part1.join(', ')} is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px and none overlaps`,
                 r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
         }
 

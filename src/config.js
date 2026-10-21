@@ -415,7 +415,8 @@ export const TOUCH_CONFIG = {
         // gap between the custom tag and the size note on one line, and the
         // gap between the thumbnail and the theme name.
         // W-58: the gap between the grown BOT DIFFICULTY label and buttons.
-        mapSelect: { pad: 3, tagGap: 10, thumbGap: 2, diffGap: 24 },
+        // W-70: the title's y under TEXT: LARGE (TouchMenu's menuLarge).
+        mapSelect: { pad: 3, tagGap: 10, thumbGap: 2, diffGap: 24, largeTitleY: 40 },
         // WARDROBE (holiday W-51): the preview disc's y, radius and sprite
         // scale, the gap between flowing blocks, each row's swatch spacing
         // (TOUCH_CONFIG.wardrobe below is the desktop's), wide enough for a
@@ -444,6 +445,8 @@ export const TOUCH_CONFIG = {
             top: 96, spriteY: 32, spriteScale: 2.4, nameY: 80, gap: 4, pad: 4,
             maxBottom: 620, partyMaxBottom: 520,
             subY: 75, survivalSubY: 206, nameGap: 6,
+            // W-70: the title's y under TEXT: LARGE (TouchMenu's menuLarge).
+            largeTitleY: 36,
             partyRows: { titleY: 538, hintY: 565, stateY: 592, seatsY: 619, partyHintY: 646, footerY: 673 },
         },
         // ONLINE's pick lobby (holiday W-52), on a touch device: the class
@@ -464,6 +467,16 @@ export const TOUCH_CONFIG = {
             pairY: 423, pairDx: 125, settingsY: 472, smallY: 521, smallGap: 18,
             dailyY: 556, orbY: 586, orbScale: 1, orbLabelY: 614, orbSpacing: 92,
             padY: 644, hintY: 674,
+        },
+        // Holiday W-70: the main menu where menuFontFloor() reaches fromFloor
+        // game px (TEXT: LARGE on a small phone; NORMAL's 568x320 floor is
+        // 22): SURVIVAL, ONLINE and SETTINGS in one row at rowY, laid out by
+        // width rowGap apart; the rows below at these places in place of
+        // `menu`'s; the footer hint kept hintGap left of the build version.
+        menuLarge: {
+            fromFloor: 23, rowY: 427, rowGap: 18, smallY: 483,
+            dailyY: 528, orbY: 566, orbLabelY: 600, orbSpacing: 118,
+            padY: 638, hintGap: 18,
         },
         // SETTINGS (holiday W-55), on a touch device whose rows grow past
         // 14 px: the desktop's two columns become two pages (ORBS ENABLED,
