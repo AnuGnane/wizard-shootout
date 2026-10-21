@@ -137,6 +137,9 @@
 //   3aa0w. the same for STATS, CONTROLS and SETTINGS, each page of a paged
 //      screen in turn; every menu-floor run also holds its texts on the
 //      canvas (W-71),
+//   3aa0x. the same for the map editor (size menu, editor, LOAD list),
+//      PAUSE and the survival GAME OVER card; every menu-floor run reads
+//      the editor in those three states (W-72),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4694,6 +4697,7 @@ try {
         const seen = {};
         const heights = {};
         const visited = new Set();
+        const editorViews = ['size menu', 'editor', 'load list'];
         for (const key of scenes) {
             await phone.evaluate(() => {
                 const g = window.__game.scene;
@@ -4728,17 +4732,29 @@ try {
             await phone.waitForTimeout(300);
             // Holiday W-71: a paged screen (Settings on a phone, STATS under
             // LARGE) is read a page at a time, and every text must sit on the
-            // canvas too.
-            const pages = await phone.evaluate((key) => {
+            // canvas too. Holiday W-72: the map editor is read in its three
+            // states, as W-57's step reads it: the size menu it opens on, the
+            // editor itself and the LOAD list.
+            const editor = key === 'MapEditorScene';
+            const pages = editor ? editorViews.length : await phone.evaluate((key) => {
                 const sc = window.__game.scene.getScene(key);
                 return sc.pages ? sc.pages.length : sc.paged && sc.pageLabels ? sc.pageLabels.length : 1;
             }, key);
             for (let pg = 0; pg < pages; pg++) {
-                if (pg) {
+                if (pg && editor) {
+                    const modal = await phone.evaluate((pg) => {
+                        const e = window.__mapEditor;
+                        if (pg === 1) { e.closeModal(); e.saveMap(); e.updateStatus(); } else e.openLoadMenu();
+                        return !!e.modal;
+                    }, pg);
+                    // The LOAD list opens on the map just saved; the editor has none.
+                    if (modal !== (pg === 2)) misses.push(`${key} ${editorViews[pg]}: modal ${modal ? 'open' : 'not open'}`);
+                    await phone.waitForTimeout(250);
+                } else if (pg) {
                     await phone.evaluate(({ key, pg }) => window.__game.scene.getScene(key).showPage(pg), { key, pg });
                     await phone.waitForTimeout(200);
                 }
-                const tag = pages > 1 ? `${key} page ${pg + 1}` : key;
+                const tag = editor ? `${key} ${editorViews[pg]}` : pages > 1 ? `${key} page ${pg + 1}` : key;
                 const r = await phone.evaluate(({ key, min }) => {
                     const sc = window.__game.scene.getScene(key);
                     const k = window.__game.canvas.getBoundingClientRect().width / 1024;
@@ -4788,7 +4804,7 @@ try {
         const runs = {};
         for (const t of ['normal']) {
             const r = runs[t] = await menuFloorRun(t);
-            check(`menu floor: at 568x320 with TEXT: ${t.toUpperCase()} every text on all eleven menu scenes (each page of a paged one) is at least hudMinCss x ${TOUCH_CONFIG.textSizes[t]} CSS px, on the canvas, and none overlaps (allowlist: none)`,
+            check(`menu floor: at 568x320 with TEXT: ${t.toUpperCase()} every text on all eleven menu scenes (each page of a paged one, the editor's size menu and LOAD list) is at least hudMinCss x ${TOUCH_CONFIG.textSizes[t]} CSS px, on the canvas, and none overlaps (allowlist: none)`,
                 r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
         }
 
@@ -4813,6 +4829,17 @@ try {
             const paged = r.seen['StatsScene page 2'] !== undefined && r.seen['SettingsScene page 4'] !== undefined;
             check(`menu floor LARGE part 2: at 568x320 with TEXT: LARGE every text on ${part2.join(', ')}, each page in turn (STATS 2, SETTINGS 4), is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px, on the canvas, and none overlaps`,
                 r.ok && paged, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
+        }
+
+        // 3aa0x. Holiday W-72: TEXT: LARGE fits, part 3. The same with the
+        // map editor (its size menu, the editor and the LOAD list), PAUSE
+        // over a 1P round and the survival GAME OVER card.
+        {
+            const part3 = ['MapEditorScene', 'PauseScene', 'GameOverScene'];
+            const r = await menuFloorRun('large', part3);
+            const views = ['size menu', 'editor', 'load list'].every((v) => r.seen[`MapEditorScene ${v}`] > 0);
+            check(`menu floor LARGE part 3: at 568x320 with TEXT: LARGE every text on ${part3.join(', ')} (the editor's size menu, the editor and its LOAD list) is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px, on the canvas, and none overlaps`,
+                r.ok && views, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
         }
 
         // 3aa0n: one owner of the floor. LARGE set on a 568x320 phone: the

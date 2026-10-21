@@ -516,7 +516,9 @@ export const TOUCH_CONFIG = {
         // REMATCH / RUN IT BACK and
         // [ SHARE ] move down to sit btnGap under the stack when it reaches
         // them, and MAIN MENU with them.
-        result: { gap: 4, wrapW: 440, achLines: 2, btnGap: 8 },
+        // W-72: under TEXT: LARGE the REMATCH / RUN IT BACK and [ SHARE ]
+        // row is laid out by width, largeRowGap apart.
+        result: { gap: 4, wrapW: 440, achLines: 2, btnGap: 8, largeRowGap: 18 },
         // The map editor (holiday W-57), on a touch device: the size and
         // saved lines stack colGap under [ NEW / SIZE ], wrapping at colWrapW
         // (clear of the widest grid, 25 tiles from x 335); a list modal's rows
@@ -528,6 +530,13 @@ export const TOUCH_CONFIG = {
         editor: {
             colGap: 4, colWrapW: 290, rowGap: 4, fieldPad: 16, fieldGap: 4,
             toolY: 150, toolGap: 44, mapHeadY: 312, themeY: 362, newY: 406,
+            // W-72, under TEXT: LARGE: the column's rows; the bottom bar's two
+            // rows of three at barY; a list modal centred on the grid, its
+            // title titleDy and first row rowsDy under the panel's top.
+            large: {
+                toolY: 140, toolGap: 50, mapHeadY: 318, themeY: 380, newY: 428,
+                barY: [610, 660], titleDy: 28, rowsDy: 76,
+            },
         },
         online: {
             cardTop: 210, cardH: 130, spriteY: 28, spriteScale: 2, nameY: 58, sigY: 72, pad: 4,

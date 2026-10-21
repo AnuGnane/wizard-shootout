@@ -7,7 +7,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { audio } from '../systems/AudioSystem.js';
 import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, hitRect, isTouchDevice, menuFont, menuFontPx, relayoutTapTargets } from '../systems/TouchMenu.js';
+import { ensureTapTarget, hitRect, isTouchDevice, layoutRow, menuFont, menuFontPx, menuLarge, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
 
 export class GameOverScene extends Phaser.Scene {
@@ -82,7 +82,7 @@ export class GameOverScene extends Phaser.Scene {
         // SPACE shortcut below is suppressed when the match was online.
         if (!isNet) {
             const restartBtn = this.add.text(width / 2, 470, this.isSurvival ? '[ RUN IT BACK ]' : '[ REMATCH ]', {
-                font: '28px monospace',
+                font: `${menuFontPx(this, 28)}px monospace`,
                 fill: '#ffffff',
                 backgroundColor: '#336633',
                 padding: { x: 25, y: 12 },
@@ -102,10 +102,15 @@ export class GameOverScene extends Phaser.Scene {
         // copies) the day's line, after REMATCH in the focus order.
         // Holiday W-48: every other card shares its own line the same way.
         this.createShare(this.isDaily && !this.isSurvival ? this.dailyShareText() : this.resultShareText);
+        // Holiday W-72: under TEXT: LARGE the grown row is laid out by width.
+        if (menuLarge(this) && this.restartBtn) {
+            layoutRow(this, [this.restartBtn, this.shareBtn], this.restartBtn.y, TOUCH_CONFIG.menuRows.result.largeRowGap);
+            relayoutTapTargets(this);
+        }
 
         // Menu button
         const menuBtn = this.add.text(width / 2, 545, '[ MAIN MENU ]', {
-            font: '24px monospace',
+            font: `${menuFontPx(this, 24)}px monospace`,
             fill: '#888888',
             padding: { x: 20, y: 10 },
         });
@@ -195,7 +200,7 @@ export class GameOverScene extends Phaser.Scene {
         });
 
         this.stackAnchor = this.add.text(width / 2, 330, `HORDE SLAIN: ${this.teamKills}`, {
-            font: 'bold 26px monospace',
+            font: `bold ${menuFontPx(this, 26)}px monospace`,
             fill: '#ffffff',
         }).setOrigin(0.5);
 

@@ -8,7 +8,7 @@ import { MenuNav } from '../systems/MenuNav.js';
 import {
     getCustomMaps, saveCustomMap, deleteCustomMap, customMapIndex, MAX_NAME_LENGTH,
 } from '../systems/CustomMaps.js';
-import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx, hudFloorCss, menuFontPx, addTapObstacle, hitRect } from '../systems/TouchMenu.js';
+import { backHint, ensureTapTarget, relayoutTapTargets, isTouchDevice, cssPerGamePx, hudFloorCss, menuFontPx, menuLarge, addTapObstacle, hitRect } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG, STORAGE_CONFIG } from '../config.js';
 import { writeFailed } from '../systems/Storage.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
@@ -90,6 +90,7 @@ export class MapEditorScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         this.touch = isTouchDevice(this);
+        this.large = menuLarge(this);
         // Holiday W-57: the small texts grow to hudMinCss CSS px on a phone.
         this.fontPx = (basePx) => menuFontPx(this, basePx);
 
@@ -113,7 +114,9 @@ export class MapEditorScene extends Phaser.Scene {
             fill: '#66ff66',
         }).setOrigin(0.5);
 
-        const hint = this.add.text(width / 2, height - 24, backHint(this,
+        // Holiday W-72: under TEXT: LARGE the bar's second row takes the
+        // footer's place, so the hint is left out.
+        const hint = this.large ? null : this.add.text(width / 2, height - 24, backHint(this,
             'Click + drag to paint  ·  border tiles are locked  ·  arrows/ENTER move the buttons  ·  ESC - back',
             'Drag to paint  ·  border tiles are locked  ·  tap [ BACK ] to leave'), {
             font: `${this.fontPx(12)}px monospace`,
@@ -125,7 +128,7 @@ export class MapEditorScene extends Phaser.Scene {
         if (this.touch) {
             for (const o of [this.paintHead, this.mapHead, this.sizeText, this.savedText]) addTapObstacle(this, o);
             addTapObstacle(this, this.statusText, true);
-            addTapObstacle(this, hint, true);
+            if (hint) addTapObstacle(this, hint, true);
             relayoutTapTargets(this);
         }
 
@@ -191,7 +194,8 @@ export class MapEditorScene extends Phaser.Scene {
         // Holiday W-57: on a phone the grown lines stack under NEW / SIZE
         // and wrap clear of the grid (TOUCH_CONFIG.menuRows.editor).
         const grown = this.touch && this.fontPx(12) > 12;
-        const ed = TOUCH_CONFIG.menuRows.editor;
+        // Holiday W-72: under TEXT: LARGE the column takes ed.large's rows.
+        const ed = this.large ? { ...TOUCH_CONFIG.menuRows.editor, ...TOUCH_CONFIG.menuRows.editor.large } : TOUCH_CONFIG.menuRows.editor;
         const wrap = grown ? { wordWrap: { width: ed.colWrapW } } : {};
         // Holiday W-60: the grown buttons are taller than the desktop's 36 px
         // steps, so on a phone the column takes the editor's touch rows.
@@ -227,7 +231,9 @@ export class MapEditorScene extends Phaser.Scene {
         if (grown) {
             this.paintHead.setY(hitRect(this.toolButtons.wall).y0 - ed.colGap - this.paintHead.height);
             this.sizeText.setText('size: 00 x 00');
-            this.sizeText.setY(hitRect(this.newBtn).y1 + ed.colGap);
+            // W-72: under TEXT: LARGE under its label instead: the lines are
+            // tap obstacles, so NEW's grown area stops above them.
+            this.sizeText.setY((this.large ? this.newBtn.getBounds().bottom : hitRect(this.newBtn).y1) + ed.colGap);
             this.savedText.setY(this.sizeText.getBounds().bottom + ed.colGap);
         }
     }
@@ -247,12 +253,17 @@ export class MapEditorScene extends Phaser.Scene {
 
         const buttons = specs.map(s => this.makeButton(0, BAR_Y, s.label, s.bg, s.hover, s.on, '16px', 0));
         const gap = 14;
-        const total = buttons.reduce((sum, b) => sum + b.width, 0) + gap * (buttons.length - 1);
-        let x = Math.round((width - total) / 2);
-        for (const btn of buttons) {
-            btn.setX(x);
-            x += btn.width + gap;
-        }
+        // Holiday W-72: under TEXT: LARGE the grown bar wraps to two rows of
+        // three (TOUCH_CONFIG.menuRows.editor.large.barY).
+        const rows = this.large ? [buttons.slice(0, 3), buttons.slice(3)] : [buttons];
+        rows.forEach((row, r) => {
+            const total = row.reduce((sum, b) => sum + b.width, 0) + gap * (row.length - 1);
+            let x = Math.round((width - total) / 2);
+            for (const btn of row) {
+                btn.setPosition(x, this.large ? TOUCH_CONFIG.menuRows.editor.large.barY[r] : BAR_Y);
+                x += btn.width + gap;
+            }
+        });
 
         [this.saveBtn, this.loadBtn, this.deleteBtn, this.testBtn, this.nameBtn, this.backBtn] = buttons;
         ensureTapTarget(this, this.backBtn);
@@ -518,7 +529,9 @@ export class MapEditorScene extends Phaser.Scene {
     refreshLabels() {
         const theme = THEMES[this.theme] || THEMES[DEFAULT_THEME];
         this.nameText.setText(`NAME: ${this.mapName}${this.dirty ? ' *' : ''}`);
-        const themeLabel = `[ THEME: ${theme.name} ]`;
+        // Holiday W-72: under TEXT: LARGE the name alone, so the grown
+        // button stays left of the widest grid (25 tiles from x 335).
+        const themeLabel = this.large ? `[ ${theme.name} ]` : `[ THEME: ${theme.name} ]`;
         if (this.themeBtn.text !== themeLabel) {
             this.themeBtn.setText(themeLabel);
             if (this.touch) relayoutTapTargets(this);
@@ -692,7 +705,12 @@ export class MapEditorScene extends Phaser.Scene {
         const rowPx = this.fontPx(16);
         const pitch = Math.max(36, Math.ceil(rowPx * 1.2 + 12 + TOUCH_CONFIG.menuRows.editor.rowGap));
         const panelH = 82 + rows * pitch;
-        const top = Math.round((height - panelH) / 2);
+        // Holiday W-72: under TEXT: LARGE the panel centres on the grid,
+        // clear of the grown tool column and the status line, its title
+        // titleDy and its rows rowsDy under the top.
+        const L = this.large ? TOUCH_CONFIG.menuRows.editor.large : null;
+        const cx = L ? GRID_CX : width / 2;
+        const top = Math.round((L ? GRID_CY * 2 : height) / 2 - panelH / 2);
 
         const objects = [];
         const shade = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.68)
@@ -700,12 +718,12 @@ export class MapEditorScene extends Phaser.Scene {
             .setInteractive();
         objects.push(shade);
 
-        const panel = this.add.rectangle(width / 2, top + panelH / 2, panelW, panelH, 0x191932)
+        const panel = this.add.rectangle(cx, top + panelH / 2, panelW, panelH, 0x191932)
             .setStrokeStyle(2, 0x3a4a7a)
             .setDepth(81);
         objects.push(panel);
 
-        objects.push(this.add.text(width / 2, top + 32, title, {
+        objects.push(this.add.text(cx, top + (L ? L.titleDy : 32), title, {
             font: `bold ${this.fontPx(18)}px monospace`,
             fill: '#5599ff',
         }).setOrigin(0.5).setDepth(82));
@@ -713,9 +731,9 @@ export class MapEditorScene extends Phaser.Scene {
         this.menuNav.setActive(false);
         const nav = new MenuNav(this, { depth: 95, onBack: () => this.closeModal() });
 
-        const rowsTop = top + 70;
+        const rowsTop = top + (L ? L.rowsDy : 70);
         entries.forEach((entry, i) => {
-            const btn = this.add.text(width / 2, rowsTop + i * pitch, entry.label, {
+            const btn = this.add.text(cx, rowsTop + i * pitch, entry.label, {
                 font: `${rowPx}px monospace`,
                 fill: '#ffffff',
                 backgroundColor: '#26385f',
@@ -733,7 +751,7 @@ export class MapEditorScene extends Phaser.Scene {
             objects.push(btn);
         });
 
-        const cancel = this.add.text(width / 2, rowsTop + entries.length * pitch, `[ ${cancelLabel} ]`, {
+        const cancel = this.add.text(cx, rowsTop + entries.length * pitch, `[ ${cancelLabel} ]`, {
             font: `${rowPx}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#333355',
