@@ -4742,10 +4742,13 @@ try {
             }, key);
             for (let pg = 0; pg < pages; pg++) {
                 if (pg && editor) {
-                    await phone.evaluate((pg) => {
+                    const modal = await phone.evaluate((pg) => {
                         const e = window.__mapEditor;
                         if (pg === 1) { e.closeModal(); e.saveMap(); e.updateStatus(); } else e.openLoadMenu();
+                        return !!e.modal;
                     }, pg);
+                    // The LOAD list opens on the map just saved; the editor has none.
+                    if (modal !== (pg === 2)) misses.push(`${key} ${editorViews[pg]}: modal ${modal ? 'open' : 'not open'}`);
                     await phone.waitForTimeout(250);
                 } else if (pg) {
                     await phone.evaluate(({ key, pg }) => window.__game.scene.getScene(key).showPage(pg), { key, pg });
