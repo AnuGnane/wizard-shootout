@@ -7,7 +7,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { THEMES } from '../systems/Themes.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { addBackButton, backHint, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
+import { addBackButton, backHint, isTouchDevice, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG } from '../config.js';
 
 const CARD_W = 225;
@@ -29,7 +29,9 @@ export class MapSelectScene extends Phaser.Scene {
 
         this.add.rectangle(width / 2, height / 2, width, height, 0x0f0f1a);
 
-        this.add.text(width / 2, 45, 'CHOOSE YOUR BATTLEGROUND', {
+        // Holiday W-70: under TEXT: LARGE the title lifts clear of the grown subtitle.
+        const titleY = menuLarge(this) ? TOUCH_CONFIG.menuRows.mapSelect.largeTitleY : 45;
+        this.add.text(width / 2, titleY, 'CHOOSE YOUR BATTLEGROUND', {
             font: 'bold 32px monospace',
             fill: '#5599ff',
         }).setOrigin(0.5);

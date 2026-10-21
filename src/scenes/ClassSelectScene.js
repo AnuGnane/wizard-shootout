@@ -8,7 +8,7 @@ import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { getGamepad, BUTTON_A, BUTTON_DPAD_LEFT, BUTTON_DPAD_RIGHT, AXIS_LEFT_X, STICK_DEADZONE } from '../systems/GamepadInput.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { addBackButton, backHint, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
+import { addBackButton, backHint, isTouchDevice, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 
 // Phase 9c: card width is derived from the class count (rather than a flat
@@ -68,7 +68,9 @@ export class ClassSelectScene extends Phaser.Scene {
             return;
         }
 
-        this.add.text(width / 2, 40, 'CHOOSE YOUR WIZARD', {
+        // Holiday W-70: under TEXT: LARGE the title lifts clear of the grown subtitle.
+        const titleY = menuLarge(this) ? TOUCH_CONFIG.menuRows.classSelect.largeTitleY : 40;
+        this.add.text(width / 2, titleY, 'CHOOSE YOUR WIZARD', {
             font: 'bold 32px monospace',
             fill: '#5599ff',
         }).setOrigin(0.5);

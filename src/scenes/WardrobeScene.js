@@ -86,7 +86,7 @@ export class WardrobeScene extends Phaser.Scene {
 
         // Back button + ESC, matching StatsScene's convention.
         const backBtn = this.add.text(width / 2, this.touch ? R.backY : height - 40, '[ BACK ]', {
-            font: '24px monospace',
+            font: `${menuFontPx(this, 24)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#333355',
             padding: { x: 20, y: 10 },

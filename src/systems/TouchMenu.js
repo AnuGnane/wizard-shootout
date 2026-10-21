@@ -208,6 +208,13 @@ export function menuFontFloor(scene) {
     return Math.max(STORAGE_CONFIG.minFontPx, Math.ceil(hudFloorCss(scene) / cssPerGamePx(scene)));
 }
 
+// Holiday W-70: true where the floor reaches menuRows.menuLarge.fromFloor
+// game px (TEXT: LARGE on a small phone), so a screen takes its LARGE layout.
+// Never on a desktop, nor at NORMAL on a phone.
+export function menuLarge(scene) {
+    return isTouchDevice(scene) && menuFontFloor(scene) >= TOUCH_CONFIG.menuRows.menuLarge.fromFloor;
+}
+
 // Holiday W-62: a banner's small line (`basePx`, stroke `strokePx`) on a
 // touch device: grown to the floor, its stroke with it, wrapped at
 // TOUCH_CONFIG.banners.wrapW, and centred banners.gap under `above`. Returns
