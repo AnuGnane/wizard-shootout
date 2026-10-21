@@ -7,7 +7,7 @@ import {
 } from '../systems/KeyBindings.js';
 import { TOUCH_CONFIG } from '../config.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, isTouchDevice, menuFontPx } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
 import { saveTouchTipsSeen } from '../systems/Storage.js';
 
 const ACTION_LABELS = {
@@ -48,7 +48,9 @@ export class ControlsScene extends Phaser.Scene {
         // rows (TOUCH_CONFIG.menuRows.controls); a desktop keeps its own.
         const R = touch ? TOUCH_CONFIG.menuRows.controls : null;
         this.rowStartY = R ? R.rowStartY : ROW_START_Y;
-        this.labelDx = R ? R.labelDx : -90;
+        // Holiday W-71: under TEXT: LARGE the labels sit largeLabelDx out,
+        // clear of a badge reading PRESS A KEY.
+        this.labelDx = R ? (menuLarge(this) ? R.largeLabelDx : R.labelDx) : -90;
         // Holiday W-63: a touch device reads what it can do here first: the
         // touch sentence, then [ SHOW TOUCH TIPS ], then the bindings.
         let headY = R ? R.headY : 100;
@@ -61,7 +63,9 @@ export class ControlsScene extends Phaser.Scene {
             }).setOrigin(0.5, 0);
             this.addTipsButton(width / 2, hint.y + hint.height + R.tipsGap);
             headY = this.tipsBtn.getBounds().bottom + R.headGap;
-            this.rowStartY = headY + R.rowStartY - R.headY;
+            // Holiday W-71: and the grown PLAYER headers need largeRowDy to
+            // the first row's badges.
+            this.rowStartY = headY + (menuLarge(this) ? R.largeRowDy : R.rowStartY - R.headY);
         } else {
             this.add.text(width / 2, 76, 'Click a binding, then press a key  ·  ESC cancels', {
                 font: `${menuFontPx(this, 13)}px monospace`,

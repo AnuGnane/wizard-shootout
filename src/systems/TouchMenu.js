@@ -215,6 +215,17 @@ export function menuLarge(scene) {
     return isTouchDevice(scene) && menuFontFloor(scene) >= TOUCH_CONFIG.menuRows.menuLarge.fromFloor;
 }
 
+// Holiday W-58: a row of buttons laid out by width at y, `gap` apart and
+// centred on the screen (W-71 moved it here from MenuScene to share it).
+export function layoutRow(scene, btns, y, gap) {
+    const rowW = btns.reduce((w, b) => w + b.width, 0) + (btns.length - 1) * gap;
+    let x = scene.cameras.main.width / 2 - rowW / 2;
+    for (const b of btns) {
+        b.setPosition(x + b.width / 2, y);
+        x += b.width + gap;
+    }
+}
+
 // Holiday W-62: a banner's small line (`basePx`, stroke `strokePx`) on a
 // touch device: grown to the floor, its stroke with it, wrapped at
 // TOUCH_CONFIG.banners.wrapW, and centred banners.gap under `above`. Returns

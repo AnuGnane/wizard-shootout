@@ -398,6 +398,15 @@ export const TOUCH_CONFIG = {
             titleY: 26, statsY: 50, statGap: 27, gap: 6, elemColW: 190,
             cellW: 254, cellPad: 4, tallyCols: 4, tallyColW: 250,
             statRows: 4, statColDx: [-470, -150, 170], valueDx: 300,
+            // W-71, under TEXT: LARGE: two pages, flipped at pageBtn; the
+            // stat lines in columns of statRows; kills by element elemCols
+            // to a row; the tally tallyCols to a row; the achievements from
+            // achTop on page 2.
+            large: {
+                statsY: 70, statGap: 36, statRows: 5, statColDx: [-440, 40], valueDx: 400,
+                elemCols: 3, elemColW: 300, tallyCols: 3, tallyColW: 330, achTop: 70,
+                pageBtn: { x: 870, y: 40 }, pageLabels: ['[ PAGE 1/2 > ]', '[ < PAGE 2/2 ]'],
+            },
         },
         // CONTROLS (W-58): the PLAYER headers' y, the first binding row's y
         // and an action label's x from its column, for the grown print (a
@@ -410,6 +419,9 @@ export const TOUCH_CONFIG = {
             hintY: 74, headY: 108, rowStartY: 144, labelDx: -130,
             touchHint: 'touch controls are on screen · a connected keyboard or pad rebinds below: tap a binding, then press its key',
             hintTop: 62, hintWrapW: 960, tipsGap: 10, headGap: 22,
+            // W-71, under TEXT: LARGE: the PLAYER headers' centre to the first
+            // row's, and an action label's x from its column.
+            largeRowDy: 40, largeLabelDx: -190,
         },
         // MAP SELECT (holiday W-51): a card's inner margin at its foot, the
         // gap between the custom tag and the size note on one line, and the
@@ -492,6 +504,11 @@ export const TOUCH_CONFIG = {
             top: 86, colX: [40, 530], labelDx: 10, rowGap: 10, headGap: 6, sectionGap: 14,
             valueGap: 16, stepGap: 24, pageBtn: { x: 870, y: 40 },
             pageLabels: ['[ PAGE 1/2 > ]', '[ < PAGE 2/2 ]'],
+            // W-71: under TEXT: LARGE each column is a page of its own, the
+            // flip stepping on (from the last, back to the first), and the
+            // SAVE / CONTROLS / BACK row is laid out by width largeBtnGap apart.
+            largePageLabels: ['[ PAGE 1/4 > ]', '[ PAGE 2/4 > ]', '[ PAGE 3/4 > ]', '[ PAGE 4/4 > ]'],
+            largeBtnGap: 18,
         },
         // The result cards (holiday W-56), on a touch device: the small lines
         // under the score (or HORDE SLAIN) stack from its foot `gap` apart,

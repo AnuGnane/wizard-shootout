@@ -134,6 +134,9 @@
 //      is held here (W-69),
 //   3aa0v. on a 568x320 phone with TEXT: LARGE the main menu, CLASS SELECT,
 //      MAP SELECT and WARDROBE read at hudMinCss x 1.3, none overlapping (W-70),
+//   3aa0w. the same for STATS, CONTROLS and SETTINGS, each page of a paged
+//      screen in turn; every menu-floor run also holds its texts on the
+//      canvas (W-71),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4690,6 +4693,7 @@ try {
         const misses = [];
         const seen = {};
         const heights = {};
+        const visited = new Set();
         for (const key of scenes) {
             await phone.evaluate(() => {
                 const g = window.__game.scene;
@@ -4722,41 +4726,61 @@ try {
             }
             await phone.waitForFunction((key) => window.__game.scene.isActive(key), key, { timeout: 8000 });
             await phone.waitForTimeout(300);
-            const r = await phone.evaluate(({ key, min }) => {
+            // Holiday W-71: a paged screen (Settings on a phone, STATS under
+            // LARGE) is read a page at a time, and every text must sit on the
+            // canvas too.
+            const pages = await phone.evaluate((key) => {
                 const sc = window.__game.scene.getScene(key);
-                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
-                const ts = [];
-                const walk = (list) => list.forEach((o) => {
-                    if (o.type === 'Container') { if (o.visible) walk(o.list); } else if (o.type === 'Text' && o.visible && o.text) ts.push(o);
-                });
-                walk(sc.children.list);
-                const scale = (o) => {
-                    let s = Math.abs(o.scaleY);
-                    for (let p = o.parentContainer; p; p = p.parentContainer) s *= Math.abs(p.scaleY);
-                    return s;
-                };
-                const css = (o) => parseFloat(o.style.fontSize) * scale(o) * k;
-                const name = (o) => o.text.replace(/\n/g, ' ').slice(0, 24);
-                const low = ts.filter((o) => css(o) < min - 0.5).map((o) => ({ text: name(o), css: +css(o).toFixed(2) }));
-                const hit = [];
-                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
-                    const a = ts[i].getBounds(), b = ts[j].getBounds();
-                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${name(ts[i])} | ${name(ts[j])}`);
+                return sc.pages ? sc.pages.length : sc.paged && sc.pageLabels ? sc.pageLabels.length : 1;
+            }, key);
+            for (let pg = 0; pg < pages; pg++) {
+                if (pg) {
+                    await phone.evaluate(({ key, pg }) => window.__game.scene.getScene(key).showPage(pg), { key, pg });
+                    await phone.waitForTimeout(200);
                 }
-                return { n: ts.length, low, hit, heights: ts.map((o) => +css(o).toFixed(2)) };
-            }, { key, min });
-            seen[key] = r.n;
-            heights[key] = r.heights;
-            for (const l of r.low) {
-                if (!Object.keys(allow).some((a) => `${key}: ${l.text}`.startsWith(a))) {
-                    misses.push(`${key}: "${l.text}" is ${l.css} CSS px`);
+                const tag = pages > 1 ? `${key} page ${pg + 1}` : key;
+                const r = await phone.evaluate(({ key, min }) => {
+                    const sc = window.__game.scene.getScene(key);
+                    const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                    const ts = [];
+                    const walk = (list) => list.forEach((o) => {
+                        if (o.type === 'Container') { if (o.visible) walk(o.list); } else if (o.type === 'Text' && o.visible && o.text) ts.push(o);
+                    });
+                    walk(sc.children.list);
+                    const scale = (o) => {
+                        let s = Math.abs(o.scaleY);
+                        for (let p = o.parentContainer; p; p = p.parentContainer) s *= Math.abs(p.scaleY);
+                        return s;
+                    };
+                    const css = (o) => parseFloat(o.style.fontSize) * scale(o) * k;
+                    const name = (o) => o.text.replace(/\n/g, ' ').slice(0, 24);
+                    const low = ts.filter((o) => css(o) < min - 0.5).map((o) => ({ text: name(o), css: +css(o).toFixed(2) }));
+                    const hit = [];
+                    for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                        const a = ts[i].getBounds(), b = ts[j].getBounds();
+                        if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`${name(ts[i])} | ${name(ts[j])}`);
+                    }
+                    const off = ts.filter((o) => {
+                        const b = o.getBounds();
+                        return b.x < -0.5 || b.y < -0.5 || b.right > 1024.5 || b.bottom > 700.5;
+                    }).map(name);
+                    return { n: ts.length, low, hit, off, heights: ts.map((o) => +css(o).toFixed(2)) };
+                }, { key, min });
+                seen[tag] = r.n;
+                heights[tag] = r.heights;
+                for (const l of r.low) {
+                    if (!Object.keys(allow).some((a) => `${key}: ${l.text}`.startsWith(a))) {
+                        misses.push(`${tag}: "${l.text}" is ${l.css} CSS px`);
+                    }
                 }
+                for (const h of r.hit) misses.push(`${tag}: "${h}" overlap`);
+                for (const o of r.off) misses.push(`${tag}: "${o}" off the canvas`);
+                if (r.n === 0) misses.push(`${tag}: no text found`);
             }
-            for (const h of r.hit) misses.push(`${key}: "${h}" overlap`);
-            if (r.n === 0) misses.push(`${key}: no text found`);
+            visited.add(key);
         }
         await ctx.close();
-        return { misses, seen, heights, ok: misses.length === 0 && Object.keys(seen).length === scenes.length };
+        return { misses, seen, heights, ok: misses.length === 0 && visited.size === scenes.length };
     };
     {
         // Holiday W-73 widens this to every TEXT size, once each screen fits
@@ -4764,7 +4788,7 @@ try {
         const runs = {};
         for (const t of ['normal']) {
             const r = runs[t] = await menuFloorRun(t);
-            check(`menu floor: at 568x320 with TEXT: ${t.toUpperCase()} every text on all eleven menu scenes is at least hudMinCss x ${TOUCH_CONFIG.textSizes[t]} CSS px and none overlaps (allowlist: none)`,
+            check(`menu floor: at 568x320 with TEXT: ${t.toUpperCase()} every text on all eleven menu scenes (each page of a paged one) is at least hudMinCss x ${TOUCH_CONFIG.textSizes[t]} CSS px, on the canvas, and none overlaps (allowlist: none)`,
                 r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
         }
 
@@ -4776,8 +4800,19 @@ try {
         {
             const part1 = ['MenuScene', 'ClassSelectScene', 'MapSelectScene', 'WardrobeScene'];
             const r = await menuFloorRun('large', part1);
-            check(`menu floor LARGE part 1: at 568x320 with TEXT: LARGE every text on ${part1.join(', ')} is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px and none overlaps`,
+            check(`menu floor LARGE part 1: at 568x320 with TEXT: LARGE every text on ${part1.join(', ')} is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px, on the canvas, and none overlaps`,
                 r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
+        }
+
+        // 3aa0w. Holiday W-71: TEXT: LARGE fits, part 2. The same with STATS
+        // (two pages under LARGE), CONTROLS and SETTINGS (four), each page
+        // shown in turn.
+        {
+            const part2 = ['StatsScene', 'ControlsScene', 'SettingsScene'];
+            const r = await menuFloorRun('large', part2);
+            const paged = r.seen['StatsScene page 2'] !== undefined && r.seen['SettingsScene page 4'] !== undefined;
+            check(`menu floor LARGE part 2: at 568x320 with TEXT: LARGE every text on ${part2.join(', ')}, each page in turn (STATS 2, SETTINGS 4), is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px, on the canvas, and none overlaps`,
+                r.ok && paged, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
         }
 
         // 3aa0n: one owner of the floor. LARGE set on a 568x320 phone: the

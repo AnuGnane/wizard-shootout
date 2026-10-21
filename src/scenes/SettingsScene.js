@@ -4,7 +4,7 @@ import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
 import { saveSettings } from '../systems/Storage.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, isTouchDevice, menuFontPx, relayoutTapTargets } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, layoutRow, menuFontPx, menuLarge, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { canVibrate } from '../systems/Haptics.js';
 
 // Runtime settings that can be modified
@@ -119,6 +119,11 @@ export class SettingsScene extends Phaser.Scene {
         this.headFont = `bold ${menuFontPx(this, 16)}px monospace`;
         this.paged = menuFontPx(this, 14) > 14;
         this.rowsCfg = TOUCH_CONFIG.menuRows.settings;
+        // Holiday W-71: under TEXT: LARGE two grown columns no longer fit
+        // side by side, so each column takes a page of its own (four pages,
+        // largePageLabels), and the bottom buttons grow and lay out by width.
+        this.large = menuLarge(this);
+        this.pageLabels = this.large ? this.rowsCfg.largePageLabels : this.rowsCfg.pageLabels;
         this.pageOf = new Map();
         this.page = 0;
         this.column = null;
@@ -205,7 +210,7 @@ export class SettingsScene extends Phaser.Scene {
         // Holiday W-55: the page flip, on a paged phone only.
         if (this.paged) {
             const { x, y } = this.rowsCfg.pageBtn;
-            this.pageBtn = this.add.text(x, y, this.rowsCfg.pageLabels[0], {
+            this.pageBtn = this.add.text(x, y, this.pageLabels[0], {
                 font: `${menuFontPx(this, 18)}px monospace`,
                 fill: '#ffffff',
                 backgroundColor: '#333355',
@@ -215,7 +220,7 @@ export class SettingsScene extends Phaser.Scene {
             // moves to the shown page's first row.
             const doFlip = () => {
                 audio.uiClick();
-                this.showPage(1 - this.page);
+                this.showPage((this.page + 1) % this.pageLabels.length);
                 const nav = this.menuNav;
                 const cur = nav.items[nav.index];
                 if (cur && this.pageOf.has(cur.gameObject) && this.pageOf.get(cur.gameObject) !== this.page) {
@@ -235,7 +240,7 @@ export class SettingsScene extends Phaser.Scene {
         // the labels touched) and 4px lower, so BACK's thumb-sized hit area
         // clears CONTROLS and the last toggle above.
         const saveBtn = this.add.text(width / 2 - 190, height - 46, '[ SAVE ]', {
-            font: '24px monospace',
+            font: `${menuFontPx(this, 24)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#336633',
             padding: { x: 20, y: 10 },
@@ -255,7 +260,7 @@ export class SettingsScene extends Phaser.Scene {
         // Unsaved slider/toggle edits here are held in this.settings and NOT
         // applied until SAVE, same as always - this button just navigates.
         const controlsBtn = this.add.text(width / 2, height - 46, '[ CONTROLS ]', {
-            font: '24px monospace',
+            font: `${menuFontPx(this, 24)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#2a4d66',
             padding: { x: 20, y: 10 },
@@ -271,7 +276,7 @@ export class SettingsScene extends Phaser.Scene {
         this.menuNav.add(controlsBtn, doControls);
 
         const backBtn = this.add.text(width / 2 + 190, height - 46, '[ BACK ]', {
-            font: '24px monospace',
+            font: `${menuFontPx(this, 24)}px monospace`,
             fill: '#ffffff',
             backgroundColor: '#333355',
             padding: { x: 20, y: 10 },
@@ -281,6 +286,7 @@ export class SettingsScene extends Phaser.Scene {
         backBtn.on('pointerover', () => backBtn.setStyle({ fill: '#5599ff' }));
         backBtn.on('pointerout', () => backBtn.setStyle({ fill: '#ffffff' }));
         backBtn.on('pointerdown', doBack);
+        if (this.large) layoutRow(this, [saveBtn, controlsBtn, backBtn], height - 46, this.rowsCfg.largeBtnGap);
         ensureTapTarget(this, backBtn);
         this.menuNav.add(backBtn, doBack);
 
@@ -292,6 +298,7 @@ export class SettingsScene extends Phaser.Scene {
     // finished first.
     startColumn(page, col) {
         if (!this.paged) return;
+        if (this.large) [page, col] = [page * 2 + col, 0];
         this.endColumn();
         this.curPage = page;
         this.colX = this.rowsCfg.colX[col];
@@ -330,7 +337,7 @@ export class SettingsScene extends Phaser.Scene {
     showPage(page) {
         this.page = page;
         for (const [o, p] of this.pageOf) o.setVisible(p === page);
-        this.pageBtn.setText(this.rowsCfg.pageLabels[page]);
+        this.pageBtn.setText(this.pageLabels[page]);
         relayoutTapTargets(this);
     }
 
