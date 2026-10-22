@@ -715,6 +715,11 @@ export const TOUCH_CONFIG = {
     // Holiday W-54: on a touch device the pause screen's [ QUIT TO MENU ]
     // asks once: the first tap shows `text` on the button, a second tap
     // within windowMs quits; the label comes back when the window lapses.
+    // Holiday W-78: the pause screen's sound toggle on a touch device, dy
+    // under the screen's centre between RESTART and QUIT (which moves down
+    // to quitDy), through the M key's path; far enough from both that its
+    // hit area reaches menuMinCss at 568x320 under TEXT: LARGE (96 game px).
+    pauseSound: { dy: 130, quitDy: 230, on: '[ SOUND: ON ]', off: '[ SOUND: OFF ]' },
     quitConfirm: {
         text: '[ TAP AGAIN TO QUIT ]',
         windowMs: 2500,

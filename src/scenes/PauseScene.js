@@ -4,6 +4,8 @@ import { MenuNav } from '../systems/MenuNav.js';
 import { ensureTapTarget, isTouchDevice, relayoutTapTargets, menuFontPx, hudFloorCss, cssPerGamePx } from '../systems/TouchMenu.js';
 import { addFullscreenToggle } from '../systems/Fullscreen.js';
 import { FX_CONFIG, TOUCH_CONFIG } from '../config.js';
+import { RUNTIME_SETTINGS } from './SettingsScene.js';
+import { saveSettings } from '../systems/Storage.js';
 
 // Launched (not started) on top of a paused GameScene, so the arena stays
 // visible behind the dark overlay. See MenuScene.makeButton for the button
@@ -47,11 +49,18 @@ export class PauseScene extends Phaser.Scene {
         // (holiday W-5) without reaching RESTART between them.
         ensureTapTarget(this, this.makeButton(width / 2, height / 2 - 40, '[ RESUME ]', '#336633', '#66ff66', () => this.resumeGame()));
         this.makeButton(width / 2, height / 2 + 30, '[ RESTART ROUND ]', '#333355', '#5599ff', () => this.restartRound());
+        // Holiday W-78: a phone has no M key, so sound goes on and off here.
+        const touch = isTouchDevice(this);
+        const PS = TOUCH_CONFIG.pauseSound;
+        if (touch) {
+            this.soundBtn = ensureTapTarget(this, this.makeButton(width / 2, height / 2 + PS.dy, this.soundLabel(),
+                '#333355', '#5599ff', () => this.toggleSound()));
+        }
         // Holiday W-54: a tap on QUIT asks once on a phone (tapQuit); the
         // keyboard and a pad quit at once.
         this.quitArmed = false;
         this.quitArmedAt = 0;
-        this.quitBtn = ensureTapTarget(this, this.makeButton(width / 2, height / 2 + 100, '[ QUIT TO MENU ]', '#663333', '#ff6666',
+        this.quitBtn = ensureTapTarget(this, this.makeButton(width / 2, height / 2 + (touch ? PS.quitDy : 100), '[ QUIT TO MENU ]', '#663333', '#ff6666',
             () => this.quitToMenu(), undefined, () => this.tapQuit()));
         // Holiday W-15: the same full-screen toggle as the menu, on a phone.
         addFullscreenToggle(this, 'pause', 101);
@@ -81,6 +90,23 @@ export class PauseScene extends Phaser.Scene {
         btn.on('pointerdown', onTap);
         this.menuNav.add(btn, onClick);
         return btn;
+    }
+
+    soundLabel() {
+        return RUNTIME_SETTINGS.soundEnabled ? TOUCH_CONFIG.pauseSound.on : TOUCH_CONFIG.pauseSound.off;
+    }
+
+    // The M key's path (GameScene), relabelled; Settings' SOUND row reads
+    // the same value.
+    toggleSound() {
+        if (this.counting) return;
+        if (this.quitArmed) this.disarmQuit();
+        RUNTIME_SETTINGS.soundEnabled = !RUNTIME_SETTINGS.soundEnabled;
+        audio.setEnabled(RUNTIME_SETTINGS.soundEnabled);
+        saveSettings(RUNTIME_SETTINGS);
+        audio.uiClick();
+        this.soundBtn.setText(this.soundLabel());
+        relayoutTapTargets(this);
     }
 
     // Every way back into the round (RESUME, ESC/pad B, the phone's Back)
