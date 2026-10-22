@@ -58,7 +58,10 @@ export class PauseScene extends Phaser.Scene {
     }
 
     update() {
-        if (this.counting) return;
+        if (this.counting) {
+            this.stepCountIn();
+            return;
+        }
         this.menuNav.pollPad();
         if (this.quitArmed && performance.now() - this.quitArmedAt >= TOUCH_CONFIG.quitConfirm.windowMs) this.disarmQuit();
     }
@@ -97,9 +100,11 @@ export class PauseScene extends Phaser.Scene {
     // Holiday W-74: the pause screen goes, and TOUCH_CONFIG.resumeCount's
     // digits count down over the still-paused round (its touch controls are
     // drawn and, with GameScene paused, inert); input here is off, so a tap
-    // does nothing until the round resumes.
+    // does nothing until the round resumes. The count is wall-clock time
+    // (update() steps it), like the quit window. The page going hidden
+    // mid-count brings the pause screen back instead of resuming unseen.
     startCountIn() {
-        const { steps, stepMs, basePx, fill, stroke, strokePx } = TOUCH_CONFIG.resumeCount;
+        const { steps, basePx, fill, stroke, strokePx } = TOUCH_CONFIG.resumeCount;
         this.counting = true;
         this.menuNav.setActive(false);
         this.input.enabled = false;
@@ -110,21 +115,29 @@ export class PauseScene extends Phaser.Scene {
             font: `bold ${px}px monospace`, fill,
         }).setOrigin(0.5).setDepth(120).setStroke(stroke, strokePx);
         this.countText.name = 'resumeCountText';
-        let left = steps;
-        this.time.addEvent({
-            delay: stepMs,
-            repeat: steps - 1,
-            callback: () => {
-                left -= 1;
-                if (left > 0) {
-                    this.countText.setText(String(left));
-                    audio.uiClick();
-                    return;
-                }
-                this.scene.stop();
-                this.scene.resume('GameScene');
-            },
-        });
+        this.countStartedAt = performance.now();
+        this.game.events.once(Phaser.Core.Events.HIDDEN, this.cancelCountIn, this);
+        this.events.once('shutdown', () => this.game.events.off(Phaser.Core.Events.HIDDEN, this.cancelCountIn, this));
+    }
+
+    stepCountIn() {
+        const { steps, stepMs } = TOUCH_CONFIG.resumeCount;
+        const elapsed = performance.now() - this.countStartedAt;
+        if (elapsed >= steps * stepMs) {
+            this.counting = false;
+            this.scene.stop();
+            this.scene.resume('GameScene');
+            return;
+        }
+        const digit = String(steps - Math.floor(elapsed / stepMs));
+        if (this.countText.text !== digit) {
+            this.countText.setText(digit);
+            audio.uiClick();
+        }
+    }
+
+    cancelCountIn() {
+        if (this.counting) this.scene.restart();
     }
 
     restartRound() {

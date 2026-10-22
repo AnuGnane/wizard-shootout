@@ -5013,23 +5013,45 @@ try {
         const at = await pauseAndFindResume(pg);
         await pg.touchscreen.tap(at.x, at.y);
         await pg.waitForTimeout(150);
-        const counting = await pg.evaluate(() => {
+        const sample = () => pg.evaluate(() => {
             const sm = window.__game.scene;
-            const t = sm.getScene('PauseScene').children.getByName('resumeCountText');
+            const p = sm.getScene('PauseScene');
+            const t = p.children.getByName('resumeCountText');
             const k = window.__game.canvas.getBoundingClientRect().width / 1024;
             return {
-                paused: sm.isPaused('GameScene'),
-                shown: !!t && t.visible && t.text === '3',
-                css: t ? parseFloat(t.style.fontSize) * Math.abs(t.scaleY) * k : 0,
+                paused: sm.isPaused('GameScene') && sm.isActive('PauseScene'),
+                digit: t && t.visible ? t.text : null,
+                inputOff: !p.input.enabled,
+                css: t ? +(parseFloat(t.style.fontSize) * Math.abs(t.scaleY) * k).toFixed(2) : 0,
             };
         });
+        const first = await sample();
+        // A second tap where RESUME was, and one at the centre under the
+        // digit, change nothing.
+        const centre = await pg.evaluate(() => { const r = window.__game.canvas.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
         await pg.touchscreen.tap(at.x, at.y);
-        await pg.waitForTimeout(150);
-        const stillCounting = await pg.evaluate(() => window.__game.scene.isPaused('GameScene')
-            && window.__game.scene.isActive('PauseScene'));
+        await pg.touchscreen.tap(centre.x, centre.y);
+        await pg.waitForFunction((d) => window.__game.scene.getScene('PauseScene').children.getByName('resumeCountText')?.text === d,
+            String(RC.steps - 1), { timeout: 3000 }).catch(() => {});
+        const second = await sample();
+        const floorCss = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[await pg.evaluate(() => window.__settings.textSize || 'normal')];
         const t0 = Date.now();
         await pg.waitForFunction(() => !window.__game.scene.isPaused('GameScene') && !window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 }).catch(() => {});
-        const tookMs = Date.now() - t0 + 300;
+        const tookMs = Date.now() - t0;
+        // The page going hidden mid-count brings the pause screen back.
+        await pauseAndFindResume(pg);
+        await pg.touchscreen.tap(at.x, at.y);
+        await pg.waitForTimeout(150);
+        await pg.evaluate(() => window.__game.events.emit('hidden'));
+        await pg.waitForTimeout(RC.steps * RC.stepMs + 500);
+        const afterHidden = await pg.evaluate(() => {
+            const sm = window.__game.scene;
+            const p = sm.getScene('PauseScene');
+            return sm.isPaused('GameScene') && sm.isActive('PauseScene') && !p.counting
+                && p.children.list.some((o) => o.text === '[ RESUME ]' && o.visible);
+        });
+        await pg.touchscreen.tap(at.x, at.y);
+        await pg.waitForFunction(() => !window.__game.scene.isPaused('GameScene') && !window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 }).catch(() => {});
         await pg.evaluate(() => {
             const s = window.__game.scene.getScene('GameScene');
             s.player2.lastHitBy = { by: 1, element: 'arcane' };
@@ -5037,9 +5059,12 @@ try {
         });
         await pg.waitForTimeout(3500);
         const score1 = await pg.evaluate(() => window.__match.scores[1]);
-        check('resume count-in: RESUME on a phone counts 3-2-1 at the floor over the paused round, a tap is ignored, then the round runs',
-            counting.paused && counting.shown && counting.css >= TOUCH_CONFIG.hudMinCss - 0.5 && stillCounting && tookMs >= RC.steps * RC.stepMs - 400 && tookMs < RC.steps * RC.stepMs + 1500 && score1 === 1,
-            `${JSON.stringify(counting)} still=${stillCounting} took~${tookMs}ms score1=${score1}`);
+        check('resume count-in: RESUME on a phone counts down at the floor over the paused round, taps are ignored, then the round runs and scores',
+            first.paused && first.digit === String(RC.steps) && first.inputOff && first.css >= floorCss - 0.5
+                && second.paused && second.digit === String(RC.steps - 1)
+                && tookMs < RC.steps * RC.stepMs + 1500 && score1 === 1,
+            `first=${JSON.stringify(first)} second=${JSON.stringify(second)} floor=${floorCss} rest~${tookMs}ms score1=${score1}`);
+        check('resume count-in: the page going hidden mid-count brings the pause screen back', afterHidden, `menu back=${afterHidden}`);
         await ctx.close();
 
         const dctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
