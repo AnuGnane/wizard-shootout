@@ -19,7 +19,8 @@ import { NetSession, clearSession } from './NetSession.js';
 import { NetInput } from './NetInput.js';
 import { WIZARD_CLASSES } from './Classes.js';
 import { audio } from './AudioSystem.js';
-import { hudFloorCss } from './TouchMenu.js';
+import { hudFloorCss, ensureTapTarget, isTouchDevice, menuFontPx, cssPerGamePx } from './TouchMenu.js';
+import * as WakeLock from './WakeLock.js';
 
 // Orbs allowed to spawn in a net match. Phase 10.3: ALL SIX. Earth (conjures a
 // collidable wall) and ice (frosts the floor) used to be excluded because the
@@ -666,21 +667,62 @@ export class NetGameSync {
         if (this._blipText) { this._blipText.destroy(); this._blipText = null; }
         scene.roundOver = true; // freeze the update loop (both roles)
 
-        if (!scene.scene || !scene.scene.isActive || !scene.scene.isActive()) return;
+        if (!scene.scene || !scene.scene.isActive) return;
+        // Holiday W-76: left while paused (the pause screen or W-74's count):
+        // the pause screen goes and the card shows over the frozen round; the
+        // wake lock the resume takes back is released again.
+        const paused = scene.scene.isPaused();
+        if (!scene.scene.isActive() && !paused) return;
+        if (paused) {
+            scene.scene.stop('PauseScene');
+            scene.scene.resume();
+            scene.events.once('resume', () => WakeLock.release());
+        }
+
+        // Holiday W-76: on a phone the card reads at the floor, the controls
+        // go (and pause with them: `leaving`), the screen may sleep again,
+        // and the card waits for [ MENU ]; a desktop goes after delayMs, or
+        // at once on ENTER.
+        const P = NET_CONFIG.peerLeft;
+        const touch = isTouchDevice(scene);
+        scene.leaving = true;
+        WakeLock.release();
+        if (scene.touchControls) scene.touchControls.retire();
 
         const cx = GAME_CONFIG.width / 2;
         const cy = ARENA.offsetY + ARENA.height / 2;
-        scene.add.text(cx, cy, 'OPPONENT LEFT', {
-            font: 'bold 40px monospace', fill: '#ff5566',
+        const title = scene.add.text(cx, cy, P.title, {
+            font: `bold ${menuFontPx(scene, P.titlePx)}px monospace`, fill: P.titleFill,
         }).setOrigin(0.5).setDepth(50).setStroke('#000000', 6);
-        scene.add.text(cx, cy + 44, 'returning to menu…', {
-            font: '16px monospace', fill: '#aaaacc',
+        title.name = 'peerLeftTitle';
+        const sub = scene.add.text(cx, cy + Math.max(P.subDy, title.height), touch ? P.subTouch : P.sub, {
+            font: `${menuFontPx(scene, P.subPx)}px monospace`, fill: P.subFill,
         }).setOrigin(0.5).setDepth(50).setStroke('#000000', 4);
+        sub.name = 'peerLeftSub';
 
-        scene.time.delayedCall(2000, () => {
+        let gone = false;
+        const toMenu = () => {
+            if (gone) return;
+            gone = true;
             clearSession();
             MATCH_STATE.online = false;
             scene.scene.start('MenuScene');
-        });
+        };
+        if (touch) {
+            const px = menuFontPx(scene, P.menuPx);
+            const btn = scene.add.text(cx, 0, P.menu, {
+                font: `${px}px monospace`, fill: P.menuFill, backgroundColor: P.menuBg, padding: P.menuPadding,
+            }).setOrigin(0.5).setDepth(50);
+            // Placed by its grown hit area (menuMinCss tall), so the area
+            // stays clear of the sub line.
+            const half = Math.max(btn.height, TOUCH_CONFIG.menuMinCss / cssPerGamePx(scene)) / 2;
+            btn.setY(sub.y + sub.height / 2 + P.menuGap + half);
+            btn.name = 'peerLeftMenu';
+            btn.setInteractive({ useHandCursor: true });
+            btn.on('pointerdown', toMenu);
+            ensureTapTarget(scene, btn);
+        }
+        if (scene.input.keyboard) scene.input.keyboard.once('keydown-ENTER', toMenu);
+        if (!touch) scene.time.delayedCall(P.delayMs, toMenu);
     }
 }
