@@ -195,6 +195,15 @@ export class TouchControls {
         if (!quiet && this.onHiddenChange) this.onHiddenChange(hidden);
     }
 
+    // Holiday W-76: the round is over for good (the opponent left): every
+    // control, pause included, goes and no touch brings them back.
+    retire() {
+        if (this._destroyed || this.retired) return;
+        this.retired = true;
+        this._releaseAll();
+        for (const obj of this.graphics) obj.setVisible(false);
+    }
+
     // ---- input-source interface (mirrors KeyboardInput/GamepadInput) -----
 
     // Pumped by the seat's CompositeInput (local and host) and by GameScene
@@ -387,6 +396,7 @@ export class TouchControls {
     }
 
     _handlePointerDown(pointer) {
+        if (this.retired) return;
         const W = GAME_CONFIG.width;
         // Holiday W-64: a down on a letterbox bar is taken just inside the edge.
         // A mouse on a touch laptop's letterbox is not a thumb.

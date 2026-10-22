@@ -228,6 +228,18 @@ export const NET_CONFIG = {
         y: 76, basePx: 14, padding: { x: 10, y: 4 },
         fill: '#ffcc66', bg: '#1a1a2e',
     },
+    // Holiday W-76: the card when the other side leaves a net match: title
+    // and sub line at titlePx / subPx game px (never under the phone's floor,
+    // menuFontPx), subDy under the title; on a touch device a [ MENU ] tap
+    // target menuGap under the sub line, at menuPx, is the way out. A
+    // desktop goes after delayMs, or at once on ENTER.
+    peerLeft: {
+        title: 'OPPONENT LEFT', sub: 'returning to menu…', subTouch: 'the match is over', menu: '[ MENU ]',
+        titlePx: 40, subPx: 16, menuPx: 20, subDy: 44, menuGap: 16,
+        delayMs: 2000,
+        titleFill: '#ff5566', subFill: '#aaaacc', menuFill: '#ffffff', menuBg: '#333355',
+        menuPadding: { x: 25, y: 10 },
+    },
     paste: {
         label: 'PASTE',
         emptyText: 'nothing to paste - type the code',

@@ -150,6 +150,9 @@
 //      LARGE, PARTY), a first tap on a card moves the frame and shows its
 //      strip at the floor, clear of the texts below, and a second picks; at
 //      844x390 one tap goes on (W-75),
+//   3aa1b. the opponent leaving a net match: on a phone both lines at the
+//      floor, a thumb-sized [ MENU ] clear of them, the controls gone, the
+//      tap goes to the menu; a desktop has ENTER (W-76),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -1103,6 +1106,11 @@ try {
                 `ready=${ready} lost=${JSON.stringify(lost)} back=${JSON.stringify(back)} after grace=${JSON.stringify(after)}`);
             check('phone online: disconnected past the grace ends the match once', ended === 1, `onNetClose calls=${ended}`);
             await phone.evaluate(() => window.__net.setDisconnectGrace(8000));
+            // A phone's OPPONENT LEFT card waits for its [ MENU ] (W-76).
+            await phone.evaluate(() => {
+                const b = window.__game.scene.getScene('GameScene').children.getByName('peerLeftMenu');
+                if (b) b.emit('pointerdown');
+            });
             await phone.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 }).catch(() => {});
             await phone.evaluate(() => {
                 const { NetSession } = window.__net;
@@ -5174,6 +5182,99 @@ try {
             return { hidden: at.hidden, on };
         })();
         check('class strip: at 844x390 the descriptions show and one tap goes on', !wide.hidden && wide.on, JSON.stringify(wide));
+    }
+
+    // 3aa1b. Holiday W-76: the opponent leaves a net match. NetSession is
+    // stubbed as a connected guest (3g's shape) and the stub's onClose fires
+    // mid-round. On an 844x390 and a 568x320 touch phone "OPPONENT LEFT" and
+    // its sub line read at or above the floor, a [ MENU ] tap target is
+    // thumb-sized and clear of them, every touch control is hidden, the
+    // round stays until the tap, and the tap lands on the menu. A 1280x720
+    // desktop has no [ MENU ] and ENTER goes to the menu.
+    {
+        const peerLeft = async (vp, touch) => {
+            const ctx = await browser.newContext(touch ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('peer left pageerror: ' + e.message));
+            pg.on('console', (m) => { if (m.type() === 'error') errors.push('peer left console.error: ' + m.text()); });
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene') && window.__net, null, { timeout: 20000 });
+            await pg.evaluate(() => {
+                const { NetSession } = window.__net;
+                NetSession.connection = { isOpen: () => true, send: () => {}, close: () => {} };
+                NetSession.role = 'guest';
+                NetSession.connected = true;
+                const M = window.__match;
+                M.online = true; M.isDailyChallenge = false;
+                M.mode = '2p';
+                M.seatTypes = { 1: 'human', 2: 'human', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScene('MenuScene').scene.start('GameScene');
+            });
+            await pg.waitForFunction(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                return window.__game.scene.isActive('GameScene') && s.netRole === 'guest' && s.player1 && s.player2;
+            }, null, { timeout: 8000 });
+            await pg.waitForTimeout(500);
+            await pg.evaluate(() => window.__net.NetSession.connection.onClose());
+            await pg.waitForTimeout(400);
+            const card = await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('GameScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const css = (o) => o ? +(parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k).toFixed(2) : 0;
+                const t = s.children.getByName('peerLeftTitle');
+                const sub = s.children.getByName('peerLeftSub');
+                const btn = s.children.getByName('peerLeftMenu');
+                let hit = null;
+                let clear = true;
+                if (btn) {
+                    const h = btn.input.hitArea;
+                    const x0 = btn.x + h.x - btn.displayOriginX, y0 = btn.y + h.y - btn.displayOriginY;
+                    hit = { x0, y0, x1: x0 + h.width, y1: y0 + h.height, w: +(h.width * k).toFixed(1), h: +(h.height * k).toFixed(1) };
+                    for (const o of [t, sub]) {
+                        const b = o.getBounds();
+                        if (b.x < hit.x1 && hit.x0 < b.right && b.y < hit.y1 && hit.y0 < b.bottom) clear = false;
+                    }
+                }
+                const tc = s.touchControls;
+                return {
+                    title: css(t), sub: css(sub),
+                    btn: !!btn, hit, clear,
+                    controlsGone: !tc || tc.graphics.every((g) => !g.visible),
+                    stays: window.__game.scene.isActive('GameScene'),
+                };
+            });
+            let menu = false;
+            if (touch && card.btn) {
+                await pg.waitForTimeout(2200);
+                card.staysAfterDelay = await pg.evaluate(() => window.__game.scene.isActive('GameScene'));
+                const at = await pg.evaluate(() => {
+                    const r = window.__game.canvas.getBoundingClientRect();
+                    const k = r.width / 1024;
+                    const b = window.__game.scene.getScene('GameScene').children.getByName('peerLeftMenu');
+                    return { x: r.left + b.x * k, y: r.top + b.y * k };
+                });
+                await pg.touchscreen.tap(at.x, at.y);
+            } else {
+                await pg.keyboard.press('Enter');
+            }
+            menu = await pg.waitForFunction(() => window.__game.scene.isActive('MenuScene') && !window.__game.scene.isActive('GameScene'), null, { timeout: 3000 }).then(() => true, () => false);
+            await ctx.close();
+            return { ...card, menu };
+        };
+        const floor = TOUCH_CONFIG.hudMinCss - 0.5;
+        const thumb = TOUCH_CONFIG.menuMinCss - 0.5;
+        const big = await peerLeft({ width: 844, height: 390 }, true);
+        const small = await peerLeft({ width: 568, height: 320 }, true);
+        const phoneOk = (r) => r.title >= floor && r.sub >= floor && r.btn && r.hit.w >= thumb && r.hit.h >= thumb && r.clear
+            && r.controlsGone && r.stays && r.staysAfterDelay && r.menu;
+        check('opponent left on a phone: both lines at the floor, a thumb-sized [ MENU ] clear of them, controls gone, the tap goes to the menu (844x390 and 568x320)',
+            phoneOk(big) && phoneOk(small), JSON.stringify({ big, small }));
+        const desk = await peerLeft({ width: 1280, height: 720 }, false);
+        check('opponent left on a desktop: no [ MENU ], ENTER goes to the menu', !desk.btn && desk.stays && desk.menu, JSON.stringify(desk));
     }
 
     // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a
