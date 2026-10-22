@@ -9,6 +9,7 @@ import * as DailyChallenge from '../systems/DailyChallenge.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { ensureTapTarget, hitRect, isTouchDevice, layoutRow, menuFont, menuFontPx, menuLarge, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { canShare, fillShare, shareOrCopy } from '../systems/Share.js';
+import { loopTween } from '../systems/ReducedMotion.js';
 
 export class GameOverScene extends Phaser.Scene {
     constructor() {
@@ -176,7 +177,7 @@ export class GameOverScene extends Phaser.Scene {
         }).setOrigin(0.5);
 
         const wiz = this.add.image(width / 2, 130, `wizard_${MATCH_STATE.classes[1]}_1`).setScale(5);
-        this.tweens.add({
+        loopTween(this, {
             targets: wiz,
             y: 140,
             duration: 900,
@@ -191,7 +192,7 @@ export class GameOverScene extends Phaser.Scene {
             align: 'center',
         }).setOrigin(0.5);
         wavesText.setStroke('#ffffff', 2);
-        this.tweens.add({
+        loopTween(this, {
             targets: wavesText,
             scale: 1.06,
             duration: 500,
@@ -250,7 +251,7 @@ export class GameOverScene extends Phaser.Scene {
             ? `wizard_${MATCH_STATE.classes[this.winner]}_${this.winner}`
             : (this.winner === 1 ? 'wizard_blue' : 'wizard_red');
         const wiz = this.add.image(width / 2, 130, wizKey).setScale(5);
-        this.tweens.add({
+        loopTween(this, {
             targets: wiz,
             y: 140,
             duration: 900,
@@ -274,7 +275,7 @@ export class GameOverScene extends Phaser.Scene {
         winText.setStroke('#ffffff', 2);
 
         // Victory animation
-        this.tweens.add({
+        loopTween(this, {
             targets: winText,
             scale: 1.08,
             duration: 500,

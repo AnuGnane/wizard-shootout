@@ -162,6 +162,9 @@
 //      flips and saves soundEnabled by tap, thumb-sized, and no pause-screen
 //      hit areas intersect at 568x320 under NORMAL and LARGE; a desktop's
 //      pause screen has no such row (W-78),
+//   3aa1e. under prefers-reduced-motion: reduce the menu and GAME OVER (the
+//      survival and match cards) run no looping tween and rest at their
+//      drawn alpha and scale; with no-preference the loops run (W-79),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5524,6 +5527,54 @@ try {
         const d = await look(desk);
         await desk.close();
         check('pause sound on a desktop: no SOUND row on the pause screen', !d.btn, JSON.stringify(d));
+    }
+
+    // 3aa1e. Holiday W-79: Reduce Motion stills the menus' looping tweens.
+    // With page.emulateMedia({ reducedMotion: 'reduce' }) the menu and the
+    // survival and 1P GAME OVER cards have no running tween with repeat -1
+    // and their texts sit at alpha 1 and scale 1; with 'no-preference' the
+    // menu's two loops and each card's two run.
+    {
+        const loops = (pg, key) => pg.evaluate((key) => {
+            const sc = window.__game.scene.getScene(key);
+            const running = sc.tweens.getTweens().filter((t) => t.data && t.data.some((d) => d.repeat === -1));
+            const texts = sc.children.list.filter((o) => o.type === 'Text' && o.visible);
+            const moved = texts.filter((o) => Math.abs(o.alpha - 1) > 0.001 || Math.abs(o.scaleX - 1) > 0.001).map((o) => o.text.slice(0, 16));
+            return { loops: running.length, moved };
+        }, key);
+        const card = async (pg, match, data) => {
+            await pg.evaluate(([m, d]) => {
+                Object.assign(window.__match, m);
+                const g = window.__game.scene;
+                const from = g.isActive('GameOverScene') ? 'GameOverScene' : 'MenuScene';
+                g.getScene(from).scene.start('GameOverScene', d);
+            }, [match, data]);
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameOverScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(400);
+            return loops(pg, 'GameOverScene');
+        };
+        const r = {};
+        for (const motion of ['reduce', 'no-preference']) {
+            const pg = await browser.newPage();
+            pg.on('pageerror', (e) => errors.push(`reduced motion ${motion} pageerror: ` + e.message));
+            await pg.emulateMedia({ reducedMotion: motion });
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.waitForTimeout(400);
+            const menu = await loops(pg, 'MenuScene');
+            const surv = await card(pg, { mode: 'survival', playerCount: 1 },
+                { isSurvival: true, wavesSurvived: 12, wave: 13, teamKills: 87, bestWave: 12 });
+            const solo = await card(pg, { mode: '1p', playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } },
+                { winner: 1, scores: { 1: 3, 2: 1 }, rounds: 4 });
+            await pg.close();
+            r[motion] = { menu, surv, solo };
+        }
+        const still = r.reduce;
+        check('reduced motion: the menu and the survival and 1P GAME OVER cards run no looping tween, their texts at rest',
+            [still.menu, still.surv, still.solo].every((x) => x.loops === 0 && x.moved.length === 0), JSON.stringify(still));
+        const live = r['no-preference'];
+        check('no motion preference: the menu\'s and each GAME OVER card\'s loops still run',
+            live.menu.loops >= 2 && live.surv.loops >= 2 && live.solo.loops >= 2, JSON.stringify(live));
     }
 
     // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a
