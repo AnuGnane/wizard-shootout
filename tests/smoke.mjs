@@ -158,6 +158,10 @@
 //      NORMAL and LARGE: every row thumb-sized at the floor, none
 //      intersecting, a tap loads or deletes the one it names, a long list
 //      pages with [ BACK ] and [ MORE ]; a desktop's rows are as drawn (W-77),
+//   3aa1d. on a phone the pause screen's [ SOUND: ON ] / [ SOUND: OFF ] row
+//      flips and saves soundEnabled by tap, thumb-sized, and no pause-screen
+//      hit areas intersect at 568x320 under NORMAL and LARGE; a desktop's
+//      pause screen has no such row (W-78),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5427,6 +5431,99 @@ try {
         check('editor pickers on a desktop: every saved map listed, no paging, the entry rows as drawn',
             entries.length === 7 && !d.rows.some((r) => r.label === '[ MORE ]') && entries.every((r) => Math.abs(r.h - r.drawnH) < 0.5),
             JSON.stringify(d.rows.map((r) => ({ label: r.label, h: r.h, drawnH: r.drawnH }))));
+    }
+
+    // 3aa1d. Holiday W-78: sound off from the pause screen on a phone. On an
+    // 844x390 touch phone a paused 1P round's [ SOUND: ON ] row taps to
+    // [ SOUND: OFF ], localStorage holding soundEnabled: false, and back; at
+    // 568x320, NORMAL and LARGE, the row is thumb-sized and no two pause
+    // hit areas intersect. A desktop's pause screen has no such row.
+    {
+        const pauseRound = async (pg, textSize) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate((t) => {
+                window.__settings.textSize = t;
+                const M = window.__match;
+                M.online = false; M.isDailyChallenge = false;
+                M.mode = '1p';
+                M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                M.playerCount = 2;
+                M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                M.mapIndex = 0; M.round = 1;
+                M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop());
+                window.__game.scene.start('GameScene');
+            }, textSize);
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').player1?.isAlive, null, { timeout: 10000 });
+            await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+            await pg.waitForFunction(() => window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 });
+            await pg.waitForTimeout(250);
+        };
+        const look = (pg) => pg.evaluate(() => {
+            const s = window.__game.scene.getScene('PauseScene');
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const rect = (o) => {
+                const h = o.input.hitArea;
+                const x0 = o.x - o.displayOriginX + h.x, y0 = o.y - o.displayOriginY + h.y;
+                return { x0, y0, x1: x0 + h.width, y1: y0 + h.height };
+            };
+            const live = s.children.list.filter((o) => o.input && o.input.enabled && o.visible
+                && o.input.hitArea && o.input.hitArea.width !== undefined && o.depth > 100);
+            let bad = 0;
+            for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+                const a = rect(live[i]), b = rect(live[j]);
+                if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) bad++;
+            }
+            let stored = null;
+            try { stored = JSON.parse(localStorage.getItem('wizard-shootout-settings-v1') || 'null')?.soundEnabled; } catch (e) { stored = 'unreadable'; }
+            const b = s.soundBtn;
+            if (!b) return { btn: false, bad, stored };
+            const r = rect(b);
+            return { btn: true, bad, stored, label: b.text, at: { x: c.left + (r.x0 + r.x1) / 2 * k, y: c.top + (r.y0 + r.y1) / 2 * k },
+                w: (r.x1 - r.x0) * k, h: (r.y1 - r.y0) * k, settings: window.__settings.soundEnabled };
+        });
+        const thumb = TOUCH_CONFIG.menuMinCss - 0.5;
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('pause sound pageerror: ' + e.message));
+        const cdp = await ctx.newCDPSession(phone);
+        const tap = async (pt) => {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: pt.x, y: pt.y, id: 1 }] });
+            await phone.waitForTimeout(40);
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            await phone.waitForTimeout(150);
+        };
+        await pauseRound(phone, 'normal');
+        const on = await look(phone);
+        if (on.btn) await tap(on.at);
+        const off = await look(phone);
+        if (off.btn) await tap(off.at);
+        const back = await look(phone);
+        const stillPaused = await phone.evaluate(() => window.__game.scene.isActive('PauseScene'));
+        await ctx.close();
+        check('pause sound on a phone: [ SOUND: ON ] taps to OFF, soundEnabled false saved, and back to ON, the round still paused (844x390)',
+            on.btn && on.label === TOUCH_CONFIG.pauseSound.on && off.label === TOUCH_CONFIG.pauseSound.off && off.stored === false
+            && off.settings === false && back.label === TOUCH_CONFIG.pauseSound.on && back.stored === true && stillPaused && !on.bad,
+            JSON.stringify({ on, off, back, stillPaused }));
+        const small = {};
+        for (const t of ['normal', 'large']) {
+            const c2 = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+            const p2 = await c2.newPage();
+            p2.on('pageerror', (e) => errors.push(`pause sound 568x320 ${t} pageerror: ` + e.message));
+            await pauseRound(p2, t);
+            small[t] = await look(p2);
+            await c2.close();
+        }
+        check('pause sound at 568x320, NORMAL and LARGE: the row is thumb-sized and no pause-screen hit areas intersect',
+            ['normal', 'large'].every((t) => small[t].btn && small[t].w >= thumb && small[t].h >= thumb && !small[t].bad), JSON.stringify(small));
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('pause sound desktop pageerror: ' + e.message));
+        await pauseRound(desk, 'normal');
+        const d = await look(desk);
+        await desk.close();
+        check('pause sound on a desktop: no SOUND row on the pause screen', !d.btn, JSON.stringify(d));
     }
 
     // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a
