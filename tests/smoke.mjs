@@ -154,6 +154,10 @@
 //      floor, a thumb-sized [ MENU ] clear of them, the controls gone, the
 //      tap goes to the menu, from the pause screen too; a desktop has ENTER
 //      (W-76),
+//   3aa1c. the map editor's LOAD list and DELETE confirm on a 568x320 phone,
+//      NORMAL and LARGE: every row thumb-sized at the floor, none
+//      intersecting, a tap loads or deletes the one it names, a long list
+//      pages with [ BACK ] and [ MORE ]; a desktop's rows are as drawn (W-77),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5284,6 +5288,145 @@ try {
             phoneOk(big) && phoneOk(small) && phoneOk(paused), JSON.stringify({ big, small, paused }));
         const desk = await peerLeft({ width: 1280, height: 720 }, false);
         check('opponent left on a desktop: no [ MENU ], ENTER goes to the menu', !desk.btn && desk.stays && desk.menu, JSON.stringify(desk));
+    }
+
+    // 3aa1c. Holiday W-77: the map editor's pickers at thumb size. On a
+    // 568x320 touch phone, at TEXT: NORMAL and LARGE, three saved maps: the
+    // LOAD list's rows (and the DELETE confirm's) are each at least
+    // menuMinCss each way and at the floor, no two modal hit areas
+    // intersect, a tap at an entry's centre loads that map and no other and
+    // a tap on YES, DELETE IT deletes the named map only; with six saved the
+    // list pages, [ MORE ] showing the rest. A desktop's rows are as drawn.
+    {
+        const seed = (pg, names) => pg.evaluate(async (names) => {
+            const { allMapDefs } = await import('/wizard-shootout/src/systems/Maps.js');
+            const base = allMapDefs()[0];
+            for (const name of names) window.__customMaps.saveCustomMap({ ...base, name, layout: base.layout.slice() });
+        }, names);
+        const toEditor = async (pg, textSize) => {
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate((t) => { window.__settings.textSize = t; }, textSize);
+            await seed(pg, ['W77 A', 'W77 B', 'W77 C']);
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('MapEditorScene'));
+            await pg.waitForFunction(() => window.__game.scene.isActive('MapEditorScene') && window.__mapEditor?.modal, null, { timeout: 5000 });
+            await pg.waitForTimeout(150);
+            await pg.evaluate(() => window.__mapEditor.closeModal());
+            await pg.waitForTimeout(150);
+        };
+        // The open modal's rows: label, CSS centre and hit size, font in CSS
+        // px; the title's font; how many modal hit areas intersect.
+        const modal = (pg) => pg.evaluate(() => {
+            const e = window.__mapEditor;
+            const c = window.__game.canvas.getBoundingClientRect();
+            const k = c.width / 1024;
+            const rect = (o) => {
+                const h = o.input.hitArea;
+                const x0 = o.x - o.displayOriginX + h.x, y0 = o.y - o.displayOriginY + h.y;
+                return { x0, y0, x1: x0 + h.width, y1: y0 + h.height };
+            };
+            const objs = e.modal ? e.modal.objects : [];
+            const rows = objs.filter((o) => o.type === 'Text' && o.input && o.input.enabled);
+            const title = objs.find((o) => o.type === 'Text' && !o.input);
+            let bad = 0;
+            for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {
+                const a = rect(rows[i]), b = rect(rows[j]);
+                if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) bad++;
+            }
+            const tr = title ? title.getBounds() : null;
+            const underTitle = !!tr && rows.every((o) => rect(o).y0 >= tr.bottom - 0.5);
+            const pr = e.modal ? e.modal.objects[1].getBounds() : null;
+            const inPanel = !!pr && rows.every((o) => { const g = o.getBounds(); return g.x >= pr.x && g.right <= pr.right; });
+            return {
+                open: !!e.modal, bad, underTitle, inPanel, title: title ? title.text : '',
+                titleCss: title ? parseFloat(title.style.fontSize) * k : 0,
+                rows: rows.map((o) => {
+                    const r = rect(o);
+                    return { label: o.text, at: { x: c.left + (r.x0 + r.x1) / 2 * k, y: c.top + (r.y0 + r.y1) / 2 * k },
+                        w: (r.x1 - r.x0) * k, h: (r.y1 - r.y0) * k, drawnH: o.height * k,
+                        fontCss: parseFloat(o.style.fontSize) * k, onCanvas: r.y0 >= 0 && r.y1 <= 700 };
+                }),
+            };
+        });
+        const thumb = TOUCH_CONFIG.menuMinCss - 0.5;
+        for (const textSize of ['normal', 'large']) {
+            const tag = `editor pickers 568x320${textSize === 'large' ? ' TEXT: LARGE' : ''}`;
+            const floor = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[textSize] - 0.5;
+            const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+            const phone = await ctx.newPage();
+            phone.on('pageerror', (e) => errors.push(`${tag} pageerror: ` + e.message));
+            phone.on('console', (m) => { if (m.type() === 'error') errors.push(`${tag} console.error: ` + m.text()); });
+            const cdp = await ctx.newCDPSession(phone);
+            const tap = async (pt) => {
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: pt.x, y: pt.y, id: 1 }] });
+                await phone.waitForTimeout(40);
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+                await phone.waitForTimeout(120);
+            };
+            await toEditor(phone, textSize);
+            const sized = (m) => m.open && !m.bad && m.underTitle && m.inPanel && m.titleCss >= floor
+                && m.rows.every((r) => r.w >= thumb && r.h >= thumb && r.fontCss >= floor && r.onCanvas);
+
+            await phone.evaluate(() => window.__mapEditor.openLoadMenu());
+            await phone.waitForTimeout(150);
+            const load = await modal(phone);
+            const b = load.rows.find((r) => r.label.startsWith('W77 B'));
+            if (b) await tap(b.at);
+            const loaded = await phone.evaluate(() => ({ name: window.__mapEditor.mapName, open: !!window.__mapEditor.modal }));
+            check(`${tag}: LOAD's rows thumb-sized at the floor, none intersecting, a tap on an entry loads it alone`,
+                sized(load) && load.rows.length === 4 && b && loaded.name === 'W77 B' && !loaded.open,
+                JSON.stringify({ load, loaded }));
+
+            await phone.evaluate(() => window.__mapEditor.openDeleteConfirm());
+            await phone.waitForTimeout(150);
+            const del = await modal(phone);
+            const yes = del.rows.find((r) => r.label === 'YES, DELETE IT');
+            if (yes) await tap(yes.at);
+            const left = await phone.evaluate(() => window.__customMaps.getCustomMaps().map((d) => d.name));
+            check(`${tag}: DELETE's rows thumb-sized, YES, DELETE IT deletes the named map only`,
+                sized(del) && yes && left.join(',') === 'W77 A,W77 C', JSON.stringify({ del, left }));
+
+            await seed(phone, ['W77 D', 'W77 E', 'W77 F', 'W77 G']);
+            await phone.evaluate(() => window.__mapEditor.openLoadMenu());
+            await phone.waitForTimeout(150);
+            const p1 = await modal(phone);
+            const more = p1.rows.find((r) => r.label === '[ MORE ]');
+            if (more) await tap(more.at);
+            await phone.waitForTimeout(150);
+            const p2 = await modal(phone);
+            const names = (m) => m.rows.filter((r) => r.label.startsWith('W77')).map((r) => r.label.split('  ')[0]);
+            const back = p2.rows.find((r) => r.label === '[ BACK ]');
+            if (back) await tap(back.at);
+            const p1again = await modal(phone);
+            const more2 = p1again.rows.find((r) => r.label === '[ MORE ]');
+            if (more2) await tap(more2.at);
+            const p2again = await modal(phone);
+            const g = p2again.rows.find((r) => r.label.startsWith('W77 G'));
+            if (g) await tap(g.at);
+            const paged = await phone.evaluate(() => window.__mapEditor.mapName);
+            await ctx.close();
+            const per = TOUCH_CONFIG.menuRows.editor.pickerRows - 1;
+            check(`${tag}: six saved maps page, ${per} a page with [ BACK ] and [ MORE ] beside the way out, thumb-sized, the second page's entry loads`,
+                sized(p1) && sized(p2) && names(p1).length <= per && p1.rows.some((r) => r.label === '[ BACK ]')
+                && names(p1).join(',') === 'W77 A,W77 C,W77 D' && names(p2).join(',') === 'W77 E,W77 F,W77 G'
+                && names(p1again).join(',') === names(p1).join(',') && paged === 'W77 G'
+                && p1.title === 'LOAD A SAVED MAP  1/2' && p2.title === 'LOAD A SAVED MAP  2/2' && p2again.title === p2.title,
+                JSON.stringify({ p1: names(p1), p2: names(p2), back: names(p1again), paged, titles: [p1.title, p2.title, p2again.title],
+                    inPanel: [p1.inPanel, p2.inPanel], p1rows: p1.rows.map((r) => r.label) }));
+        }
+
+        const desk = await browser.newPage();
+        desk.on('pageerror', (e) => errors.push('editor pickers desktop pageerror: ' + e.message));
+        await toEditor(desk, 'normal');
+        await seed(desk, ['W77 D', 'W77 E', 'W77 F', 'W77 G']);
+        await desk.evaluate(() => window.__mapEditor.openLoadMenu());
+        await desk.waitForTimeout(150);
+        const d = await modal(desk);
+        await desk.close();
+        const entries = d.rows.filter((r) => r.label.startsWith('W77'));
+        check('editor pickers on a desktop: every saved map listed, no paging, the entry rows as drawn',
+            entries.length === 7 && !d.rows.some((r) => r.label === '[ MORE ]') && entries.every((r) => Math.abs(r.h - r.drawnH) < 0.5),
+            JSON.stringify(d.rows.map((r) => ({ label: r.label, h: r.h, drawnH: r.drawnH }))));
     }
 
     // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a
