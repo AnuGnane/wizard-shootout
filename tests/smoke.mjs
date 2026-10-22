@@ -5372,13 +5372,13 @@ try {
                 }, fn);
                 await pg.waitForTimeout(wait);
                 // The round-end banner lands 300 ms of game time after the
-                // kill, and the game clock runs slow on a loaded runner, so
-                // a kill waits for its two DMG lines rather than the clock.
+                // kill and fades in, and the game clock runs slow on a loaded
+                // runner, so a kill waits for its two DMG lines to be fully in
+                // rather than the clock.
                 if (fn === 'kill') {
                     await pg.waitForFunction(() => window.__game.scene.getScene('GameScene').children.list
-                        .filter((o) => o.type === 'Text' && o.depth === 40 && o.visible && /DMG \d/.test(o.text)).length >= 2,
+                        .filter((o) => o.type === 'Text' && o.depth === 40 && o.visible && o.alpha >= 0.99 && /DMG \d/.test(o.text)).length >= 2,
                     null, { timeout: 5000 }).catch(() => {});
-                    await pg.waitForTimeout(300);
                 }
                 return read();
             };
