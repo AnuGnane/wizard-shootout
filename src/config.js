@@ -549,10 +549,11 @@ export const TOUCH_CONFIG = {
             colGap: 4, colWrapW: 290, rowGap: 4, fieldPad: 16, fieldGap: 4,
             toolY: 150, toolGap: 44, mapHeadY: 312, themeY: 362, newY: 406,
             // W-77, on a touch device: the rows a list modal holds, its way
-            // out included, at a pitch of menuMinCss (96 game px at 568x320);
-            // a longer list pages, pickerRows - 3 entries a page with
-            // [ MORE ] and [ BACK ] above the way out.
-            pickerRows: 6,
+            // out's included, at a pitch of menuMinCss (97 game px at
+            // 568x320), the title's top at pickerTop (under the name line);
+            // a longer list pages, pickerRows - 1 entries a page, [ BACK ]
+            // and [ MORE ] pickerGap either side of the way out.
+            pickerRows: 4, pickerTop: 94, pickerGap: 24,
             // W-72, under TEXT: LARGE: the column's rows; the bottom bar's two
             // rows of three at barY; a list modal centred on the grid, its
             // title titleDy and first row rowsDy under the panel's top.

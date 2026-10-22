@@ -157,7 +157,7 @@
 //   3aa1c. the map editor's LOAD list and DELETE confirm on a 568x320 phone,
 //      NORMAL and LARGE: every row thumb-sized at the floor, none
 //      intersecting, a tap loads or deletes the one it names, a long list
-//      pages with [ MORE ]; a desktop's rows are as drawn (W-77),
+//      pages with [ BACK ] and [ MORE ]; a desktop's rows are as drawn (W-77),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5388,7 +5388,7 @@ try {
             await phone.evaluate(() => window.__mapEditor.openLoadMenu());
             await phone.waitForTimeout(150);
             const p1 = await modal(phone);
-            const more = p1.rows.find((r) => r.label.startsWith('[ MORE ]'));
+            const more = p1.rows.find((r) => r.label === '[ MORE ]');
             if (more) await tap(more.at);
             await phone.waitForTimeout(150);
             const p2 = await modal(phone);
@@ -5397,9 +5397,9 @@ try {
             if (g) await tap(g.at);
             const paged = await phone.evaluate(() => window.__mapEditor.mapName);
             await ctx.close();
-            const per = TOUCH_CONFIG.menuRows.editor.pickerRows - 3;
-            check(`${tag}: six saved maps page, ${per} a page with [ MORE ] and [ BACK ], thumb-sized, the second page's entry loads`,
-                sized(p1) && sized(p2) && p1.rows.length <= TOUCH_CONFIG.menuRows.editor.pickerRows
+            const per = TOUCH_CONFIG.menuRows.editor.pickerRows - 1;
+            check(`${tag}: six saved maps page, ${per} a page with [ BACK ] and [ MORE ] beside the way out, thumb-sized, the second page's entry loads`,
+                sized(p1) && sized(p2) && names(p1).length <= per && p1.rows.some((r) => r.label === '[ BACK ]')
                 && names(p1).join(',') === 'W77 A,W77 C,W77 D' && names(p2).join(',') === 'W77 E,W77 F,W77 G' && paged === 'W77 G',
                 JSON.stringify({ p1: names(p1), p2: names(p2), paged, p1rows: p1.rows.map((r) => r.label) }));
         }
@@ -5414,7 +5414,7 @@ try {
         await desk.close();
         const entries = d.rows.filter((r) => r.label.startsWith('W77'));
         check('editor pickers on a desktop: every saved map listed, no paging, the entry rows as drawn',
-            entries.length === 7 && !d.rows.some((r) => r.label.startsWith('[ MORE ]')) && entries.every((r) => Math.abs(r.h - r.drawnH) < 0.5),
+            entries.length === 7 && !d.rows.some((r) => r.label === '[ MORE ]') && entries.every((r) => Math.abs(r.h - r.drawnH) < 0.5),
             JSON.stringify(d.rows.map((r) => ({ label: r.label, h: r.h, drawnH: r.drawnH }))));
     }
 

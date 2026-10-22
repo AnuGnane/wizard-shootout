@@ -700,19 +700,17 @@ export class MapEditorScene extends Phaser.Scene {
         const { width, height } = this.cameras.main;
 
         // Holiday W-77: on a phone a list longer than the modal holds pages,
-        // [ MORE ] and [ BACK ] stepping through it (and wrapping round).
-        const { pickerRows } = TOUCH_CONFIG.menuRows.editor;
+        // [ BACK ] and [ MORE ] beside the way out stepping through it (and
+        // wrapping round); the title counts the pages.
+        const { pickerRows, pickerTop, pickerGap } = TOUCH_CONFIG.menuRows.editor;
+        const per = Math.max(1, pickerRows - 1);
+        const pages = this.touch ? Math.ceil(entries.length / per) : 1;
         const all = entries;
-        if (this.touch && all.length + 1 > pickerRows) {
-            const per = Math.max(1, pickerRows - 3);
-            const pages = Math.ceil(all.length / per);
+        const turn = (to) => () => this.openModal(title, all, { cancelLabel, page: to });
+        if (pages > 1) {
             page = ((page % pages) + pages) % pages;
-            const turn = (to) => () => this.openModal(title, all, { cancelLabel, page: to });
-            entries = [
-                ...all.slice(page * per, page * per + per),
-                { label: `[ MORE ]  ${page + 1}/${pages}`, onSelect: turn(page + 1) },
-                { label: '[ BACK ]', onSelect: turn(page - 1) },
-            ];
+            entries = all.slice(page * per, page * per + per);
+            title = `${title}  ${page + 1}/${pages}`;
         }
 
         const rows = entries.length + 1; // + cancel
@@ -727,16 +725,23 @@ export class MapEditorScene extends Phaser.Scene {
         // clear of the grown tool column and the status line, its title
         // titleDy and its rows rowsDy under the top.
         const L = this.large ? TOUCH_CONFIG.menuRows.editor.large : null;
-        const titleDy = L ? L.titleDy : 32;
-        let rowsDy = L ? L.rowsDy : 70;
-        let panelH = 82 + rows * pitch;
-        // Holiday W-77: the first row's grown area starts under the title.
-        if (this.touch) {
-            rowsDy = Math.max(rowsDy, Math.ceil(titleDy + this.fontPx(18) * 0.6 + pitch / 2));
-            panelH = Math.max(panelH, rowsDy + rows * pitch - pitch / 2 + 12);
-        }
         const cx = L ? GRID_CX : width / 2;
-        const top = Math.round((L ? GRID_CY * 2 : height) / 2 - panelH / 2);
+        let titleY, rowsTop, panelTop, panelH;
+        if (this.touch) {
+            // Holiday W-77: on a phone the title's top sits at pickerTop,
+            // under the name line, and the first row's grown area under the
+            // title; the panel holds them, clear of the bottom bar.
+            const titleH = Math.ceil(this.fontPx(18) * 1.2);
+            titleY = pickerTop + titleH / 2;
+            rowsTop = Math.ceil(pickerTop + titleH + pitch / 2);
+            panelTop = pickerTop - 14;
+            panelH = rowsTop + (rows - 1) * pitch + pitch / 2 + 6 - panelTop;
+        } else {
+            panelH = 82 + rows * pitch;
+            panelTop = Math.round((L ? GRID_CY * 2 : height) / 2 - panelH / 2);
+            titleY = panelTop + (L ? L.titleDy : 32);
+            rowsTop = panelTop + (L ? L.rowsDy : 70);
+        }
 
         const objects = [];
         const shade = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.68)
@@ -744,12 +749,12 @@ export class MapEditorScene extends Phaser.Scene {
             .setInteractive();
         objects.push(shade);
 
-        const panel = this.add.rectangle(cx, top + panelH / 2, panelW, panelH, 0x191932)
+        const panel = this.add.rectangle(cx, panelTop + panelH / 2, panelW, panelH, 0x191932)
             .setStrokeStyle(2, 0x3a4a7a)
             .setDepth(81);
         objects.push(panel);
 
-        const titleText = this.add.text(cx, top + titleDy, title, {
+        const titleText = this.add.text(cx, titleY, title, {
             font: `bold ${this.fontPx(18)}px monospace`,
             fill: '#5599ff',
         }).setOrigin(0.5).setDepth(82);
@@ -759,7 +764,6 @@ export class MapEditorScene extends Phaser.Scene {
         this.menuNav.setActive(false);
         const nav = new MenuNav(this, { depth: 95, onBack: () => this.closeModal() });
 
-        const rowsTop = top + rowsDy;
         entries.forEach((entry, i) => {
             const btn = this.add.text(cx, rowsTop + i * pitch, entry.label, {
                 font: `${rowPx}px monospace`,
@@ -780,20 +784,41 @@ export class MapEditorScene extends Phaser.Scene {
             if (this.touch) ensureTapTarget(this, btn);
         });
 
-        const cancel = this.add.text(cx, rowsTop + entries.length * pitch, `[ ${cancelLabel} ]`, {
-            font: `${rowPx}px monospace`,
-            fill: '#ffffff',
-            backgroundColor: '#333355',
-            padding: { x: 16, y: 6 },
-        }).setOrigin(0.5).setDepth(82).setInteractive({ useHandCursor: true });
-        const doCancel = () => { audio.uiClick(); this.closeModal(); };
-        cancel.on('pointerover', () => cancel.setStyle({ fill: '#5599ff' }));
-        cancel.on('pointerout', () => cancel.setStyle({ fill: '#ffffff' }));
-        cancel.on('pointerdown', doCancel);
-        nav.add(cancel, doCancel);
-        objects.push(cancel);
+        // The last row: the way out, with [ BACK ] and [ MORE ] beside it
+        // while the list pages.
+        const lastY = rowsTop + entries.length * pitch;
+        const navRow = [];
+        const navBtn = (label, onActivate) => {
+            const btn = this.add.text(cx, lastY, label, {
+                font: `${rowPx}px monospace`,
+                fill: '#ffffff',
+                backgroundColor: '#333355',
+                padding: { x: 16, y: 6 },
+            }).setOrigin(0.5).setDepth(82).setInteractive({ useHandCursor: true });
+            const activate = () => { audio.uiClick(); onActivate(); };
+            btn.on('pointerover', () => btn.setStyle({ fill: '#5599ff' }));
+            btn.on('pointerout', () => btn.setStyle({ fill: '#ffffff' }));
+            btn.on('pointerdown', activate);
+            nav.add(btn, activate);
+            objects.push(btn);
+            navRow.push(btn);
+            return btn;
+        };
+        if (pages > 1) {
+            navBtn('[ BACK ]', turn(page - 1));
+            navBtn('[ MORE ]', turn(page + 1));
+        }
+        const cancel = navBtn(`[ ${cancelLabel} ]`, () => this.closeModal());
+        if (navRow.length > 1) {
+            const rowW = navRow.reduce((w, btn) => w + btn.width, 0) + (navRow.length - 1) * pickerGap;
+            let x = cx - rowW / 2;
+            for (const btn of navRow) {
+                btn.setX(x + btn.width / 2);
+                x += btn.width + pickerGap;
+            }
+        }
         // The way out of every modal is thumb-sized too (holiday W-10).
-        ensureTapTarget(this, cancel);
+        for (const btn of navRow) if (btn === cancel || this.touch) ensureTapTarget(this, btn);
 
         this.modal = { objects, nav };
     }
