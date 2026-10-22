@@ -146,6 +146,9 @@
 //   3aa0z. on an 844x390 phone RESUME counts 3-2-1 at the floor over the
 //      still-paused round, a tap meanwhile does nothing, the round runs
 //      after the count and a kill scores; a desktop resumes at once (W-74),
+//   3aa1a. where the class row hides the descriptions (568x320: 1P under
+//      LARGE, PARTY), a first tap on a card shows its strip at the floor and
+//      a second picks; at 844x390 one tap goes on (W-75),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5079,6 +5082,97 @@ try {
         const noCount = await dpg.evaluate(() => !window.__game.scene.getScene('PauseScene').children.getByName('resumeCountText'));
         check('resume count-in: a desktop RESUME resumes at once', quick && noCount, `quick=${quick} noCount=${noCount}`);
         await dctx.close();
+    }
+
+    // 3aa1a. Holiday W-75: where the class row leaves the descriptions out
+    // (568x320 under TEXT: LARGE in 1P, 568x320 in PARTY), the first tap on
+    // a card moves seat 1's frame there and shows that class's signature
+    // and passive in a strip at or above the floor, under the cards, on the
+    // canvas, and the scene stays; a second tap on it picks (1P goes on to
+    // MAP SELECT, PARTY readies seat 1). PARTY's strip at NORMAL is clear of
+    // the seat rows. At 844x390 the descriptions show and one tap goes on.
+    {
+        const runPick = async (vp, mode, textSize) => {
+            const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('class strip pageerror: ' + e.message));
+            pg.on('console', (m) => { if (m.type() === 'error') errors.push('class strip console.error: ' + m.text()); });
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(([mode, textSize]) => {
+                window.__settings.textSize = textSize;
+                window.__game.scene.getScene('MenuScene').scene.start('ClassSelectScene', { mode });
+            }, [mode, textSize]);
+            await pg.waitForFunction(() => window.__game.scene.isActive('ClassSelectScene') && window.__game.scene.getScene('ClassSelectScene').cardPositions, null, { timeout: 5000 });
+            await pg.waitForTimeout(300);
+            const pick = 5;
+            const at = await pg.evaluate((i) => {
+                const s = window.__game.scene.getScene('ClassSelectScene');
+                const r = window.__game.canvas.getBoundingClientRect();
+                const k = r.width / 1024;
+                const p = s.cardPositions[i];
+                return { x: r.left + p.x * k, y: r.top + p.y * k };
+            }, pick);
+            await pg.touchscreen.tap(at.x, at.y);
+            await pg.waitForTimeout(250);
+            const first = await pg.evaluate(([mode, i]) => {
+                const g = window.__game.scene;
+                const s = g.getScene('ClassSelectScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const t = s.descStrip;
+                const b = t && t.visible ? t.getBounds() : null;
+                const below = mode === 'party'
+                    ? Math.min(...s.children.list.filter((o) => o.type === 'Text' && o.visible && o !== t && o.y > s.cardPositions[0].y + s.cardH / 2).map((o) => o.getBounds().y))
+                    : 1e9;
+                return {
+                    stays: g.isActive('ClassSelectScene') && !g.isActive('MapSelectScene'),
+                    hidden: !!s.descHidden,
+                    focused: (mode === 'party' ? s.seats[1].index : s.p1Index) === i,
+                    text: t && t.visible ? t.text.replace(/\n/g, ' / ') : null,
+                    css: t ? +(parseFloat(t.style.fontSize) * Math.abs(t.scaleY) * k).toFixed(2) : 0,
+                    clearCards: !!b && b.y >= s.cardPositions[0].y + s.cardH / 2,
+                    onCanvas: !!b && b.x >= 0 && b.right <= 1024 && b.bottom <= 700,
+                    clearRows: !!b && b.bottom <= below,
+                };
+            }, [mode, pick]);
+            await pg.touchscreen.tap(at.x, at.y);
+            const picked = await pg.waitForFunction((mode) => {
+                const g = window.__game.scene;
+                return mode === 'party' ? g.getScene('ClassSelectScene').seats[1].confirmed : g.isActive('MapSelectScene');
+            }, mode, { timeout: 3000 }).then(() => true, () => false);
+            await ctx.close();
+            return { ...first, picked };
+        };
+        const floor = (size) => TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[size] - 0.5;
+        const name = 'REFLECT WARD';
+        const large1p = await runPick({ width: 568, height: 320 }, '1p', 'large');
+        const party = await runPick({ width: 568, height: 320 }, 'party', 'normal');
+        const strip = (r, size) => r.stays && r.hidden && r.focused && (r.text || '').includes(name) && r.css >= floor(size)
+            && r.clearCards && r.onCanvas && r.picked;
+        check('class strip: on a 568x320 phone with the descriptions hidden a first tap shows the class at the floor under the cards, a second picks (1P under LARGE, PARTY clear of its rows)',
+            strip(large1p, 'large') && strip(party, 'normal') && party.clearRows,
+            JSON.stringify({ large1p, party }));
+        // The 844x390 phone keeps the descriptions: the first tap goes on.
+        const wide = await (async () => {
+            const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+            const pg = await ctx.newPage();
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await pg.evaluate(() => window.__game.scene.getScene('MenuScene').scene.start('ClassSelectScene', { mode: '1p' }));
+            await pg.waitForFunction(() => window.__game.scene.isActive('ClassSelectScene') && window.__game.scene.getScene('ClassSelectScene').cardPositions, null, { timeout: 5000 });
+            await pg.waitForTimeout(300);
+            const at = await pg.evaluate(() => {
+                const s = window.__game.scene.getScene('ClassSelectScene');
+                const r = window.__game.canvas.getBoundingClientRect();
+                const k = r.width / 1024;
+                return { x: r.left + s.cardPositions[5].x * k, y: r.top + s.cardPositions[5].y * k, hidden: !!s.descHidden };
+            });
+            await pg.touchscreen.tap(at.x, at.y);
+            const on = await pg.waitForFunction(() => window.__game.scene.isActive('MapSelectScene'), null, { timeout: 3000 }).then(() => true, () => false);
+            await ctx.close();
+            return { hidden: at.hidden, on };
+        })();
+        check('class strip: at 844x390 the descriptions show and one tap goes on', !wide.hidden && wide.on, JSON.stringify(wide));
     }
 
     // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a

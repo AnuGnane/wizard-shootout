@@ -101,7 +101,23 @@ export class ClassSelectScene extends Phaser.Scene {
         this.touchCards = isTouchDevice(this) && menuFontPx(this, 10) > 10;
         this.cardH = CARD_H;
         const cards = this.cardPositions.map((pos, i) => this.createCard(pos, i));
+        this.descHidden = false;
         if (this.touchCards) this.layoutTouchCards(cards);
+        // Holiday W-75: with the descriptions left out, the first tap on a
+        // card focuses it and shows its signature and passive here; a
+        // second tap on it picks.
+        this.stripIndex = -1;
+        if (this.descHidden) {
+            const R = TOUCH_CONFIG.menuRows.classSelect;
+            this.descStrip = this.add.text(width / 2, R.top + this.cardH + R.stripDy, '', {
+                font: `${menuFontPx(this, 11)}px monospace`,
+                fill: '#aaaacc',
+                align: 'center',
+                backgroundColor: R.stripBg,
+                wordWrap: { width: width - 2 * R.stripPad },
+            }).setOrigin(0.5, 0).setDepth(R.stripDepth).setVisible(false);
+            this.descStrip.name = 'classStrip';
+        }
 
         this.transitioning = false;
 
@@ -135,6 +151,10 @@ export class ClassSelectScene extends Phaser.Scene {
         bg.on('pointerout', () => bg.setFillStyle(0x1a1a2e));
         bg.on('pointerdown', () => {
             // Mouse always drives seat 1 (P1); other seats use their own device.
+            if (this.descHidden && this.stripIndex !== index) {
+                this.focusCard(index);
+                return;
+            }
             if (this.mode === 'party') {
                 if (this.seats[1].confirmed) return;
                 this.seats[1].index = index;
@@ -189,6 +209,22 @@ export class ClassSelectScene extends Phaser.Scene {
         return { pos, bg, name, lines: [element, sig, desc, passive], desc };
     }
 
+    // Holiday W-75: seat 1's frame moves to the card and the strip shows its
+    // signature line and passive.
+    focusCard(index) {
+        if (this.mode === 'party' ? this.seats[1].confirmed : this.p1Confirmed) return;
+        if (this.mode === 'party') this.seats[1].index = index;
+        else {
+            this.p1Index = index;
+            this.updateFrames();
+        }
+        const cls = WIZARD_CLASSES[CLASS_KEYS[index]];
+        this.descStrip.setText(`${cls.signature.label.toUpperCase()} · ${cls.signature.cooldown / 1000}s — ${cls.signature.description}\n${cls.passive}`)
+            .setVisible(true);
+        this.stripIndex = index;
+        audio.uiClick();
+    }
+
     // Holiday W-52: stack each card's grown print under its name, then size
     // every card to the tallest. A row that would still pass the bottom it
     // has (TOUCH_CONFIG.menuRows.classSelect) leaves the descriptions out.
@@ -214,6 +250,7 @@ export class ClassSelectScene extends Phaser.Scene {
         };
         let bottom = Math.max(...cards.map(stack));
         if (bottom > maxBottom) {
+            this.descHidden = true;
             cards.forEach((c) => c.desc.setVisible(false));
             bottom = Math.max(...cards.map(stack));
         }
