@@ -110,8 +110,8 @@ export class ClassSelectScene extends Phaser.Scene {
         if (this.descHidden) {
             const R = TOUCH_CONFIG.menuRows.classSelect;
             this.descStrip = this.add.text(width / 2, R.top + this.cardH + R.stripDy, '', {
-                font: `${menuFontPx(this, 11)}px monospace`,
-                fill: '#aaaacc',
+                font: `${menuFontPx(this, R.stripPx)}px monospace`,
+                fill: R.stripFill,
                 align: 'center',
                 backgroundColor: R.stripBg,
                 wordWrap: { width: width - 2 * R.stripPad },
@@ -213,16 +213,27 @@ export class ClassSelectScene extends Phaser.Scene {
     // signature line and passive.
     focusCard(index) {
         if (this.mode === 'party' ? this.seats[1].confirmed : this.p1Confirmed) return;
-        if (this.mode === 'party') this.seats[1].index = index;
-        else {
+        if (this.mode === 'party') {
+            this.seats[1].index = index;
+            this.updateSeatFrames();
+        } else {
             this.p1Index = index;
             this.updateFrames();
         }
+        this.showStrip(index);
+        audio.uiClick();
+    }
+
+    showStrip(index) {
         const cls = WIZARD_CLASSES[CLASS_KEYS[index]];
         this.descStrip.setText(`${cls.signature.label.toUpperCase()} · ${cls.signature.cooldown / 1000}s — ${cls.signature.description}\n${cls.passive}`)
             .setVisible(true);
         this.stripIndex = index;
-        audio.uiClick();
+    }
+
+    // A key or pad moving seat 1 after a tap keeps the strip on its card.
+    followStrip(index) {
+        if (this.descStrip && this.descStrip.visible) this.showStrip(index);
     }
 
     // Holiday W-52: stack each card's grown print under its name, then size
@@ -449,6 +460,7 @@ export class ClassSelectScene extends Phaser.Scene {
         if (playerNum === 1) {
             if (this.p1Confirmed) return;
             this.p1Index = (this.p1Index + dir + n) % n;
+            this.followStrip(this.p1Index);
         } else {
             if (this.p2Confirmed) return;
             this.p2Index = (this.p2Index + dir + n) % n;
@@ -678,6 +690,7 @@ export class ClassSelectScene extends Phaser.Scene {
         if (seat.kind !== 'human' && seat.kind !== 'pad') return;
         const total = CLASS_KEYS.length;
         seat.index = (seat.index + dir + total) % total;
+        if (n === 1) this.followStrip(seat.index);
         this.updateSeatFrames();
     }
 

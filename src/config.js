@@ -461,6 +461,7 @@ export const TOUCH_CONFIG = {
             // from each side, on stripBg (it covers PARTY's seat labels where
             // TEXT: LARGE leaves no gap under the cards).
             stripDy: 8, stripPad: 24, stripBg: '#0d0d1a', stripDepth: 30,
+            stripFill: '#aaaacc', stripPx: 11,
             subY: 75, survivalSubY: 206, nameGap: 6,
             // W-70: the title's y under TEXT: LARGE (TouchMenu's menuLarge).
             largeTitleY: 36,

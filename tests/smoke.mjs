@@ -147,8 +147,9 @@
 //      still-paused round, a tap meanwhile does nothing, the round runs
 //      after the count and a kill scores; a desktop resumes at once (W-74),
 //   3aa1a. where the class row hides the descriptions (568x320: 1P under
-//      LARGE, PARTY), a first tap on a card shows its strip at the floor and
-//      a second picks; at 844x390 one tap goes on (W-75),
+//      LARGE, PARTY), a first tap on a card moves the frame and shows its
+//      strip at the floor, clear of the texts below, and a second picks; at
+//      844x390 one tap goes on (W-75),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -5121,13 +5122,13 @@ try {
                 const k = window.__game.canvas.getBoundingClientRect().width / 1024;
                 const t = s.descStrip;
                 const b = t && t.visible ? t.getBounds() : null;
-                const below = mode === 'party'
-                    ? Math.min(...s.children.list.filter((o) => o.type === 'Text' && o.visible && o !== t && o.y > s.cardPositions[0].y + s.cardH / 2).map((o) => o.getBounds().y))
-                    : 1e9;
+                const below = Math.min(...s.children.list.filter((o) => o.type === 'Text' && o.visible && o !== t
+                    && o.y > s.cardPositions[0].y + s.cardH / 2).map((o) => o.getBounds().y));
+                const frame = mode === 'party' ? s.seats[1].frame : s.p1Frame;
                 return {
                     stays: g.isActive('ClassSelectScene') && !g.isActive('MapSelectScene'),
                     hidden: !!s.descHidden,
-                    focused: (mode === 'party' ? s.seats[1].index : s.p1Index) === i,
+                    focused: (mode === 'party' ? s.seats[1].index : s.p1Index) === i && Math.abs(frame.x - s.cardPositions[i].x) <= 8,
                     text: t && t.visible ? t.text.replace(/\n/g, ' / ') : null,
                     css: t ? +(parseFloat(t.style.fontSize) * Math.abs(t.scaleY) * k).toFixed(2) : 0,
                     clearCards: !!b && b.y >= s.cardPositions[0].y + s.cardH / 2,
@@ -5149,8 +5150,8 @@ try {
         const party = await runPick({ width: 568, height: 320 }, 'party', 'normal');
         const strip = (r, size) => r.stays && r.hidden && r.focused && (r.text || '').includes(name) && r.css >= floor(size)
             && r.clearCards && r.onCanvas && r.picked;
-        check('class strip: on a 568x320 phone with the descriptions hidden a first tap shows the class at the floor under the cards, a second picks (1P under LARGE, PARTY clear of its rows)',
-            strip(large1p, 'large') && strip(party, 'normal') && party.clearRows,
+        check('class strip: on a 568x320 phone with the descriptions hidden a first tap moves the frame and shows the class at the floor under the cards, clear of the texts below, and a second picks (1P under LARGE, PARTY)',
+            strip(large1p, 'large') && strip(party, 'normal') && large1p.clearRows && party.clearRows,
             JSON.stringify({ large1p, party }));
         // The 844x390 phone keeps the descriptions: the first tap goes on.
         const wide = await (async () => {
