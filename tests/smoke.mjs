@@ -152,7 +152,8 @@
 //      844x390 one tap goes on (W-75),
 //   3aa1b. the opponent leaving a net match: on a phone both lines at the
 //      floor, a thumb-sized [ MENU ] clear of them, the controls gone, the
-//      tap goes to the menu; a desktop has ENTER (W-76),
+//      tap goes to the menu, from the pause screen too; a desktop has ENTER
+//      (W-76),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -202,7 +203,7 @@ import { extname, join, normalize } from 'node:path';
 import { createServer, preview } from 'vite';
 import { chromium } from 'playwright';
 import { buildPalette, indexFrame, encodeGif } from '../scripts/gif.js';
-import { TOUCH_CONFIG, STORAGE_CONFIG } from '../src/config.js';
+import { TOUCH_CONFIG, STORAGE_CONFIG, NET_CONFIG } from '../src/config.js';
 
 const SCENES = [
     'BootScene', 'MenuScene', 'SettingsScene', 'ControlsScene', 'ClassSelectScene',
@@ -5192,7 +5193,7 @@ try {
     // round stays until the tap, and the tap lands on the menu. A 1280x720
     // desktop has no [ MENU ] and ENTER goes to the menu.
     {
-        const peerLeft = async (vp, touch) => {
+        const peerLeft = async (vp, touch, pausedFirst = false) => {
             const ctx = await browser.newContext(touch ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
             const pg = await ctx.newPage();
             pg.on('pageerror', (e) => errors.push('peer left pageerror: ' + e.message));
@@ -5219,6 +5220,10 @@ try {
                 return window.__game.scene.isActive('GameScene') && s.netRole === 'guest' && s.player1 && s.player2;
             }, null, { timeout: 8000 });
             await pg.waitForTimeout(500);
+            if (pausedFirst) {
+                await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+                await pg.waitForFunction(() => window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 }).catch(() => {});
+            }
             await pg.evaluate(() => window.__net.NetSession.connection.onClose());
             await pg.waitForTimeout(400);
             const card = await pg.evaluate(() => {
@@ -5245,6 +5250,7 @@ try {
                     btn: !!btn, hit, clear,
                     controlsGone: !tc || tc.graphics.every((g) => !g.visible),
                     stays: window.__game.scene.isActive('GameScene'),
+                    pauseGone: !window.__game.scene.isActive('PauseScene'),
                 };
             });
             let menu = false;
@@ -5261,7 +5267,9 @@ try {
             } else {
                 await pg.keyboard.press('Enter');
             }
-            menu = await pg.waitForFunction(() => window.__game.scene.isActive('MenuScene') && !window.__game.scene.isActive('GameScene'), null, { timeout: 3000 }).then(() => true, () => false);
+            // Under delayMs, so the desktop's 2 s return cannot pass for ENTER.
+            menu = await pg.waitForFunction(() => window.__game.scene.isActive('MenuScene') && !window.__game.scene.isActive('GameScene'),
+                null, { timeout: touch ? 3000 : NET_CONFIG.peerLeft.delayMs - 800 }).then(() => true, () => false);
             await ctx.close();
             return { ...card, menu };
         };
@@ -5269,10 +5277,11 @@ try {
         const thumb = TOUCH_CONFIG.menuMinCss - 0.5;
         const big = await peerLeft({ width: 844, height: 390 }, true);
         const small = await peerLeft({ width: 568, height: 320 }, true);
+        const paused = await peerLeft({ width: 844, height: 390 }, true, true);
         const phoneOk = (r) => r.title >= floor && r.sub >= floor && r.btn && r.hit.w >= thumb && r.hit.h >= thumb && r.clear
-            && r.controlsGone && r.stays && r.staysAfterDelay && r.menu;
-        check('opponent left on a phone: both lines at the floor, a thumb-sized [ MENU ] clear of them, controls gone, the tap goes to the menu (844x390 and 568x320)',
-            phoneOk(big) && phoneOk(small), JSON.stringify({ big, small }));
+            && r.controlsGone && r.stays && r.pauseGone && r.staysAfterDelay && r.menu;
+        check('opponent left on a phone: both lines at the floor, a thumb-sized [ MENU ] clear of them, controls gone, the tap goes to the menu (844x390, 568x320, and from the pause screen)',
+            phoneOk(big) && phoneOk(small) && phoneOk(paused), JSON.stringify({ big, small, paused }));
         const desk = await peerLeft({ width: 1280, height: 720 }, false);
         check('opponent left on a desktop: no [ MENU ], ENTER goes to the menu', !desk.btn && desk.stays && desk.menu, JSON.stringify(desk));
     }

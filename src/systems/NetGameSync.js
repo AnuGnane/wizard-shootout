@@ -667,7 +667,17 @@ export class NetGameSync {
         if (this._blipText) { this._blipText.destroy(); this._blipText = null; }
         scene.roundOver = true; // freeze the update loop (both roles)
 
-        if (!scene.scene || !scene.scene.isActive || !scene.scene.isActive()) return;
+        if (!scene.scene || !scene.scene.isActive) return;
+        // Holiday W-76: left while paused (the pause screen or W-74's count):
+        // the pause screen goes and the card shows over the frozen round; the
+        // wake lock the resume takes back is released again.
+        const paused = scene.scene.isPaused();
+        if (!scene.scene.isActive() && !paused) return;
+        if (paused) {
+            scene.scene.stop('PauseScene');
+            scene.scene.resume();
+            scene.events.once('resume', () => WakeLock.release());
+        }
 
         // Holiday W-76: on a phone the card reads at the floor, the controls
         // go (and pause with them: `leaving`), the screen may sleep again,

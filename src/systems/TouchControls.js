@@ -186,7 +186,7 @@ export class TouchControls {
     // Hide (a gamepad took over) or show the joystick and the three buttons;
     // the pause button always stays. `quiet` skips onHiddenChange.
     setHidden(hidden, quiet = false) {
-        if (this._destroyed || this.hidden === hidden) return;
+        if (this._destroyed || this.retired || this.hidden === hidden) return;
         this.hidden = hidden;
         if (hidden) this._releaseAll();
         for (const obj of this.graphics) {
