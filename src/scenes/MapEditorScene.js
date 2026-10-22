@@ -695,20 +695,46 @@ export class MapEditorScene extends Phaser.Scene {
     // One list-picker used by the size menu, the load list and the delete
     // confirm. Its own MenuNav drives it while the scene's main nav is parked,
     // so keyboard/pad reach the entries too.
-    openModal(title, entries, { cancelLabel = 'CANCEL' } = {}) {
+    openModal(title, entries, { cancelLabel = 'CANCEL', page = 0 } = {}) {
         this.closeModal();
         const { width, height } = this.cameras.main;
+
+        // Holiday W-77: on a phone a list longer than the modal holds pages,
+        // [ MORE ] and [ BACK ] stepping through it (and wrapping round).
+        const { pickerRows } = TOUCH_CONFIG.menuRows.editor;
+        const all = entries;
+        if (this.touch && all.length + 1 > pickerRows) {
+            const per = Math.max(1, pickerRows - 3);
+            const pages = Math.ceil(all.length / per);
+            page = ((page % pages) + pages) % pages;
+            const turn = (to) => () => this.openModal(title, all, { cancelLabel, page: to });
+            entries = [
+                ...all.slice(page * per, page * per + per),
+                { label: `[ MORE ]  ${page + 1}/${pages}`, onSelect: turn(page + 1) },
+                { label: '[ BACK ]', onSelect: turn(page - 1) },
+            ];
+        }
 
         const rows = entries.length + 1; // + cancel
         const panelW = 520;
         // Holiday W-57: on a phone the grown rows sit their height apart.
         const rowPx = this.fontPx(16);
-        const pitch = Math.max(36, Math.ceil(rowPx * 1.2 + 12 + TOUCH_CONFIG.menuRows.editor.rowGap));
-        const panelH = 82 + rows * pitch;
+        let pitch = Math.max(36, Math.ceil(rowPx * 1.2 + 12 + TOUCH_CONFIG.menuRows.editor.rowGap));
+        // Holiday W-77: and at least a thumb apart, so every grown row
+        // reaches menuMinCss without meeting the next.
+        if (this.touch) pitch = Math.max(pitch, Math.ceil(TOUCH_CONFIG.menuMinCss / cssPerGamePx(this)));
         // Holiday W-72: under TEXT: LARGE the panel centres on the grid,
         // clear of the grown tool column and the status line, its title
         // titleDy and its rows rowsDy under the top.
         const L = this.large ? TOUCH_CONFIG.menuRows.editor.large : null;
+        const titleDy = L ? L.titleDy : 32;
+        let rowsDy = L ? L.rowsDy : 70;
+        let panelH = 82 + rows * pitch;
+        // Holiday W-77: the first row's grown area starts under the title.
+        if (this.touch) {
+            rowsDy = Math.max(rowsDy, Math.ceil(titleDy + this.fontPx(18) * 0.6 + pitch / 2));
+            panelH = Math.max(panelH, rowsDy + rows * pitch - pitch / 2 + 12);
+        }
         const cx = L ? GRID_CX : width / 2;
         const top = Math.round((L ? GRID_CY * 2 : height) / 2 - panelH / 2);
 
@@ -723,15 +749,17 @@ export class MapEditorScene extends Phaser.Scene {
             .setDepth(81);
         objects.push(panel);
 
-        objects.push(this.add.text(cx, top + (L ? L.titleDy : 32), title, {
+        const titleText = this.add.text(cx, top + titleDy, title, {
             font: `bold ${this.fontPx(18)}px monospace`,
             fill: '#5599ff',
-        }).setOrigin(0.5).setDepth(82));
+        }).setOrigin(0.5).setDepth(82);
+        objects.push(titleText);
+        if (this.touch) addTapObstacle(this, titleText, true);
 
         this.menuNav.setActive(false);
         const nav = new MenuNav(this, { depth: 95, onBack: () => this.closeModal() });
 
-        const rowsTop = top + (L ? L.rowsDy : 70);
+        const rowsTop = top + rowsDy;
         entries.forEach((entry, i) => {
             const btn = this.add.text(cx, rowsTop + i * pitch, entry.label, {
                 font: `${rowPx}px monospace`,
@@ -749,6 +777,7 @@ export class MapEditorScene extends Phaser.Scene {
             btn.on('pointerdown', activate);
             nav.add(btn, activate);
             objects.push(btn);
+            if (this.touch) ensureTapTarget(this, btn);
         });
 
         const cancel = this.add.text(cx, rowsTop + entries.length * pitch, `[ ${cancelLabel} ]`, {
