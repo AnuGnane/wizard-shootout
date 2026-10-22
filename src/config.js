@@ -692,6 +692,12 @@ export const TOUCH_CONFIG = {
         text: '[ TAP AGAIN TO QUIT ]',
         windowMs: 2500,
     },
+    // Holiday W-74: on a touch device RESUME counts the round back in
+    // (steps, steps-1 ... 1, stepMs each) over the still-paused round, so
+    // the thumb finds the joystick first. The digits are basePx game px,
+    // never under the HUD floor (hudFloorCss); a tap during the count does
+    // nothing.
+    resumeCount: { steps: 3, stepMs: 600, basePx: 96, fill: '#ffffff', stroke: '#000000', strokePx: 8 },
     marginCss: 12,       // gap from the canvas edge
     gapCss: 10,          // gap between neighbouring buttons
     deadZone: 0.22,      // fraction of the joystick radius before any direction registers
