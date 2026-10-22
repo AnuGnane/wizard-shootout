@@ -12,6 +12,7 @@ import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 import { takePendingJoin } from '../systems/Share.js';
 import { isTouchDevice, layoutRow, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
 import { TOUCH_CONFIG } from '../config.js';
+import { loopTween } from '../systems/ReducedMotion.js';
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -61,7 +62,7 @@ export class MenuScene extends Phaser.Scene {
         const blueWiz = this.add.image(width / 2 - 280, 110, 'wizard_blue').setScale(3.5);
         const redWiz = this.add.image(width / 2 + 280, 110, 'wizard_red').setScale(3.5).setFlipX(true);
 
-        this.tweens.add({
+        loopTween(this, {
             targets: [blueWiz, redWiz],
             y: 120,
             duration: 1200,
@@ -263,7 +264,7 @@ export class MenuScene extends Phaser.Scene {
         });
         hint.setOrigin(0.5);
 
-        this.tweens.add({
+        loopTween(this, {
             targets: hint,
             alpha: 0.3,
             duration: 800,
