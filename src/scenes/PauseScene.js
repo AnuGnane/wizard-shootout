@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { audio } from '../systems/AudioSystem.js';
 import { MenuNav } from '../systems/MenuNav.js';
-import { ensureTapTarget, isTouchDevice, relayoutTapTargets, menuFontPx } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, relayoutTapTargets, menuFontPx, hudFloorCss, cssPerGamePx } from '../systems/TouchMenu.js';
 import { addFullscreenToggle } from '../systems/Fullscreen.js';
 import { FX_CONFIG, TOUCH_CONFIG } from '../config.js';
 
@@ -15,6 +15,7 @@ export class PauseScene extends Phaser.Scene {
 
     create() {
         const { width, height } = this.cameras.main;
+        this.counting = false;
 
         const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.7);
         overlay.setDepth(100);
@@ -57,6 +58,10 @@ export class PauseScene extends Phaser.Scene {
     }
 
     update() {
+        if (this.counting) {
+            this.stepCountIn();
+            return;
+        }
         this.menuNav.pollPad();
         if (this.quitArmed && performance.now() - this.quitArmedAt >= TOUCH_CONFIG.quitConfirm.windowMs) this.disarmQuit();
     }
@@ -78,11 +83,61 @@ export class PauseScene extends Phaser.Scene {
         return btn;
     }
 
+    // Every way back into the round (RESUME, ESC/pad B, the phone's Back)
+    // comes through here. On a touch device it counts in first (W-74).
     resumeGame() {
+        if (this.counting) return;
         audio.uiClick();
         if (this.quitArmed) this.disarmQuit();
+        if (isTouchDevice(this)) {
+            this.startCountIn();
+            return;
+        }
         this.scene.stop();
         this.scene.resume('GameScene');
+    }
+
+    // Holiday W-74: the pause screen goes, and TOUCH_CONFIG.resumeCount's
+    // digits count down over the still-paused round (its touch controls are
+    // drawn and, with GameScene paused, inert); input here is off, so a tap
+    // does nothing until the round resumes. The count is wall-clock time
+    // (update() steps it), like the quit window. The page going hidden
+    // mid-count brings the pause screen back instead of resuming unseen.
+    startCountIn() {
+        const { steps, basePx, fill, stroke, strokePx } = TOUCH_CONFIG.resumeCount;
+        this.counting = true;
+        this.menuNav.setActive(false);
+        this.input.enabled = false;
+        for (const obj of this.children.list) obj.setVisible(false);
+        const { width, height } = this.cameras.main;
+        const px = Math.max(basePx, Math.ceil(hudFloorCss(this) / cssPerGamePx(this)));
+        this.countText = this.add.text(width / 2, height / 2, String(steps), {
+            font: `bold ${px}px monospace`, fill,
+        }).setOrigin(0.5).setDepth(120).setStroke(stroke, strokePx);
+        this.countText.name = 'resumeCountText';
+        this.countStartedAt = performance.now();
+        this.game.events.once(Phaser.Core.Events.HIDDEN, this.cancelCountIn, this);
+        this.events.once('shutdown', () => this.game.events.off(Phaser.Core.Events.HIDDEN, this.cancelCountIn, this));
+    }
+
+    stepCountIn() {
+        const { steps, stepMs } = TOUCH_CONFIG.resumeCount;
+        const elapsed = performance.now() - this.countStartedAt;
+        if (elapsed >= steps * stepMs) {
+            this.counting = false;
+            this.scene.stop();
+            this.scene.resume('GameScene');
+            return;
+        }
+        const digit = String(steps - Math.floor(elapsed / stepMs));
+        if (this.countText.text !== digit) {
+            this.countText.setText(digit);
+            audio.uiClick();
+        }
+    }
+
+    cancelCountIn() {
+        if (this.counting) this.scene.restart();
     }
 
     restartRound() {

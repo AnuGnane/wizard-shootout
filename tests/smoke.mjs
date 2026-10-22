@@ -143,6 +143,9 @@
 //   3aa0y. on a 568x320 phone Settings' TEXT row steps NORMAL -> LARGE and
 //      saves it; the main menu then reads at hudMinCss x 1.3, and back at
 //      NORMAL its heights are NORMAL's again; a desktop has no TEXT row (W-73),
+//   3aa0z. on an 844x390 phone RESUME counts 3-2-1 at the floor over the
+//      still-paused round, a tap meanwhile does nothing, the round runs
+//      after the count and a kill scores; a desktop resumes at once (W-74),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4968,6 +4971,116 @@ try {
             JSON.stringify({ toLarge, toNormal, low, same: JSON.stringify(back) === JSON.stringify(normal), deskRow }));
     }
 
+    // 3aa0z. Holiday W-74: RESUME counts in on a phone. On an 844x390
+    // touch phone, a 1P round paused and RESUME tapped leaves GameScene
+    // paused while TOUCH_CONFIG.resumeCount's digits show at or above the
+    // HUD floor, a second tap there does nothing, the round runs after
+    // steps x stepMs and a frame, and a kill still advances the score. A
+    // 1280x720 desktop's RESUME resumes at once.
+    {
+        const RC = TOUCH_CONFIG.resumeCount;
+        const startRound = (pg) => pg.evaluate(() => {
+            const M = window.__match;
+            M.online = false; M.isDailyChallenge = false;
+            M.mode = '1p';
+            M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+            M.playerCount = 2;
+            M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+            M.mapIndex = 0; M.round = 1;
+            M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+            window.__game.scene.getScenes(true)[0].scene.start('GameScene');
+        });
+        const pauseAndFindResume = async (pg) => {
+            await pg.waitForFunction(() => window.__game.scene.isActive('GameScene') && window.__game.scene.getScene('GameScene').player1?.isAlive, null, { timeout: 8000 });
+            await pg.evaluate(() => window.__game.scene.getScene('GameScene').openPause());
+            await pg.waitForFunction(() => window.__game.scene.isActive('PauseScene') && window.__game.scene.isPaused('GameScene')
+                && window.__game.scene.getScene('PauseScene').children.list.some((o) => o.text === '[ RESUME ]'), null, { timeout: 5000 });
+            await pg.waitForTimeout(100);
+            return pg.evaluate(() => {
+                const r = window.__game.canvas.getBoundingClientRect();
+                const k = r.width / 1024;
+                const b = window.__game.scene.getScene('PauseScene').children.list.find((o) => o.text === '[ RESUME ]');
+                return { x: r.left + b.x * k, y: r.top + b.y * k };
+            });
+        };
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('resume count pageerror: ' + e.message));
+        pg.on('console', (m) => { if (m.type() === 'error') errors.push('resume count console.error: ' + m.text()); });
+        await pg.goto(url, { waitUntil: 'networkidle' });
+        await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await startRound(pg);
+        const at = await pauseAndFindResume(pg);
+        await pg.touchscreen.tap(at.x, at.y);
+        await pg.waitForTimeout(150);
+        const sample = () => pg.evaluate(() => {
+            const sm = window.__game.scene;
+            const p = sm.getScene('PauseScene');
+            const t = p.children.getByName('resumeCountText');
+            const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+            return {
+                paused: sm.isPaused('GameScene') && sm.isActive('PauseScene'),
+                digit: t && t.visible ? t.text : null,
+                inputOff: !p.input.enabled,
+                css: t ? +(parseFloat(t.style.fontSize) * Math.abs(t.scaleY) * k).toFixed(2) : 0,
+            };
+        });
+        const first = await sample();
+        // A second tap where RESUME was, and one at the centre under the
+        // digit, change nothing.
+        const centre = await pg.evaluate(() => { const r = window.__game.canvas.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+        await pg.touchscreen.tap(at.x, at.y);
+        await pg.touchscreen.tap(centre.x, centre.y);
+        await pg.waitForFunction((d) => window.__game.scene.getScene('PauseScene').children.getByName('resumeCountText')?.text === d,
+            String(RC.steps - 1), { timeout: 3000 }).catch(() => {});
+        const second = await sample();
+        const floorCss = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[await pg.evaluate(() => window.__settings.textSize || 'normal')];
+        const t0 = Date.now();
+        await pg.waitForFunction(() => !window.__game.scene.isPaused('GameScene') && !window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 }).catch(() => {});
+        const tookMs = Date.now() - t0;
+        // The page going hidden mid-count brings the pause screen back.
+        await pauseAndFindResume(pg);
+        await pg.touchscreen.tap(at.x, at.y);
+        await pg.waitForTimeout(150);
+        await pg.evaluate(() => window.__game.events.emit('hidden'));
+        await pg.waitForTimeout(RC.steps * RC.stepMs + 500);
+        const afterHidden = await pg.evaluate(() => {
+            const sm = window.__game.scene;
+            const p = sm.getScene('PauseScene');
+            return sm.isPaused('GameScene') && sm.isActive('PauseScene') && !p.counting
+                && p.children.list.some((o) => o.text === '[ RESUME ]' && o.visible);
+        });
+        await pg.touchscreen.tap(at.x, at.y);
+        await pg.waitForFunction(() => !window.__game.scene.isPaused('GameScene') && !window.__game.scene.isActive('PauseScene'), null, { timeout: 5000 }).catch(() => {});
+        await pg.evaluate(() => {
+            const s = window.__game.scene.getScene('GameScene');
+            s.player2.lastHitBy = { by: 1, element: 'arcane' };
+            s.player2.takeDamage(1000);
+        });
+        await pg.waitForTimeout(3500);
+        const score1 = await pg.evaluate(() => window.__match.scores[1]);
+        check('resume count-in: RESUME on a phone counts down at the floor over the paused round, taps are ignored, then the round runs and scores',
+            first.paused && first.digit === String(RC.steps) && first.inputOff && first.css >= floorCss - 0.5
+                && second.paused && second.digit === String(RC.steps - 1)
+                && tookMs < RC.steps * RC.stepMs + 1500 && score1 === 1,
+            `first=${JSON.stringify(first)} second=${JSON.stringify(second)} floor=${floorCss} rest~${tookMs}ms score1=${score1}`);
+        check('resume count-in: the page going hidden mid-count brings the pause screen back', afterHidden, `menu back=${afterHidden}`);
+        await ctx.close();
+
+        const dctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+        const dpg = await dctx.newPage();
+        dpg.on('pageerror', (e) => errors.push('resume desktop pageerror: ' + e.message));
+        await dpg.goto(url, { waitUntil: 'networkidle' });
+        await dpg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await startRound(dpg);
+        const dat = await pauseAndFindResume(dpg);
+        await dpg.mouse.click(dat.x, dat.y);
+        const quick = await dpg.waitForFunction(() => !window.__game.scene.isPaused('GameScene') && !window.__game.scene.isActive('PauseScene'), null, { timeout: 500 }).then(() => true, () => false);
+        const noCount = await dpg.evaluate(() => !window.__game.scene.getScene('PauseScene').children.getByName('resumeCountText'));
+        check('resume count-in: a desktop RESUME resumes at once', quick && noCount, `quick=${quick} noCount=${noCount}`);
+        await dctx.close();
+    }
+
     // 3aa0o. Holiday W-62: the round and wave banners' small lines. On a
     // 568x320 touch phone a 1P round on match point with all five mutators
     // on opens with ROUND n, its "first to N wins" line, the mutators line
@@ -5258,6 +5371,15 @@ try {
                     if (fn === 'surge') s.spawnDirector.showSurgeBanner();
                 }, fn);
                 await pg.waitForTimeout(wait);
+                // The round-end banner lands 300 ms of game time after the
+                // kill and fades in, and the game clock runs slow on a loaded
+                // runner, so a kill waits for its two DMG lines to be fully in
+                // rather than the clock.
+                if (fn === 'kill') {
+                    await pg.waitForFunction(() => window.__game.scene.getScene('GameScene').children.list
+                        .filter((o) => o.type === 'Text' && o.depth === 40 && o.visible && o.alpha >= 0.99 && /DMG \d/.test(o.text)).length >= 2,
+                    null, { timeout: 5000 }).catch(() => {});
+                }
                 return read();
             };
             await start(0);
