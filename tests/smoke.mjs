@@ -5334,9 +5334,11 @@ try {
                 if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1) bad++;
             }
             const tr = title ? title.getBounds() : null;
-            const underTitle = !tr || rows.every((o) => rect(o).y0 >= tr.bottom - 0.5);
+            const underTitle = !!tr && rows.every((o) => rect(o).y0 >= tr.bottom - 0.5);
+            const pr = e.modal ? e.modal.objects[1].getBounds() : null;
+            const inPanel = !!pr && rows.every((o) => { const g = o.getBounds(); return g.x >= pr.x && g.right <= pr.right; });
             return {
-                open: !!e.modal, bad, underTitle,
+                open: !!e.modal, bad, underTitle, inPanel, title: title ? title.text : '',
                 titleCss: title ? parseFloat(title.style.fontSize) * k : 0,
                 rows: rows.map((o) => {
                     const r = rect(o);
@@ -5362,7 +5364,7 @@ try {
                 await phone.waitForTimeout(120);
             };
             await toEditor(phone, textSize);
-            const sized = (m) => m.open && !m.bad && m.underTitle && m.titleCss >= floor
+            const sized = (m) => m.open && !m.bad && m.underTitle && m.inPanel && m.titleCss >= floor
                 && m.rows.every((r) => r.w >= thumb && r.h >= thumb && r.fontCss >= floor && r.onCanvas);
 
             await phone.evaluate(() => window.__mapEditor.openLoadMenu());
@@ -5393,15 +5395,24 @@ try {
             await phone.waitForTimeout(150);
             const p2 = await modal(phone);
             const names = (m) => m.rows.filter((r) => r.label.startsWith('W77')).map((r) => r.label.split('  ')[0]);
-            const g = p2.rows.find((r) => r.label.startsWith('W77 G'));
+            const back = p2.rows.find((r) => r.label === '[ BACK ]');
+            if (back) await tap(back.at);
+            const p1again = await modal(phone);
+            const more2 = p1again.rows.find((r) => r.label === '[ MORE ]');
+            if (more2) await tap(more2.at);
+            const p2again = await modal(phone);
+            const g = p2again.rows.find((r) => r.label.startsWith('W77 G'));
             if (g) await tap(g.at);
             const paged = await phone.evaluate(() => window.__mapEditor.mapName);
             await ctx.close();
             const per = TOUCH_CONFIG.menuRows.editor.pickerRows - 1;
             check(`${tag}: six saved maps page, ${per} a page with [ BACK ] and [ MORE ] beside the way out, thumb-sized, the second page's entry loads`,
                 sized(p1) && sized(p2) && names(p1).length <= per && p1.rows.some((r) => r.label === '[ BACK ]')
-                && names(p1).join(',') === 'W77 A,W77 C,W77 D' && names(p2).join(',') === 'W77 E,W77 F,W77 G' && paged === 'W77 G',
-                JSON.stringify({ p1: names(p1), p2: names(p2), paged, p1rows: p1.rows.map((r) => r.label) }));
+                && names(p1).join(',') === 'W77 A,W77 C,W77 D' && names(p2).join(',') === 'W77 E,W77 F,W77 G'
+                && names(p1again).join(',') === names(p1).join(',') && paged === 'W77 G'
+                && p1.title === 'LOAD A SAVED MAP  1/2' && p2.title === 'LOAD A SAVED MAP  2/2' && p2again.title === p2.title,
+                JSON.stringify({ p1: names(p1), p2: names(p2), back: names(p1again), paged, titles: [p1.title, p2.title, p2again.title],
+                    inPanel: [p1.inPanel, p2.inPanel], p1rows: p1.rows.map((r) => r.label) }));
         }
 
         const desk = await browser.newPage();

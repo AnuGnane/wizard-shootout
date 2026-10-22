@@ -702,11 +702,11 @@ export class MapEditorScene extends Phaser.Scene {
         // Holiday W-77: on a phone a list longer than the modal holds pages,
         // [ BACK ] and [ MORE ] beside the way out stepping through it (and
         // wrapping round); the title counts the pages.
-        const { pickerRows, pickerTop, pickerGap } = TOUCH_CONFIG.menuRows.editor;
+        const { pickerRows, pickerTop, pickerGap, pickerPad } = TOUCH_CONFIG.menuRows.editor;
         const per = Math.max(1, pickerRows - 1);
         const pages = this.touch ? Math.ceil(entries.length / per) : 1;
-        const all = entries;
-        const turn = (to) => () => this.openModal(title, all, { cancelLabel, page: to });
+        const all = entries, baseTitle = title;
+        const turn = (to) => () => this.openModal(baseTitle, all, { cancelLabel, page: to });
         if (pages > 1) {
             page = ((page % pages) + pages) % pages;
             entries = all.slice(page * per, page * per + per);
@@ -714,7 +714,7 @@ export class MapEditorScene extends Phaser.Scene {
         }
 
         const rows = entries.length + 1; // + cancel
-        const panelW = 520;
+        let panelW = 520;
         // Holiday W-57: on a phone the grown rows sit their height apart.
         const rowPx = this.fontPx(16);
         let pitch = Math.max(36, Math.ceil(rowPx * 1.2 + 12 + TOUCH_CONFIG.menuRows.editor.rowGap));
@@ -731,11 +731,11 @@ export class MapEditorScene extends Phaser.Scene {
             // Holiday W-77: on a phone the title's top sits at pickerTop,
             // under the name line, and the first row's grown area under the
             // title; the panel holds them, clear of the bottom bar.
-            const titleH = Math.ceil(this.fontPx(18) * 1.2);
+            const titleH = Math.ceil(this.fontPx(18) * pickerPad.titleLine);
             titleY = pickerTop + titleH / 2;
             rowsTop = Math.ceil(pickerTop + titleH + pitch / 2);
-            panelTop = pickerTop - 14;
-            panelH = rowsTop + (rows - 1) * pitch + pitch / 2 + 6 - panelTop;
+            panelTop = pickerTop - pickerPad.top;
+            panelH = rowsTop + (rows - 1) * pitch + pitch / 2 + pickerPad.bottom - panelTop;
         } else {
             panelH = 82 + rows * pitch;
             panelTop = Math.round((L ? GRID_CY * 2 : height) / 2 - panelH / 2);
@@ -816,6 +816,9 @@ export class MapEditorScene extends Phaser.Scene {
                 btn.setX(x + btn.width / 2);
                 x += btn.width + pickerGap;
             }
+            // TEXT: LARGE's row is wider than the desktop's panel.
+            panelW = Math.max(panelW, Math.ceil(rowW + 2 * pickerPad.top));
+            panel.setSize(panelW, panelH);
         }
         // The way out of every modal is thumb-sized too (holiday W-10).
         for (const btn of navRow) if (btn === cancel || this.touch) ensureTapTarget(this, btn);
