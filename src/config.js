@@ -267,6 +267,10 @@ export const APP_UPDATE_CONFIG = {
         x: 186, y: 30,
         font: '16px monospace', padding: { x: 14, y: 6 },
         fill: '#ffdd44', hover: '#ffffff', bg: '#3a3a1a',
+        // Holiday W-84: under menuLarge (TEXT: LARGE on a small phone) the
+        // grown label ran over the title; a short one, at the top-left
+        // corner above the blue wizard.
+        large: { label: '[ UPDATE ]', x: 112 },
     },
     // On a touch device the version grows to menuFontPx() and sits at
     // touchY, the footer hint's row (TOUCH_CONFIG.menuRows.menu.hintY), right
@@ -665,6 +669,10 @@ export const TOUCH_CONFIG = {
         iosText: 'install: tap Share, then Add to Home Screen',
         iosFill: '#8899cc', iosMinPx: 13,
         iosRight: 1012, iosY: 4, iosGap: 12,
+        // Holiday W-84: under menuLarge the grown line ran into the title;
+        // it wraps at wrapW, right-aligned at `right` from `y`, in the
+        // column under the red wizard and right of the mode buttons.
+        iosLarge: { right: 1012, y: 196, wrapW: 290 },
     },
     // In-round HUD on a phone (holiday W-13): the smallest HUD text, in CSS
     // px, in the modes that get touch controls; labels shorten before any
@@ -749,6 +757,10 @@ export const TOUCH_CONFIG = {
         text: 'needs a keyboard or gamepads for the other seats - tap again to go on',
         windowMs: 4000,
         minFontPx: 14,
+        // Holiday W-84: on the main menu under menuLarge the grown note ran
+        // off both edges; it wraps at wrapW and takes the title's place
+        // (title and subtitle hidden while it shows), centred at y.
+        menuLarge: { y: 126, wrapW: 420 },
         fill: '#ffdd44',
     },
     // Holiday W-54: on a touch device the pause screen's [ QUIT TO MENU ]
