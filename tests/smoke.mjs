@@ -165,6 +165,9 @@
 //   3aa1e. under prefers-reduced-motion: reduce the menu and GAME OVER (the
 //      survival and match cards) run no looping tween and rest at their
 //      drawn alpha and scale; with no-preference the loops run (W-79),
+//   3aa1f. on an 844x390 phone with notch insets, TOUCH LAYOUT RIGHT and LEFT
+//      by TOUCH SIZE SMALL, NORMAL and LARGE keep every control and HUD text
+//      inside the safe area, no HUD text over a control (W-81),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -6335,6 +6338,7 @@ try {
         await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
         const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
         const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+        const joyR = {};
         for (const touchLayout of ['right', 'left']) {
             for (const touchSize of ['small', 'normal', 'large']) {
                 await phone.evaluate(([size, layout]) => {
@@ -6366,7 +6370,7 @@ try {
                         css: { x0: c.left + (x - r) * k, y0: c.top + (y - r) * k, x1: c.left + (x + r) * k, y1: c.top + (y + r) * k },
                         r: { x0: x - hitR, y0: y - hitR, x1: x + hitR, y1: y + hitR } });
                     const ctrls = [
-                        circ('joystick', tc.joy.homeX, tc.joy.homeY, tc.joy.radius, tc.joy.radius),
+                        circ('joystick', tc.joy.homeX, tc.joy.homeY, tc.joy.radius, tc.joy.radius * 1.25), // the grab zone, TouchControls._handlePointerDown
                         ...Object.entries(tc.buttons).map(([key, b]) => circ(key, b.x, b.y, b.radius, b.radius)),
                         circ('pause', tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.radius, tc.pauseBtn.hit),
                     ];
@@ -6378,6 +6382,7 @@ try {
                         });
                     return { ctrls, hud, vw: window.innerWidth, vh: window.innerHeight, mirrored: !!tc.mirrored, joyR: tc.joy.radius };
                 });
+                joyR[`${touchLayout}/${touchSize}`] = m.joyR;
                 const safe = { x0: INSETS.left - 0.5, y0: INSETS.top - 0.5, x1: m.vw - INSETS.right + 0.5, y1: m.vh - INSETS.bottom + 0.5 };
                 const inside = (q) => q.x0 >= safe.x0 && q.y0 >= safe.y0 && q.x1 <= safe.x1 && q.y1 <= safe.y1;
                 const misses = [];
@@ -6390,6 +6395,9 @@ try {
                     `ready=${ready} controls=${m.ctrls.length} hud=${m.hud.map((h) => h.name).join(',')} joystick r=${m.joyR.toFixed(0)}` + (misses.length ? ` misses=${misses.join('; ')}` : ''));
             }
         }
+        check('safe area: TOUCH SIZE took effect under both layouts (joystick SMALL < NORMAL < LARGE)',
+            ['right', 'left'].every((l) => joyR[`${l}/small`] < joyR[`${l}/normal`] && joyR[`${l}/normal`] < joyR[`${l}/large`]),
+            JSON.stringify(joyR));
         await ctx.close();
     }
 
