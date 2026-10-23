@@ -294,11 +294,14 @@ export class GameOverScene extends Phaser.Scene {
 
         // Final score. 1P/2P show the classic "a - b"; party lists only the
         // active seats, each in its team color.
+        // Holiday W-85: under menuLarge the scores grow to the floor and
+        // spread to menuRows.result.largeSegGap.
         if (isParty) {
-            const segGap = 150;
+            const large = menuLarge(this);
+            const segGap = large ? TOUCH_CONFIG.menuRows.result.largeSegGap : 150;
             const startX = width / 2 - ((activeSeats.length - 1) * segGap) / 2;
             this.stackAnchor = activeSeats.map((n, i) => this.add.text(startX + i * segGap, 350, `${TEAM_NAMES[n - 1]} ${this.scores[n]}`, {
-                font: 'bold 26px monospace',
+                font: `bold ${large ? menuFontPx(this, 26) : 26}px monospace`,
                 fill: '#' + teamColors[n - 1].toString(16).padStart(6, '0'),
             }).setOrigin(0.5));
         } else {

@@ -540,7 +540,9 @@ export const TOUCH_CONFIG = {
         // them, and MAIN MENU with them.
         // W-72: under TEXT: LARGE the REMATCH / RUN IT BACK and [ SHARE ]
         // row is laid out by width, largeRowGap apart.
-        result: { gap: 4, wrapW: 440, achLines: 2, btnGap: 8, largeRowGap: 18 },
+        // Holiday W-85: under menuLarge a PARTY card's team scores grow to the
+        // floor and sit largeSegGap apart (150 otherwise).
+        result: { gap: 4, wrapW: 440, achLines: 2, btnGap: 8, largeRowGap: 18, largeSegGap: 170 },
         // The map editor (holiday W-57), on a touch device: the size and
         // saved lines stack colGap under [ NEW / SIZE ], wrapping at colWrapW
         // (clear of the widest grid, 25 tiles from x 335); a list modal's rows

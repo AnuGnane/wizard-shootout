@@ -178,6 +178,9 @@
 //      (today's Daily best, [ INSTALL ] or the iPhone install line, the
 //      reload button, the second-device note) at the LARGE floor, on the
 //      canvas, none overlapping (W-84),
+//   3aa1j. on a 568x320 phone the Daily and 1P match GAME OVER cards
+//      under TEXT: LARGE and a PARTY card under LARGE and NORMAL at the
+//      floor, on the canvas, none overlapping (W-85),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -4725,7 +4728,9 @@ try {
     // alone (all eleven by default).
     const menuFloorScenes = ['MenuScene', 'ClassSelectScene', 'MapSelectScene', 'WardrobeScene', 'StatsScene',
         'ControlsScene', 'SettingsScene', 'OnlineScene', 'MapEditorScene', 'PauseScene', 'GameOverScene'];
-    const menuFloorRun = async (textSize, scenes = menuFloorScenes) => {
+    // Holiday W-85: an optional GAME OVER card ({ match, data }) in place of
+    // the survival one.
+    const menuFloorRun = async (textSize, scenes = menuFloorScenes, card = null) => {
         // `scene: text prefix` -> why it may stay under the floor. Empty:
         // nothing needs it.
         const allow = {};
@@ -4749,7 +4754,7 @@ try {
             });
             await phone.waitForFunction(() => window.__game.scene.getScenes(true).length === 0
                 && !window.__game.scene.isPaused('GameScene'), null, { timeout: 5000 });
-            await phone.evaluate((key) => {
+            await phone.evaluate(({ key, card }) => {
                 const g = window.__game.scene;
                 const M = window.__match;
                 Object.assign(M, { online: false, isDailyChallenge: false, mode: '1p', playerCount: 2,
@@ -4759,13 +4764,16 @@ try {
                     M.mapIndex = 0; M.round = 1;
                     M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
                     g.start('GameScene');
+                } else if (key === 'GameOverScene' && card) {
+                    Object.assign(M, card.match);
+                    g.start(key, card.data);
                 } else if (key === 'GameOverScene') {
                     Object.assign(M, { mode: 'survival', playerCount: 1, seatTypes: { 1: 'human', 2: 'off', 3: 'off', 4: 'off' } });
                     g.start(key, { isSurvival: true, wavesSurvived: 7, wave: 8, teamKills: 41, bestWave: 7 });
                 } else {
                     g.start(key, key === 'ClassSelectScene' || key === 'MapSelectScene' ? { mode: '1p' } : {});
                 }
-            }, key);
+            }, { key, card });
             if (key === 'PauseScene') {
                 await phone.waitForFunction(() => window.__game.scene.isActive('GameScene')
                     && window.__game.scene.getScene('GameScene').player1?.isAlive, null, { timeout: 8000 });
@@ -4883,6 +4891,31 @@ try {
             const views = ['size menu', 'editor', 'load list'].every((v) => r.seen[`MapEditorScene ${v}`] > 0);
             check(`menu floor LARGE part 3: at 568x320 with TEXT: LARGE every text on ${part3.join(', ')} (the editor's size menu, the editor and its LOAD list) is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px, on the canvas, and none overlaps`,
                 r.ok && views, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
+        }
+
+        // 3aa1j. Holiday W-85: TEXT: LARGE fits the other GAME OVER cards.
+        // menuFloorRun over the Daily card (its best line and [ SHARE ]) and
+        // the 1P match card with six achievements, as 3aa0i reaches them,
+        // and a four-team PARTY card, as 3x1 reaches it, under LARGE; the
+        // PARTY card at NORMAL too, which no step held to the floor.
+        {
+            const duel = { mode: '1p', playerCount: 2, seatTypes: { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' } };
+            const cards = [
+                ['large', 'daily', { match: duel, data: { winner: 1, scores: { 1: 3, 2: 1 }, rounds: 4, isDaily: true, dailyStatus: { bestRounds: 4 } } }],
+                ['large', '1p', { match: duel, data: { winner: 1, scores: { 1: 5, 2: 3 }, rounds: 8,
+                    unlockedAchievements: ['First Blood', 'Untouchable', 'Elementalist', 'Wall Builder', 'Survivor', 'Sharpshooter'] } }],
+                ...['large', 'normal'].map((t) => [t, 'party', { match: { mode: 'party', playerCount: 4, seatTypes: { 1: 'human', 2: 'bot', 3: 'bot', 4: 'bot' } },
+                    data: { winner: 1, scores: { 1: 5, 2: 3, 3: 2, 4: 1 }, rounds: 11 } }]),
+            ];
+            const misses = [];
+            const seen = {};
+            for (const [t, name, card] of cards) {
+                const r = await menuFloorRun(t, ['GameOverScene'], card);
+                seen[`${name} ${t}`] = r.seen.GameOverScene;
+                if (!r.ok) misses.push(...(r.misses.length ? r.misses : ['not reached']).map((m) => `${name} ${t}: ${m}`));
+            }
+            check(`menu floor GAME OVER cards: at 568x320 the Daily and 1P match cards under TEXT: LARGE and a four-team PARTY card under LARGE and NORMAL read every text at the floor, on the canvas (the share row too), none overlapping`,
+                misses.length === 0, misses.length ? misses.join('; ') : JSON.stringify(seen));
         }
 
         // 3aa0n: one owner of the floor. LARGE set on a 568x320 phone: the
