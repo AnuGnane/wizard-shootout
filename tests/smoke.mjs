@@ -6318,6 +6318,81 @@ try {
         await ctx.close();
     }
 
+    // 3aa1f. Holiday W-81: TOUCH LAYOUT x TOUCH SIZE inside the safe area. On
+    // the 844x390 touch phone with 3d's notch and home-indicator insets, each
+    // of RIGHT and LEFT by SMALL, NORMAL and LARGE puts every touch control
+    // (drawn circle) and every HUD text inside the safe area, and no HUD text
+    // overlaps a control's hit circle.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('safe-area pageerror: ' + e.message));
+        phone.on('console', (m) => { if (m.type() === 'error') errors.push('safe-area console.error: ' + m.text()); });
+        const cdp = await ctx.newCDPSession(phone);
+        const INSETS = { top: 0, right: 47, bottom: 21, left: 47 };
+        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: INSETS });
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        const reached = (test, timeout = 5000) => phone.waitForFunction(test, null, { timeout }).then(() => true, () => false);
+        const hit = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+        for (const touchLayout of ['right', 'left']) {
+            for (const touchSize of ['small', 'normal', 'large']) {
+                await phone.evaluate(([size, layout]) => {
+                    window.__settings.touchSize = size;
+                    window.__settings.touchLayout = layout;
+                    const M = window.__match;
+                    M.online = false; M.isDailyChallenge = false;
+                    M.mode = '1p';
+                    M.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                    M.playerCount = 2;
+                    M.classes = { 1: 'arcanist', 2: 'arcanist', 3: 'arcanist', 4: 'arcanist' };
+                    M.mapIndex = 0; M.round = 1;
+                    M.scores = { 1: 0, 2: 0, 3: 0, 4: 0 }; M.targetScore = 5;
+                    window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop());
+                }, [touchSize, touchLayout]);
+                await reached(() => !window.__game.scene.isActive('GameScene'));
+                await phone.evaluate(() => window.__game.scene.start('GameScene'));
+                const ready = await reached(() => {
+                    const s = window.__game.scene.getScene('GameScene');
+                    return window.__game.scene.isActive('GameScene') && s.touchControls && s.touchHud && s.player1?.isAlive;
+                });
+                await phone.waitForTimeout(150);
+                const m = await phone.evaluate(() => {
+                    const s = window.__game.scene.getScene('GameScene');
+                    const c = window.__game.canvas.getBoundingClientRect();
+                    const k = c.width / 1024;
+                    const tc = s.touchControls;
+                    const circ = (name, x, y, r, hitR) => ({ name,
+                        css: { x0: c.left + (x - r) * k, y0: c.top + (y - r) * k, x1: c.left + (x + r) * k, y1: c.top + (y + r) * k },
+                        r: { x0: x - hitR, y0: y - hitR, x1: x + hitR, y1: y + hitR } });
+                    const ctrls = [
+                        circ('joystick', tc.joy.homeX, tc.joy.homeY, tc.joy.radius, tc.joy.radius),
+                        ...Object.entries(tc.buttons).map(([key, b]) => circ(key, b.x, b.y, b.radius, b.radius)),
+                        circ('pause', tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.radius, tc.pauseBtn.hit),
+                    ];
+                    const hud = Object.entries(s.touchHud.texts()).filter(([, t]) => t && t.active && t.visible && t.text)
+                        .map(([name, t]) => {
+                            const b = t.getBounds();
+                            return { name, r: { x0: b.left, y0: b.top, x1: b.right, y1: b.bottom },
+                                css: { x0: c.left + b.left * k, y0: c.top + b.top * k, x1: c.left + b.right * k, y1: c.top + b.bottom * k } };
+                        });
+                    return { ctrls, hud, vw: window.innerWidth, vh: window.innerHeight, mirrored: !!tc.mirrored, joyR: tc.joy.radius };
+                });
+                const safe = { x0: INSETS.left - 0.5, y0: INSETS.top - 0.5, x1: m.vw - INSETS.right + 0.5, y1: m.vh - INSETS.bottom + 0.5 };
+                const inside = (q) => q.x0 >= safe.x0 && q.y0 >= safe.y0 && q.x1 <= safe.x1 && q.y1 <= safe.y1;
+                const misses = [];
+                for (const e of [...m.ctrls, ...m.hud.map((h) => ({ ...h, name: `hud ${h.name}` }))]) {
+                    if (!inside(e.css)) misses.push(`${e.name} outside the safe area (${e.css.x0.toFixed(0)},${e.css.y0.toFixed(0)} → ${e.css.x1.toFixed(0)},${e.css.y1.toFixed(0)})`);
+                }
+                for (const h of m.hud) for (const q of m.ctrls) if (hit(h.r, q.r)) misses.push(`hud ${h.name}/${q.name}`);
+                check(`safe area: 844x390 with notch insets, TOUCH LAYOUT ${touchLayout.toUpperCase()}, TOUCH SIZE ${touchSize.toUpperCase()}: every control and HUD text inside the safe area, no HUD text over a control`,
+                    ready && m.ctrls.length >= 5 && m.hud.length > 0 && m.mirrored === (touchLayout === 'left') && misses.length === 0,
+                    `ready=${ready} controls=${m.ctrls.length} hud=${m.hud.map((h) => h.name).join(',')} joystick r=${m.joyR.toFixed(0)}` + (misses.length ? ` misses=${misses.join('; ')}` : ''));
+            }
+        }
+        await ctx.close();
+    }
+
     // 4. WebRTC loopback handshake (dev-only window.__net)
     const net = await page.evaluate(async () => {
         if (!window.__net || !window.__net.NetConnection) return { err: 'window.__net missing' };
