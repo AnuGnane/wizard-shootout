@@ -17,7 +17,7 @@
 //     __BUILD__ define ('dev' on the dev server), shown in the menu footer.
 
 import { APP_UPDATE_CONFIG } from '../config.js';
-import { ensureTapTarget, isTouchDevice, keepOnCanvas, menuFont, menuFontPx } from './TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, keepOnCanvas, menuFont, menuFontPx, menuLarge } from './TouchMenu.js';
 
 // eslint-disable-next-line no-undef
 export const BUILD_VERSION = typeof __BUILD__ !== 'undefined' ? __BUILD__ : 'dev';
@@ -72,8 +72,10 @@ export function addVersionText(scene) {
 export function addUpdateButton(scene, menuNav) {
     const show = () => {
         if (!scene.sys.displayList || scene.children.getByName('appUpdateButton')) return;
-        const { label, x, y, font, padding, fill, hover, bg } = APP_UPDATE_CONFIG.button;
-        const btn = scene.add.text(x, y, label, { font: menuFont(scene, font), fill, backgroundColor: bg, padding })
+        const { label, x, y, font, padding, fill, hover, bg, large } = APP_UPDATE_CONFIG.button;
+        // Holiday W-84: a short label in the corner under menuLarge.
+        const L = menuLarge(scene) ? large : { label, x };
+        const btn = scene.add.text(L.x, y, L.label, { font: menuFont(scene, font), fill, backgroundColor: bg, padding })
             .setOrigin(0.5).setInteractive({ useHandCursor: true });
         keepOnCanvas(scene, btn);
         btn.name = 'appUpdateButton';

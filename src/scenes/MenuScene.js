@@ -80,7 +80,11 @@ export class MenuScene extends Phaser.Scene {
         // Holiday W-25: on a phone with no pad, the first tap on 2P or PARTY
         // says the other seats need a keyboard or gamepads. The note takes
         // the subtitle's line: the mode column has no gap a line fits in.
-        const secondDevice = secondDeviceGate(this, width / 2, 210, subtitle);
+        // Holiday W-84: under menuLarge it wraps and takes the title's place.
+        const noteLarge = menuLarge(this) && TOUCH_CONFIG.secondDeviceNote.menuLarge;
+        const secondDevice = noteLarge
+            ? secondDeviceGate(this, width / 2, noteLarge.y, [subtitle, title], noteLarge.wrapW)
+            : secondDeviceGate(this, width / 2, 210, subtitle);
 
         // Mode buttons. The column is nudged up from its original start (y=285)
         // and tightened to the design's existing ~4-6px button gaps so an

@@ -19,16 +19,18 @@ export function padConnected(scene) {
 }
 
 // A gate for the choices of one screen. The note is drawn centred at (x, y)
-// at TOUCH_CONFIG.hudMinCss or more; `replaces` (optional) is hidden while
-// the note shows. Call the returned function as gate(key, pointer, proceed).
-export function secondDeviceGate(scene, x, y, replaces = null) {
+// at TOUCH_CONFIG.hudMinCss or more; `replaces` (optional, one object or a
+// list) is hidden while the note shows, and `wrapW` (optional) wraps it.
+// Call the returned function as gate(key, pointer, proceed).
+export function secondDeviceGate(scene, x, y, replaces = null, wrapW = 0) {
     const cfg = TOUCH_CONFIG.secondDeviceNote;
     let armed = null, timer = null, note = null;
+    const hidden = replaces ? [].concat(replaces) : [];
     const hide = () => {
         armed = null;
         if (timer) { timer.remove(false); timer = null; }
         if (note) note.setVisible(false);
-        if (replaces) replaces.setVisible(true);
+        hidden.forEach((o) => o.setVisible(true));
     };
     return (key, pointer, proceed) => {
         if (!pointer || armed === key || !isTouchDevice(scene) || padConnected(scene)) {
@@ -41,11 +43,12 @@ export function secondDeviceGate(scene, x, y, replaces = null) {
         if (!note) {
             note = scene.add.text(x, y, cfg.text, { font: `${px}px monospace`, fill: cfg.fill })
                 .setOrigin(0.5).setName('secondDeviceNote').setDepth(20);
+            if (wrapW) note.setWordWrapWidth(wrapW).setAlign('center');
         } else {
             note.setFontSize(px);
         }
         note.setVisible(true);
-        if (replaces) replaces.setVisible(false);
+        hidden.forEach((o) => o.setVisible(false));
         if (timer) timer.remove(false);
         timer = scene.time.delayedCall(cfg.windowMs, hide);
     };

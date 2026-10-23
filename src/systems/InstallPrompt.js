@@ -16,7 +16,7 @@
 
 import { TOUCH_CONFIG } from '../config.js';
 import { isInstalledApp, toggleLeftmostX } from './Fullscreen.js';
-import { cssPerGamePx, ensureTapTarget, hudFloorCss, isTouchDevice, keepOnCanvas, menuFont } from './TouchMenu.js';
+import { cssPerGamePx, ensureTapTarget, hudFloorCss, isTouchDevice, keepOnCanvas, menuFont, menuLarge } from './TouchMenu.js';
 
 let deferred = null;
 // Menus showing or waiting to show the button (at most the one MenuScene).
@@ -51,6 +51,12 @@ function addIosNote(scene, toggle) {
     const right = toggle ? toggleLeftmostX(toggle) - iosGap : iosRight;
     const note = scene.add.text(right, iosY, iosText, { font: `${px}px monospace`, fill: iosFill }).setOrigin(1, 0);
     note.name = 'installNote';
+    // Holiday W-84: under menuLarge, wrapped in the column right of the
+    // mode buttons, clear of the title.
+    if (menuLarge(scene)) {
+        const { right: r, y, wrapW } = TOUCH_CONFIG.installButton.iosLarge;
+        note.setPosition(r, y).setWordWrapWidth(wrapW).setAlign('right');
+    }
     return note;
 }
 

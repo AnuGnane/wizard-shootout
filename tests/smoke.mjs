@@ -174,6 +174,10 @@
 //   3aa1h. 3aa0u's moments again under TEXT: LARGE at 568x320: every text
 //      at the LARGE floor, none overlapping another or a touch control, the
 //      button labels inside their buttons (W-83),
+//   3aa1i. under TEXT: LARGE at 568x320 the main menu's conditional lines
+//      (today's Daily best, [ INSTALL ] or the iPhone install line, the
+//      reload button, the second-device note) at the LARGE floor, on the
+//      canvas, none overlapping (W-84),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -6506,6 +6510,87 @@ try {
         }
         await ctx.close();
         check(`ONLINE under TEXT: LARGE at 568x320: HOST, JOIN and both pick lobbies at hudMinCss x ${TOUCH_CONFIG.textSizes.large}, nothing overlapping, all on the canvas, every button's label inside it`,
+            misses.length === 0, misses.length ? misses.join('; ') : JSON.stringify(seen));
+    }
+
+    // 3aa1i. Holiday W-84: the main menu's conditional lines under TEXT:
+    // LARGE. On a 568x320 touch phone with LARGE the menu is restarted with
+    // today's Daily won ("today: best N"), then a stubbed beforeinstallprompt
+    // raises [ INSTALL ], the dev hook raises [ NEW VERSION - TAP TO RELOAD ]
+    // (as 3q does) and a first tap on 2P shows the second-device note on the
+    // subtitle's line; then the same on an iPhone (navigator.standalone
+    // false, no Fullscreen API) with W-43's install line in place of
+    // [ INSTALL ]. Each line must be on the menu, and every visible text at
+    // the LARGE floor, on the canvas and overlapping no other, the failing
+    // line named.
+    {
+        const min = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes.large;
+        const misses = [];
+        const seen = {};
+        for (const ios of [false, true]) {
+            const tag = ios ? 'iPhone' : 'Android';
+            const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+            if (ios) {
+                await ctx.addInitScript(() => {
+                    Object.defineProperty(Navigator.prototype, 'standalone', { get: () => false, configurable: true });
+                    Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => 1, configurable: true });
+                    Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => false, configurable: true });
+                });
+            }
+            const phone = await ctx.newPage();
+            phone.on('pageerror', (e) => errors.push(`menu lines large ${tag} pageerror: ` + e.message));
+            await phone.goto(url, { waitUntil: 'networkidle' });
+            await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+            await phone.evaluate(() => {
+                window.__settings.textSize = 'large';
+                window.__statsApi.getDailyStatus?.();
+                Object.assign(window.__stats.daily, { won: true, bestRounds: 12 });
+                window.__game.scene.getScene('MenuScene').scene.restart();
+            });
+            await phone.waitForTimeout(400);
+            await phone.waitForFunction(() => window.__game.scene.isActive('MenuScene'), null, { timeout: 5000 });
+            await phone.evaluate((ios) => {
+                if (!ios) {
+                    const e = new CustomEvent('beforeinstallprompt', { cancelable: true });
+                    e.prompt = () => Promise.resolve({ outcome: 'dismissed' });
+                    window.dispatchEvent(e);
+                }
+                window.__appUpdate.markUpdateReady();
+                const s = window.__game.scene.getScene('MenuScene');
+                s.children.list.find((o) => o.type === 'Text' && o.text === '[ 2 PLAYERS ]').emit('pointerdown', { id: 1 });
+            }, ios);
+            await phone.waitForTimeout(250);
+            const r = await phone.evaluate((min) => {
+                const s = window.__game.scene.getScene('MenuScene');
+                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const ts = s.children.list.filter((o) => o.type === 'Text' && o.visible && o.active && o.text);
+                const name = (o) => o.text.replace(/\n/g, ' ').slice(0, 28);
+                const want = {
+                    daily: (o) => /^today: best \d+$/.test(o.text),
+                    reload: (o) => o.name === 'appUpdateButton',
+                    note: (o) => o.name === 'secondDeviceNote',
+                    install: (o) => o.name === 'installButton',
+                    iosLine: (o) => o.name === 'installNote',
+                };
+                const found = Object.fromEntries(Object.entries(want).map(([key, test]) => [key, ts.some(test)]));
+                const low = ts.filter((o) => parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k < min - 0.5)
+                    .map((o) => `"${name(o)}" is ${(parseFloat(o.style.fontSize) * Math.abs(o.scaleY) * k).toFixed(2)} CSS px`);
+                const off = ts.filter((o) => { const b = o.getBounds(); return b.x < -0.5 || b.y < -0.5 || b.right > 1024.5 || b.bottom > 700.5; })
+                    .map((o) => `"${name(o)}" off the canvas`);
+                const hit = [];
+                for (let i = 0; i < ts.length; i++) for (let j = i + 1; j < ts.length; j++) {
+                    const a = ts[i].getBounds(), b = ts[j].getBounds();
+                    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) hit.push(`"${name(ts[i])}" | "${name(ts[j])}" overlap`);
+                }
+                return { n: ts.length, found, bad: [...low, ...off, ...hit] };
+            }, min);
+            const need = ios ? ['daily', 'reload', 'note', 'iosLine'] : ['daily', 'reload', 'note', 'install'];
+            for (const key of need) if (!r.found[key]) misses.push(`${tag}: no ${key} line on the menu`);
+            for (const b of r.bad) misses.push(`${tag}: ${b}`);
+            seen[tag] = r.n;
+            await ctx.close();
+        }
+        check(`menu lines LARGE: at 568x320 with TEXT: LARGE the main menu with today's Daily won, [ INSTALL ] (or the iPhone install line), [ NEW VERSION - TAP TO RELOAD ] and the second-device note up reads every text at hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px, on the canvas, none overlapping`,
             misses.length === 0, misses.length ? misses.join('; ') : JSON.stringify(seen));
     }
 
