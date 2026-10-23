@@ -588,6 +588,41 @@ export const TOUCH_CONFIG = {
             subtitle: 'share a room code, scan a QR, or paste codes',
             statusWrapW: 900,
         },
+        // ONLINE under TEXT: LARGE (holiday W-82, W-70's menuLarge branch):
+        // the flow's labels one line each in shorter wording, set by `y` just
+        // above the box they name; the room status keeps two lines' room
+        // under its box (rows, areaH), the buttons widen to their grown
+        // labels, the status line wraps wider. The pick lobby moves up into
+        // the band under the subtitle, its cards taller for a two-line
+        // signature, its map rows tall enough for a two-line name; the hint
+        // line gives way to them (the cards and the strip say what to tap).
+        onlineLarge: {
+            statusWrapW: 1000,
+            short: {
+                'ROOM CODE — tell your friend to JOIN with this:': 'ROOM CODE to share:',
+                'No room code? Send this code across yourself:': 'Or send this code:',
+                'Paste their reply code here:': 'Paste their reply:',
+                'Or let them scan it:': 'Or scan this QR:',
+                'ROOM CODE from your friend:': 'Their ROOM CODE:',
+                'No room code? Paste their code here:': 'Or paste their code:',
+                'Then send this reply back:': 'Send this reply back:',
+                'Your reply, for them to scan:': 'Your reply as QR:',
+            },
+            y: {
+                'ROOM CODE — tell your friend to JOIN with this:': 216, 'Or let them scan it:': 216,
+                'ROOM CODE from your friend:': 216, 'Your reply, for them to scan:': 216,
+                'No room code? Send this code across yourself:': 362, 'No room code? Paste their code here:': 362,
+                'Paste their reply code here:': 494, 'Then send this reply back:': 494,
+                '…': 574, 'appears once you have a reply.': 574,
+            },
+            areaH: 60, area1Y: 392, button1Y: 458, area2Y: 524, button2Y: 590,
+            generateW: 260, joinLabel: 'JOIN',
+            paste: { inputW: 170, buttonW: 104, joinW: 130 },
+            lobby: {
+                statusY: 132, cardTop: 154, cardH: 154, spriteY: 26, nameY: 62, sigY: 82,
+                battleY: 326, mapY: 370, mapRowH: 120, randomPx: 28, pickY: 616,
+            },
+        },
     },
     menuBack: { x: 64, y: 34 }, // the top-left [ BACK ] on screens that only had ESC
     // Wardrobe swatches (holiday W-27): the game-px spacing of each row's

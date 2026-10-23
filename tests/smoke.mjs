@@ -168,6 +168,9 @@
 //   3aa1f. on an 844x390 phone with notch insets, TOUCH LAYOUT RIGHT and LEFT
 //      by TOUCH SIZE SMALL, NORMAL and LARGE keep every control and HUD text
 //      inside the safe area, no HUD text over a control (W-81),
+//   3aa1g. under TEXT: LARGE at 568x320 ONLINE's menu, HOST, JOIN and both
+//      pick lobbies read at the LARGE floor, nothing overlapping, the overlay's
+//      labels, boxes and buttons clear of each other, labels inside (W-82),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -6399,6 +6402,86 @@ try {
             ['right', 'left'].every((l) => joyR[`${l}/small`] < joyR[`${l}/normal`] && joyR[`${l}/normal`] < joyR[`${l}/large`]),
             JSON.stringify(joyR));
         await ctx.close();
+    }
+
+    // 3aa1g. Holiday W-82: TEXT: LARGE fits, part 4: ONLINE. menuFloorRun
+    // with LARGE over ONLINE's menu; then, on a 568x320 touch phone under
+    // LARGE, HOST, JOIN and both sides of the pick lobby, as 3aa0l walks
+    // them: every visible text and overlay label at the LARGE floor, no two
+    // texts overlapping and all on the canvas, no overlay label, box or
+    // button overlapping another or a canvas text, and every button's label
+    // inside its button.
+    {
+        const r = await menuFloorRun('large', ['OnlineScene']);
+        check(`menu floor LARGE part 4: at 568x320 with TEXT: LARGE every text on ONLINE's menu is at least hudMinCss x ${TOUCH_CONFIG.textSizes.large} CSS px, none overlaps, all on the canvas`,
+            r.ok, r.misses.length ? r.misses.join('; ') : JSON.stringify(r.seen));
+        const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
+        const phone = await ctx.newPage();
+        phone.on('pageerror', (e) => errors.push('online large pageerror: ' + e.message));
+        await phone.goto(url, { waitUntil: 'networkidle' });
+        await phone.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
+        await phone.evaluate(() => { window.__settings.textSize = 'large'; });
+        const min = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes.large;
+        const misses = [];
+        const seen = {};
+        for (const step of ['host', 'join', 'lobby', 'guest']) {
+            await phone.evaluate(() => window.__game.scene.getScenes(true).forEach((sc) => sc.scene.stop()));
+            await phone.waitForFunction(() => !window.__game.scene.isActive('OnlineScene'), null, { timeout: 5000 });
+            await phone.evaluate(() => {
+                window.__match.seatTypes = { 1: 'human', 2: 'bot', 3: 'off', 4: 'off' };
+                window.__game.scene.start('OnlineScene', {});
+            });
+            await phone.waitForFunction(() => window.__game.scene.isActive('OnlineScene'), null, { timeout: 5000 });
+            await phone.waitForTimeout(300);
+            await phone.evaluate((step) => {
+                const sc = window.__game.scene.getScene('OnlineScene');
+                if (step === 'host') sc.startHost();
+                else if (step === 'join') sc.startJoin();
+                else { sc.role = step === 'lobby' ? 'host' : 'guest'; sc._buildPickLobby(); }
+            }, step);
+            await phone.waitForTimeout(300);
+            const m = await phone.evaluate((min) => {
+                const sc = window.__game.scene.getScene('OnlineScene');
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
+                const out = [];
+                const ts = sc.children.list.filter((o) => o.type === 'Text' && o.visible && o.text);
+                const px = (o) => parseFloat(o.style.fontSize) * Math.abs(o.scaleY);
+                const cssRect = (g) => ({ left: c.left + g.x * k, right: c.left + g.right * k, top: c.top + g.y * k, bottom: c.top + g.bottom * k });
+                const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+                const tr = ts.map((o) => [o.text.slice(0, 14), cssRect(o.getBounds())]);
+                ts.forEach((o, i) => {
+                    if (px(o) * k < min - 0.5) out.push(`"${o.text.slice(0, 14)}" ${(px(o) * k).toFixed(1)} CSS px`);
+                    const g = o.getBounds();
+                    if (g.x < 0 || g.right > 1024 || g.y < 0 || g.bottom > 700) out.push(`"${o.text.slice(0, 14)}" off the canvas`);
+                    for (let j = i + 1; j < ts.length; j++) if (over(tr[i][1], tr[j][1])) out.push(`"${tr[i][0]}" over "${tr[j][0]}"`);
+                });
+                const scale = sc.overlay ? parseFloat(/scale\(([\d.]+)\)/.exec(sc.overlay.style.transform)?.[1]) : 1;
+                const els = sc.overlay ? [...sc.overlay.children].filter((e) => e.offsetParent !== null && (e.style.pointerEvents !== 'none' || e.textContent.trim())) : [];
+                const box = els.map((e) => [`${e.tagName}:${e.textContent.slice(0, 14)}`, e.getBoundingClientRect(), e]);
+                box.forEach(([n, b, e], i) => {
+                    const f = /(\d+(?:\.\d+)?)px/.exec(e.style.font);
+                    if (f && e.textContent.trim() && parseFloat(f[1]) * scale < min - 0.5) out.push(`${n} ${(parseFloat(f[1]) * scale).toFixed(1)} CSS px`);
+                    if (b.left < c.left - 0.5 || b.right > c.right + 0.5 || b.top < c.top - 0.5 || b.bottom > c.bottom + 0.5) out.push(`${n} off the canvas`);
+                    for (let j = i + 1; j < box.length; j++) if (over(b, box[j][1])) out.push(`${n} over ${box[j][0]}`);
+                    for (const [tn, t] of tr) if (over(b, t)) out.push(`${n} over "${tn}"`);
+                    if (e.tagName === 'BUTTON') {
+                        const cx = document.createElement('canvas').getContext('2d');
+                        const cs = getComputedStyle(e);
+                        cx.font = cs.font;
+                        const room = e.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+                        if (cx.measureText(e.textContent).width > room + 0.5) out.push(`${n} label wider than its button`);
+                    }
+                });
+                return { n: ts.length, els: els.length, out };
+            }, min);
+            seen[step] = `${m.n}+${m.els}`;
+            m.out.forEach((o) => misses.push(`${step}: ${o}`));
+            if (m.n === 0 || (step === 'host' || step === 'join') && m.els < 8) misses.push(`${step}: only ${m.n} texts, ${m.els} overlay elements`);
+        }
+        await ctx.close();
+        check(`ONLINE under TEXT: LARGE at 568x320: HOST, JOIN and both pick lobbies at hudMinCss x ${TOUCH_CONFIG.textSizes.large}, nothing overlapping, all on the canvas, every button's label inside it`,
+            misses.length === 0, misses.length ? misses.join('; ') : JSON.stringify(seen));
     }
 
     // 4. WebRTC loopback handshake (dev-only window.__net)
