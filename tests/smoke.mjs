@@ -6516,9 +6516,9 @@ try {
     // 3aa1i. Holiday W-84: the main menu's conditional lines under TEXT:
     // LARGE. On a 568x320 touch phone with LARGE the menu is restarted with
     // today's Daily won ("today: best N"), then a stubbed beforeinstallprompt
-    // raises [ INSTALL ], the dev hook raises [ NEW VERSION - TAP TO RELOAD ]
-    // (as 3q does) and a first tap on 2P shows the second-device note on the
-    // subtitle's line; then the same on an iPhone (navigator.standalone
+    // raises [ INSTALL ], the dev hook raises the reload button (as 3q does)
+    // and a first tap on 2P shows the second-device note (under LARGE in the
+    // title's place); then the same on an iPhone (navigator.standalone
     // false, no Fullscreen API) with W-43's install line in place of
     // [ INSTALL ]. Each line must be on the menu, and every visible text at
     // the LARGE floor, on the canvas and overlapping no other, the failing
