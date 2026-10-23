@@ -691,8 +691,12 @@ export const TOUCH_CONFIG = {
     // The round and wave banners' small lines on a touch device (holiday
     // W-62): grown to the floor (menuFontPx), each stacked gap game px under
     // the line above it by its grown height, wrapping at wrapW; a desktop
-    // keeps 16 / 13 px at the fixed offsets.
-    banners: { gap: 4, wrapW: 960 },
+    // keeps 16 / 13 px at the fixed offsets. Where the menu takes its LARGE
+    // layout (menuLarge: TEXT: LARGE on a small phone) they wrap at
+    // wrapWLarge instead, so a grown line stays between the joystick and ORB
+    // (holiday W-83: at 568x320 a 960 wrap ran the map line and the round-end
+    // summaries over the joystick).
+    banners: { gap: 4, wrapW: 960, wrapWLarge: 400 },
     // The achievement toast on a touch device (holiday W-66): its two lines
     // grow to the floor and the panel grows around them, padX / padY game px
     // of margin, gap between the lines; its top stays minTop clear of the

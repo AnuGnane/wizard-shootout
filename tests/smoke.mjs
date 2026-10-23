@@ -171,6 +171,9 @@
 //   3aa1g. under TEXT: LARGE at 568x320 ONLINE's menu, HOST, JOIN and both
 //      pick lobbies read at the LARGE floor, nothing overlapping, the overlay's
 //      labels, boxes and buttons clear of each other, labels inside (W-82),
+//   3aa1h. 3aa0u's moments again under TEXT: LARGE at 568x320: every text
+//      at the LARGE floor, none overlapping another or a touch control, the
+//      button labels inside their buttons (W-83),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -6084,7 +6087,13 @@ try {
     // rounding aside, and no two visible texts' bounds intersect. The W-13
     // to W-68 steps keep their own layout rules; this is the net for a text
     // the next package adds to the round under the floor.
-    {
+    // 3aa1h. Holiday W-83: the same moments under TEXT: LARGE, set before the
+    // round as 3j sets it: every text at hudMinCss x textSizes.large, none
+    // overlapping another or a touch control (the joystick's home, FIRE, ORB,
+    // PWR and the pause button; a button's own label aside), the labels
+    // inside their buttons.
+    for (const textSize of ['normal', 'large']) {
+        const large = textSize === 'large';
         // [why, test on a text's { text, depth, px }]: may stay under the
         // floor and float over others. Nothing else without a reason.
         const allow = [
@@ -6103,9 +6112,11 @@ try {
         await pg.goto(url, { waitUntil: 'networkidle' });
         await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
         await pg.evaluate(() => localStorage.removeItem('wizard-shootout-touch-tips-v1'));
-        const min = TOUCH_CONFIG.hudMinCss;
+        if (large) await pg.evaluate(() => { window.__settings.textSize = 'large'; });
+        const min = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[textSize];
         const misses = [];
         const seen = {};
+        let controls = {};
         const sample = async (mode, moment) => {
             const ts = await pg.evaluate(() => {
                 const s = window.__game.scene.getScene('GameScene');
@@ -6119,8 +6130,17 @@ try {
                     }
                 });
                 walk(s.children.list, 1);
-                return out;
-            });
+                const tc = s.touchControls;
+                const box = (x, y, r) => [x - r, y - r, x + r, y + r];
+                const controls = tc ? {
+                    joystick: box(tc.joy.homeX, tc.joy.homeY, tc.joy.radius),
+                    FIRE: box(tc.buttons.shoot.x, tc.buttons.shoot.y, tc.buttons.shoot.radius),
+                    ORB: box(tc.buttons.runeShoot.x, tc.buttons.runeShoot.y, tc.buttons.runeShoot.radius),
+                    PWR: box(tc.buttons.ability.x, tc.buttons.ability.y, tc.buttons.ability.radius),
+                    pause: box(tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.hit),
+                } : {};
+                return { out, controls };
+            }).then((r) => { controls = r.controls; return r.out; });
             const why = (t) => allow.find(([, test]) => test(t));
             const held = ts.filter((t) => !why(t));
             seen[`${mode} ${moment}`] = ts.length;
@@ -6128,6 +6148,9 @@ try {
             for (let i = 0; i < held.length; i++) for (let j = i + 1; j < held.length; j++) {
                 const [a, b] = [held[i].b, held[j].b];
                 if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) misses.push(`${mode} ${moment}: "${held[i].text}" | "${held[j].text}" overlap`);
+            }
+            if (large) for (const t of held) if (!/^touchButtonLabel_/.test(t.name || '')) for (const [cn, q] of Object.entries(controls)) {
+                if (t.b[0] < q[2] && q[0] < t.b[2] && t.b[1] < q[3] && q[1] < t.b[3]) misses.push(`${mode} ${moment}: "${t.text}" over the ${cn} control`);
             }
             if (!ts.length) misses.push(`${mode} ${moment}: no text found`);
         };
@@ -6209,7 +6232,9 @@ try {
         await call('heal', null, 100);
         await sample('survival', 'heal pop');
         await ctx.close();
-        check('round floor: at 568x320 every text of a 1P round (banner, tips, ORB SURGE, party, DRAW, toast, round and match end) and a survival round (wave banner, heal pop) is at least hudMinCss CSS px and none overlaps, the button labels inside their buttons (allowlist: the damage and heal numbers, W-62; the pause icon)',
+        check(large
+            ? 'round floor LARGE: at 568x320 under TEXT: LARGE every text of a 1P round (banner, tips, ORB SURGE, party, DRAW, toast, round and match end) and a survival round (wave banner, heal pop) is at least hudMinCss x textSizes.large CSS px, none overlaps another or a touch control, the button labels inside their buttons (allowlist: the damage and heal numbers, W-62; the pause icon)'
+            : 'round floor: at 568x320 every text of a 1P round (banner, tips, ORB SURGE, party, DRAW, toast, round and match end) and a survival round (wave banner, heal pop) is at least hudMinCss CSS px and none overlaps, the button labels inside their buttons (allowlist: the damage and heal numbers, W-62; the pause icon)',
             misses.length === 0, misses.length ? misses.join('; ') : JSON.stringify(seen));
     }
 
