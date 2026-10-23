@@ -11,7 +11,7 @@ import { RUNTIME_SETTINGS } from './SettingsScene.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { drawQR } from '../systems/QRCode.js';
 import { NetSignal, generateRoomCode, normalizeRoomCode, isValidRoomCode, findRoomCode, ROOM_CODE_ALPHABET } from '../systems/NetSignal.js';
-import { ensureTapTarget, isTouchDevice, menuFont, menuFontPx } from '../systems/TouchMenu.js';
+import { ensureTapTarget, isTouchDevice, menuFont, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
 import { attachKeyboardLift } from '../systems/KeyboardLift.js';
 import { SHARE_CONFIG, NET_CONFIG, TOUCH_CONFIG, BALANCE_TALLY_CONFIG } from '../config.js';
 import { canShare, fillShare, joinLink, shareOrCopy } from '../systems/Share.js';
@@ -150,7 +150,7 @@ export class OnlineScene extends Phaser.Scene {
             font: `${menuFontPx(this, 16)}px monospace`,
             fill: '#ffdd44',
             align: 'center',
-            wordWrap: touch ? { width: F.statusWrapW } : null,
+            wordWrap: touch ? { width: menuLarge(this) ? TOUCH_CONFIG.menuRows.onlineLarge.statusWrapW : F.statusWrapW } : null,
         }).setOrigin(0.5);
 
         // DOM overlay that tracks the canvas.
@@ -330,12 +330,16 @@ export class OnlineScene extends Phaser.Scene {
         // Holiday W-59: on a touch device a label grows to menuFontPx() and
         // takes its short wording (TOUCH_CONFIG.menuRows.onlineFlow), one
         // grown line tall, so it still fits above the box it names.
+        // Holiday W-82: under TEXT: LARGE (menuLarge) a label takes the
+        // still shorter wording and the row of TOUCH_CONFIG.menuRows.onlineLarge.
         const F = isTouchDevice(this) ? TOUCH_CONFIG.menuRows.onlineFlow : null;
-        el.textContent = (F && F.short[text]) || text;
+        const G = menuLarge(this) ? TOUCH_CONFIG.menuRows.onlineLarge : null;
+        el.textContent = (G && G.short[text]) || (F && F.short[text]) || text;
+        const top = G && G.y[text] !== undefined ? G.y[text] : F && F.y[text] !== undefined ? F.y[text] : y;
         Object.assign(el.style, {
             position: 'absolute',
             left: x + 'px',
-            top: (F && F.y[text] !== undefined ? F.y[text] : y) + 'px',
+            top: top + 'px',
             width: w + 'px',
             color,
             font: `${menuFontPx(this, 15)}px monospace`,
@@ -540,16 +544,20 @@ export class OnlineScene extends Phaser.Scene {
         this.roomStatus = this._label('opening a room…', COL_X, 312, COL_W, '#ffdd44');
 
         // Fallback: the manual code exchange, always present.
+        // Holiday W-82: under TEXT: LARGE the rows below the room status
+        // move down (TOUCH_CONFIG.menuRows.onlineLarge).
+        const G = menuLarge(this) ? TOUCH_CONFIG.menuRows.onlineLarge : null;
+        const areaH = G ? G.areaH : AREA_H;
         this._label('No room code? Send this code across yourself:', COL_X, 344);
-        this.offerArea = this._textarea(COL_X, 366, COL_W, AREA_H, true, '');
-        this._button('COPY', COL_X, 440, 120, () => this._copy(this.offerArea));
+        this.offerArea = this._textarea(COL_X, G ? G.area1Y : 366, COL_W, areaH, true, '');
+        this._button('COPY', COL_X, G ? G.button1Y : 440, 120, () => this._copy(this.offerArea));
         // Holiday W-29: on a phone, send the room code through the share
         // sheet. A DOM click fires on the tap's release, a user gesture.
-        if (canShare()) this._button('SHARE', COL_X + 130, 440, 120, () => this._shareRoom());
+        if (canShare()) this._button('SHARE', COL_X + 130, G ? G.button1Y : 440, 120, () => this._shareRoom());
 
         this._label('Paste their reply code here:', COL_X, 480);
-        this.answerPaste = this._textarea(COL_X, 502, COL_W, AREA_H, false, 'paste reply code…');
-        this._button('CONNECT', COL_X, 576, 160, () => this._hostConnect());
+        this.answerPaste = this._textarea(COL_X, G ? G.area2Y : 502, COL_W, areaH, false, 'paste reply code…');
+        this._button('CONNECT', COL_X, G ? G.button2Y : 576, 160, () => this._hostConnect());
 
         // Right column: the same code as a QR.
         this._label('Or let them scan it:', QR_X, 224, QR_W);
@@ -631,30 +639,36 @@ export class OnlineScene extends Phaser.Scene {
 
         this._panel();
 
+        // Holiday W-82: under TEXT: LARGE the row widths, JOIN's wording and
+        // the rows below the room status follow TOUCH_CONFIG.menuRows.onlineLarge.
+        const G = menuLarge(this) ? TOUCH_CONFIG.menuRows.onlineLarge : null;
+        const join = G ? G.joinLabel : 'JOIN ROOM';
+        const areaH = G ? G.areaH : AREA_H;
+
         // Primary: room code entry.
         this._label("ROOM CODE from your friend:", COL_X, 224);
         if (this._canPaste()) {
             // Holiday W-38: PASTE between the box and JOIN ROOM, on a phone.
-            const P = NET_CONFIG.paste;
+            const P = G ? { ...NET_CONFIG.paste, ...G.paste } : NET_CONFIG.paste;
             this.roomInput = this._roomCodeInput(COL_X, 246, P.inputW);
             this.pasteButton = this._button(P.label, COL_X + P.inputW + P.gap, 246, P.buttonW,
                 () => this._pasteRoomCode(), 56);
-            this._button('JOIN ROOM', COL_X + COL_W - P.joinW, 246, P.joinW, () => this._joinByRoomCode(), 56);
+            this._button(join, COL_X + COL_W - P.joinW, 246, P.joinW, () => this._joinByRoomCode(), 56);
         } else {
             this.pasteButton = null;
             this.roomInput = this._roomCodeInput(COL_X, 246, 250);
-            this._button('JOIN ROOM', COL_X + 262, 246, 158, () => this._joinByRoomCode(), 56);
+            this._button(join, COL_X + 262, 246, 158, () => this._joinByRoomCode(), 56);
         }
         this.roomStatus = this._label('5 characters, letters and numbers.', COL_X, 312, COL_W, '#ffdd44');
 
         // Fallback: the manual code exchange, always present.
         this._label('No room code? Paste their code here:', COL_X, 344);
-        this.offerPaste = this._textarea(COL_X, 366, COL_W, AREA_H, false, "paste host's code…");
-        this._button('GENERATE REPLY', COL_X, 440, 200, () => this._guestGenerate());
+        this.offerPaste = this._textarea(COL_X, G ? G.area1Y : 366, COL_W, areaH, false, "paste host's code…");
+        this._button('GENERATE REPLY', COL_X, G ? G.button1Y : 440, G ? G.generateW : 200, () => this._guestGenerate());
 
         this._label('Then send this reply back:', COL_X, 480);
-        this.answerArea = this._textarea(COL_X, 502, COL_W, AREA_H, true, '');
-        this._button('COPY', COL_X, 576, 120, () => this._copy(this.answerArea));
+        this.answerArea = this._textarea(COL_X, G ? G.area2Y : 502, COL_W, areaH, true, '');
+        this._button('COPY', COL_X, G ? G.button2Y : 576, 120, () => this._copy(this.answerArea));
 
         // Right column: the reply, as a QR for the host to scan.
         this._label('Your reply, for them to scan:', QR_X, 224, QR_W);
@@ -856,7 +870,10 @@ export class OnlineScene extends Phaser.Scene {
         // (TOUCH_CONFIG.menuRows.online): shorter cards with the short class
         // name and no passive, and the strip in rows wide enough for a name.
         this.lobbyTouch = isTouchDevice(this) && menuFontPx(this, 9) > 9;
-        const L = this.lobbyTouch ? TOUCH_CONFIG.menuRows.online : null;
+        const L = this._lobbyRows();
+        // Holiday W-82: under TEXT: LARGE the status line moves up into the
+        // band under the subtitle, above the taller cards.
+        if (L && L.statusY !== undefined) this.statusText.setY(L.statusY);
 
         // --- class cards ---
         const totalW = CLASS_KEYS.length * LOBBY_CARD_W + (CLASS_KEYS.length - 1) * LOBBY_CARD_GAP;
@@ -884,13 +901,27 @@ export class OnlineScene extends Phaser.Scene {
                 menuFont(this, '15px monospace'), '#8888aa');
         }
 
-        this._lobbyText(width / 2, L ? L.hintY : 548,
-            L ? 'tap a wizard' + (isHost ? ' and a battleground' : '')
-                : '←/→ move  ·  ENTER picks  ·  mouse works too  ·  ESC leaves',
-            `${menuFontPx(this, 12)}px monospace`, '#666688');
+        // Under TEXT: LARGE the hint gives way to the taller rows (W-82).
+        if (!L || L.hintY !== undefined) {
+            this._lobbyText(width / 2, L ? L.hintY : 548,
+                L ? 'tap a wizard' + (isHost ? ' and a battleground' : '')
+                    : '←/→ move  ·  ENTER picks  ·  mouse works too  ·  ESC leaves',
+                `${menuFontPx(this, 12)}px monospace`, '#666688');
+        }
         this.pickStatus = this._lobbyText(width / 2, L ? L.pickY : 592, '', menuFont(this, 'bold 15px monospace'), '#66ff66');
 
         this._refreshLobby();
+    }
+
+    // The lobby's touch rows (TOUCH_CONFIG.menuRows.online), with the TEXT:
+    // LARGE rows over them under menuLarge (holiday W-82; no hintY there);
+    // null on a desktop.
+    _lobbyRows() {
+        if (!this.lobbyTouch) return null;
+        const R = TOUCH_CONFIG.menuRows;
+        if (!menuLarge(this)) return R.online;
+        const { hintY, ...rows } = R.online;
+        return { ...rows, ...R.onlineLarge.lobby };
     }
 
     _lobbyText(x, y, text, font, fill) {
@@ -904,7 +935,7 @@ export class OnlineScene extends Phaser.Scene {
     // "coming online soon" state left to draw.
     _createClassCard(x, y, key, index) {
         const cls = WIZARD_CLASSES[key];
-        const L = this.lobbyTouch ? TOUCH_CONFIG.menuRows.online : null;
+        const L = this._lobbyRows();
         const cardH = L ? L.cardH : LOBBY_CARD_H;
         const top = y - cardH / 2;
         const fpx = (base) => menuFontPx(this, base);
@@ -945,7 +976,7 @@ export class OnlineScene extends Phaser.Scene {
     _createMapCard(x, y, choice, index, row = 0, col = index) {
         const isRandom = choice === RANDOM_MAP;
         const def = isRandom ? null : MAP_DEFS[choice];
-        const L = this.lobbyTouch ? TOUCH_CONFIG.menuRows.online : null;
+        const L = this._lobbyRows();
         const slotW = L ? L.mapSlotW : MAP_SLOT_W;
 
         const bg = this.add.rectangle(x, y, slotW - 6, MAP_SLOT_H, 0x1a1a2e);
@@ -955,7 +986,8 @@ export class OnlineScene extends Phaser.Scene {
         let preview;
         if (isRandom) {
             preview = this.add.text(x, y, '?', {
-                font: 'bold 28px monospace', fill: '#66ff66',
+                font: L && L.randomPx ? `bold ${menuFontPx(this, L.randomPx)}px monospace` : 'bold 28px monospace',
+                fill: '#66ff66',
             }).setOrigin(0.5);
         } else {
             preview = this._drawMapThumb(x, y, def);
