@@ -228,14 +228,15 @@ export function layoutRow(scene, btns, y, gap) {
 
 // Holiday W-62: a banner's small line (`basePx`, stroke `strokePx`) on a
 // touch device: grown to the floor, its stroke with it, wrapped at
-// TOUCH_CONFIG.banners.wrapW, and centred banners.gap under `above`. Returns
-// its bottom edge, or 0 where it keeps its desktop size and place.
+// TOUCH_CONFIG.banners.wrapW (wrapWLarge under menuLarge, W-83), and centred
+// banners.gap under `above`. Returns its bottom edge, or 0 where it keeps its
+// desktop size and place.
 export function growBannerLine(scene, t, basePx, strokePx, above) {
     const px = menuFontPx(scene, basePx);
     if (px <= basePx) return 0;
-    const { gap, wrapW } = TOUCH_CONFIG.banners;
+    const { gap, wrapW, wrapWLarge } = TOUCH_CONFIG.banners;
     t.setFontSize(px).setStroke('#000000', strokePx * px / basePx)
-        .setWordWrapWidth(wrapW).setAlign('center');
+        .setWordWrapWidth(menuLarge(scene) ? wrapWLarge : wrapW).setAlign('center');
     t.setY(above.y + above.height / 2 + gap + t.height / 2);
     return t.y + t.height / 2;
 }
