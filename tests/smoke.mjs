@@ -6511,7 +6511,7 @@ try {
         const k = TOUCH_CONFIG.textSizes.large;
         check('text scale: with TEXT: LARGE saved the rotate prompt and the boot line are textSizes.large times their NORMAL size and --text-scale reads it; with nothing saved, NORMAL',
             normal.prompt === 'flex' && large.prompt === 'flex' && normal.scale === '1' && large.scale === String(k)
-                && Math.abs(large.promptPx - normal.promptPx * k) < 0.01 && Math.abs(large.bootPx - normal.bootPx * k) < 0.01 && normal.promptPx === 18,
+                && Math.abs(large.promptPx - normal.promptPx * k) < 0.01 && Math.abs(large.bootPx - normal.bootPx * k) < 0.01 && normal.promptPx === 18 && normal.bootPx === 18,
             JSON.stringify({ normal, large, k }));
     }
 
