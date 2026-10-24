@@ -179,6 +179,12 @@ export const MUTATOR_CONFIG = {
     lowCooldownFactor: 0.4, // Low Cooldowns: multiplier applied after class passives
 };
 
+// The main menu's Daily line (holiday W-87): how often, at most, the open
+// menu checks whether the local date has moved past the day it was drawn for.
+export const DAILY_CONFIG = {
+    menuCheckMs: 1000,
+};
+
 export const CONTROLS = {
     player1: {
         up: 'W',
