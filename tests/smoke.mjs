@@ -188,6 +188,8 @@
 //   3aa1l. under Playwright's clock the open menu's Daily line follows the
 //      date past midnight: "today: best N" for a won day, "today: new!"
 //      once the day turns (W-87),
+//   3aa1m. with TEXT: LARGE saved, the rotate prompt and the boot line are
+//      textSizes.large times their NORMAL size, --text-scale says so (W-88),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -6471,6 +6473,46 @@ try {
         check('daily midnight: with the menu left open across local midnight the Daily line goes from "today: best 3" to "today: new!" and the day is unwon',
             menu && before.text === 'today: best 3' && before.fill === '#66ff66' && after.text === 'today: new!' && after.fill === '#ffdd44' && after.won === false,
             JSON.stringify({ menu, before, after }));
+    }
+
+    // 3aa1m. Holiday W-88: the DOM texts outside the canvas follow TEXT:
+    // LARGE. On a portrait 390x844 touch phone, once with no saved settings
+    // and once with textSize 'large' saved before the load: the rotate
+    // prompt shows, and its text's and the boot line's computed font-size
+    // (the boot line measured on a stand-in with its id, main.js removes it
+    // at READY) and --text-scale read NORMAL's, then textSizes.large times
+    // them.
+    {
+        const read = async (textSize) => {
+            const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+            const pg = await ctx.newPage();
+            pg.on('pageerror', (e) => errors.push('text scale pageerror: ' + e.message));
+            if (textSize) await pg.addInitScript((v) => localStorage.setItem('wizard-shootout-settings-v1', JSON.stringify({ textSize: v })), textSize);
+            await pg.goto(url, { waitUntil: 'networkidle' });
+            await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 }).catch(() => {});
+            const r = await pg.evaluate(() => {
+                let boot = document.getElementById('boot-loading');
+                const standIn = !boot;
+                if (standIn) { boot = document.createElement('p'); boot.id = 'boot-loading'; document.getElementById('game-container').appendChild(boot); }
+                const out = {
+                    prompt: getComputedStyle(document.getElementById('rotate-prompt')).display,
+                    promptPx: parseFloat(getComputedStyle(document.querySelector('#rotate-prompt p')).fontSize),
+                    bootPx: parseFloat(getComputedStyle(boot).fontSize),
+                    scale: getComputedStyle(document.documentElement).getPropertyValue('--text-scale').trim(),
+                };
+                if (standIn) boot.remove();
+                return out;
+            });
+            await ctx.close();
+            return r;
+        };
+        const normal = await read(null);
+        const large = await read('large');
+        const k = TOUCH_CONFIG.textSizes.large;
+        check('text scale: with TEXT: LARGE saved the rotate prompt and the boot line are textSizes.large times their NORMAL size and --text-scale reads it; with nothing saved, NORMAL',
+            normal.prompt === 'flex' && large.prompt === 'flex' && normal.scale === '1' && large.scale === String(k)
+                && Math.abs(large.promptPx - normal.promptPx * k) < 0.01 && Math.abs(large.bootPx - normal.bootPx * k) < 0.01 && normal.promptPx === 18 && normal.bootPx === 18,
+            JSON.stringify({ normal, large, k }));
     }
 
     // 3aa1f. Holiday W-81: TOUCH LAYOUT x TOUCH SIZE inside the safe area. On

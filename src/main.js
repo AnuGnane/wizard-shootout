@@ -18,7 +18,7 @@ import { installBackButton } from './systems/BackButton.js';
 import { readJoinLink } from './systems/Share.js';
 import { watchForUpdates } from './systems/AppUpdate.js';
 import { watchInstallPrompt } from './systems/InstallPrompt.js';
-import { loadSettings } from './systems/Storage.js';
+import { applyTextScale, loadSettings } from './systems/Storage.js';
 import { loadCustomMaps, getCustomMaps } from './systems/CustomMaps.js';
 import { isInstalledApp } from './systems/Fullscreen.js';
 import { MATCH_STATE } from './systems/MatchState.js';
@@ -30,6 +30,7 @@ import './systems/Stats.js';
 // Restore persisted settings (sound, bot difficulty, tunables) before the
 // game boots so every scene sees the saved values from the first frame.
 loadSettings(RUNTIME_SETTINGS);
+applyTextScale(RUNTIME_SETTINGS);
 // Phase 9a: register any maps built in the editor before the first scene runs,
 // so MapSelect's card list and pickMap's combined index see them immediately.
 loadCustomMaps();

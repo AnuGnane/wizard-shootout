@@ -109,6 +109,14 @@ export function loadSettings(settings) {
     }
 }
 
+// Holiday W-88: TEXT's factor (TOUCH_CONFIG.textSizes) as the CSS custom
+// property --text-scale on the root, which sizes the two texts a phone shows
+// outside the canvas (the boot line and the rotate prompt, index.html). Set
+// after the saved settings load and again when Settings applies them.
+export function applyTextScale(settings) {
+    document.documentElement.style.setProperty('--text-scale', String(TOUCH_CONFIG.textSizes[settings.textSize] || 1));
+}
+
 // Persist the whitelisted subset of RUNTIME_SETTINGS.
 export function saveSettings(settings) {
     const payload = { runesEnabled: { ...settings.runesEnabled } };
