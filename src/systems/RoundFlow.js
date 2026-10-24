@@ -17,7 +17,7 @@ import { MATCH_STATE } from './MatchState.js';
 import { NetSession } from './NetSession.js';
 import { audio } from './AudioSystem.js';
 import { RUNTIME_SETTINGS } from '../scenes/SettingsScene.js';
-import { growBannerLine, isTouchDevice, menuFontPx } from './TouchMenu.js';
+import { growBannerLine, isTouchDevice, menuFontPx, menuLarge } from './TouchMenu.js';
 import { recordRound, recordMatch, checkAchievements, recordDailyResult, getDailyStatus } from './Stats.js';
 
 export class RoundFlow {
@@ -311,6 +311,15 @@ export class RoundFlow {
             panelW = Math.max(panelW, Math.max(label.width, nameText.width) + 2 * padX);
             panelH = Math.max(panelH, label.height + gap + nameText.height + 2 * padY);
             y = Math.max(y, minTop + panelH / 2);
+            // Holiday W-86: under TEXT: LARGE on a small phone, and below the
+            // top bar's grown rows (the HUD texts starting above minTop;
+            // taller where a safe area shrinks the canvas).
+            if (menuLarge(scene) && scene.touchHud) {
+                const bar = Object.values(scene.touchHud.texts())
+                    .filter((t) => t && t.visible && t.text && t.getBounds().top < minTop)
+                    .reduce((b, t) => Math.max(b, t.getBounds().bottom), 0);
+                y = Math.max(y, bar + gap + panelH / 2);
+            }
             const top = y - (label.height + gap + nameText.height) / 2;
             label.setY(top + label.height / 2);
             nameText.setY(top + label.height + gap + nameText.height / 2);

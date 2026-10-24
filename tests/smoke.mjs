@@ -181,6 +181,10 @@
 //   3aa1j. on a 568x320 phone the Daily and 1P match GAME OVER cards
 //      under TEXT: LARGE and a PARTY card under LARGE and NORMAL at the
 //      floor, on the canvas, none overlapping (W-85),
+//   3aa1k. 3aa1h's moments under TEXT: LARGE, TOUCH SIZE: LARGE and TOUCH
+//      LAYOUT: LEFT at 568x320 with 3d's insets: every text at the LARGE
+//      floor, none over another or a control, every control and text inside
+//      the safe area (W-86),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -6129,8 +6133,14 @@ try {
     // overlapping another or a touch control (the joystick's home, FIRE, ORB,
     // PWR and the pause button; a button's own label aside), the labels
     // inside their buttons.
-    for (const textSize of ['normal', 'large']) {
+    // 3aa1k. Holiday W-86: 3aa1h's moments again with TOUCH SIZE: LARGE and
+    // TOUCH LAYOUT: LEFT set beside TEXT: LARGE, on the 568x320 phone with
+    // 3d's notch and home-indicator insets: 3aa1h's rules, and every control
+    // (drawn circle) and every text inside the safe area.
+    for (const [textSize, trio] of [['normal', false], ['large', false], ['large', true]]) {
         const large = textSize === 'large';
+        const INSETS = trio ? { top: 0, right: 47, bottom: 21, left: 47 } : null;
+        const tag = trio ? 'LARGE/LARGE/LEFT ' : '';
         // [why, test on a text's { text, depth, px }]: may stay under the
         // floor and float over others. Nothing else without a reason.
         const allow = [
@@ -6146,18 +6156,22 @@ try {
         const ctx = await browser.newContext({ viewport: { width: 568, height: 320 }, hasTouch: true, isMobile: true });
         const pg = await ctx.newPage();
         pg.on('pageerror', (e) => errors.push('round floor pageerror: ' + e.message));
+        if (INSETS) await (await ctx.newCDPSession(pg)).send('Emulation.setSafeAreaInsetsOverride', { insets: INSETS });
         await pg.goto(url, { waitUntil: 'networkidle' });
         await pg.waitForFunction(() => window.__game?.scene?.isActive('MenuScene'), null, { timeout: 20000 });
         await pg.evaluate(() => localStorage.removeItem('wizard-shootout-touch-tips-v1'));
         if (large) await pg.evaluate(() => { window.__settings.textSize = 'large'; });
+        if (trio) await pg.evaluate(() => { window.__settings.touchSize = 'large'; window.__settings.touchLayout = 'left'; });
         const min = TOUCH_CONFIG.hudMinCss * TOUCH_CONFIG.textSizes[textSize];
         const misses = [];
         const seen = {};
         let controls = {};
+        let layout = null;
         const sample = async (mode, moment) => {
             const ts = await pg.evaluate(() => {
                 const s = window.__game.scene.getScene('GameScene');
-                const k = window.__game.canvas.getBoundingClientRect().width / 1024;
+                const c = window.__game.canvas.getBoundingClientRect();
+                const k = c.width / 1024;
                 const out = [];
                 const walk = (list, sc) => list.forEach((o) => {
                     if (o.type === 'Container') { if (o.visible && o.alpha > 0) walk(o.list, sc * Math.abs(o.scaleY)); } else if (o.type === 'Text' && o.visible && o.active && o.alpha > 0 && o.text) {
@@ -6176,18 +6190,34 @@ try {
                     PWR: box(tc.buttons.ability.x, tc.buttons.ability.y, tc.buttons.ability.radius),
                     pause: box(tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.hit),
                 } : {};
-                return { out, controls };
-            }).then((r) => { controls = r.controls; return r.out; });
+                const drawn = tc ? { ...controls, joystick: box(tc.joy.homeX, tc.joy.homeY, tc.joy.radius),
+                    pause: box(tc.pauseBtn.x, tc.pauseBtn.y, tc.pauseBtn.radius) } : {};
+                const css = (q) => [c.left + q[0] * k, c.top + q[1] * k, c.left + q[2] * k, c.top + q[3] * k];
+                return { out: out.map((t) => ({ ...t, cssB: css(t.b) })), controls,
+                    drawn: Object.fromEntries(Object.entries(drawn).map(([n, q]) => [n, css(q)])),
+                    vw: window.innerWidth, vh: window.innerHeight, mirrored: !!tc?.mirrored, applied: tc?.appliedSize };
+            }).then((r) => { controls = r.controls; layout = r; return r.out; });
             const why = (t) => allow.find(([, test]) => test(t));
             const held = ts.filter((t) => !why(t));
             seen[`${mode} ${moment}`] = ts.length;
-            for (const t of held) if (t.css < min - 0.5) misses.push(`${mode} ${moment}: "${t.text}" is ${t.css} CSS px`);
+            for (const t of held) if (t.css < min - 0.5) misses.push(`${tag}${mode} ${moment}: "${t.text}" is ${t.css} CSS px`);
             for (let i = 0; i < held.length; i++) for (let j = i + 1; j < held.length; j++) {
                 const [a, b] = [held[i].b, held[j].b];
-                if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) misses.push(`${mode} ${moment}: "${held[i].text}" | "${held[j].text}" overlap`);
+                if (a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]) misses.push(`${tag}${mode} ${moment}: "${held[i].text}" | "${held[j].text}" overlap`);
             }
             if (large) for (const t of held) if (!/^touchButtonLabel_/.test(t.name || '')) for (const [cn, q] of Object.entries(controls)) {
-                if (t.b[0] < q[2] && q[0] < t.b[2] && t.b[1] < q[3] && q[1] < t.b[3]) misses.push(`${mode} ${moment}: "${t.text}" over the ${cn} control`);
+                if (t.b[0] < q[2] && q[0] < t.b[2] && t.b[1] < q[3] && q[1] < t.b[3]) misses.push(`${tag}${mode} ${moment}: "${t.text}" over the ${cn} control`);
+            }
+            if (INSETS) {
+                const safe = [INSETS.left - 0.5, INSETS.top - 0.5, layout.vw - INSETS.right + 0.5, layout.vh - INSETS.bottom + 0.5];
+                const out = (q) => q[0] < safe[0] || q[1] < safe[1] || q[2] > safe[2] || q[3] > safe[3];
+                const at = (q) => `(${q.map((v) => v.toFixed(0)).join(',')})`;
+                for (const [cn, q] of Object.entries(layout.drawn)) if (out(q)) misses.push(`${tag}${mode} ${moment}: the ${cn} control outside the safe area ${at(q)}`);
+                for (const t of ts) if (out(t.cssB)) misses.push(`${tag}${mode} ${moment}: "${t.text}" outside the safe area ${at(t.cssB)}`);
+                if (!layout.mirrored) misses.push(`${tag}${mode} ${moment}: the controls are not mirrored`);
+                // The W-86 ruling: TOUCH SIZE: LARGE applies as NORMAL under
+                // TEXT: LARGE on a phone this small (TouchControls._layout).
+                if (layout.applied !== 1) misses.push(`${tag}${mode} ${moment}: TOUCH SIZE applied ${layout.applied}, not NORMAL's 1 (the W-86 cap)`);
             }
             if (!ts.length) misses.push(`${mode} ${moment}: no text found`);
         };
@@ -6269,7 +6299,9 @@ try {
         await call('heal', null, 100);
         await sample('survival', 'heal pop');
         await ctx.close();
-        check(large
+        check(trio
+            ? 'round floor LARGE/LARGE/LEFT: at 568x320 with notch insets under TEXT: LARGE, TOUCH SIZE: LARGE and TOUCH LAYOUT: LEFT every text of a 1P round (banner, tips, ORB SURGE, party, DRAW, toast, round and match end) and a survival round (wave banner, heal pop) is at least hudMinCss x textSizes.large CSS px, none overlaps another or a touch control, the button labels inside their buttons, every control and text inside the safe area, TOUCH SIZE held at NORMAL (W-86 ruling) (allowlist: the damage and heal numbers, W-62; the pause icon)'
+            : large
             ? 'round floor LARGE: at 568x320 under TEXT: LARGE every text of a 1P round (banner, tips, ORB SURGE, party, DRAW, toast, round and match end) and a survival round (wave banner, heal pop) is at least hudMinCss x textSizes.large CSS px, none overlaps another or a touch control, the button labels inside their buttons (allowlist: the damage and heal numbers, W-62; the pause icon)'
             : 'round floor: at 568x320 every text of a 1P round (banner, tips, ORB SURGE, party, DRAW, toast, round and match end) and a survival round (wave banner, heal pop) is at least hudMinCss CSS px and none overlaps, the button labels inside their buttons (allowlist: the damage and heal numbers, W-62; the pause icon)',
             misses.length === 0, misses.length ? misses.join('; ') : JSON.stringify(seen));

@@ -685,6 +685,9 @@ export const TOUCH_CONFIG = {
     hudGap: 8,
     hudBarW: 120,
     hudBarMinW: 60,
+    // Under TEXT: LARGE on a small phone the survival run clock's bottom
+    // edge sits this many game px above the canvas's (holiday W-86).
+    hudClockBottomGap: 4,
     // Buzz on a phone (holiday W-14): navigator.vibrate durations in ms for
     // the local touch seat. hit is one pulse, at most one per hitMinGapMs
     // (burn ticks never buzz); death and win are patterns (on, off, on...)
@@ -706,7 +709,10 @@ export const TOUCH_CONFIG = {
     // wrapWLarge instead, so a grown line stays between the joystick and ORB
     // (holiday W-83: at 568x320 a 960 wrap ran the map line and the round-end
     // summaries over the joystick).
-    banners: { gap: 4, wrapW: 960, wrapWLarge: 400 },
+    // Holiday W-86: and narrower where the controls beside a line close in
+    // (TouchControls.centreRoom), re-measured up to roomPasses times as the
+    // narrowed line grows taller.
+    banners: { gap: 4, wrapW: 960, wrapWLarge: 400, roomPasses: 3 },
     // The achievement toast on a touch device (holiday W-66): its two lines
     // grow to the floor and the panel grows around them, padX / padY game px
     // of margin, gap between the lines; its top stays minTop clear of the

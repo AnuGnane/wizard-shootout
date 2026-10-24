@@ -235,9 +235,21 @@ export function growBannerLine(scene, t, basePx, strokePx, above) {
     const px = menuFontPx(scene, basePx);
     if (px <= basePx) return 0;
     const { gap, wrapW, wrapWLarge } = TOUCH_CONFIG.banners;
-    t.setFontSize(px).setStroke('#000000', strokePx * px / basePx)
-        .setWordWrapWidth(menuLarge(scene) ? wrapWLarge : wrapW).setAlign('center');
-    t.setY(above.y + above.height / 2 + gap + t.height / 2);
+    const place = (w) => {
+        t.setWordWrapWidth(w);
+        t.setY(above.y + above.height / 2 + gap + t.height / 2);
+    };
+    t.setFontSize(px).setStroke('#000000', strokePx * px / basePx).setAlign('center');
+    place(menuLarge(scene) ? wrapWLarge : wrapW);
+    // Holiday W-86: under menuLarge, and never wider than the room between
+    // the controls beside the line as drawn (a safe area that shrinks the
+    // canvas grows them inwards); narrowing makes it taller, so a control
+    // the taller line reaches is counted on the next pass.
+    for (let pass = 0; pass < TOUCH_CONFIG.banners.roomPasses && menuLarge(scene) && scene.touchControls; pass++) {
+        const room = scene.touchControls.centreRoom(t.y + t.height / 2);
+        if (room >= t.style.wordWrapWidth) break;
+        place(Math.max(1, room));
+    }
     return t.y + t.height / 2;
 }
 

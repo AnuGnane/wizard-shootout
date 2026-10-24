@@ -51,7 +51,7 @@
 // a press beside them.
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
-import { hudFloorCss } from './TouchMenu.js';
+import { hudFloorCss, menuLarge } from './TouchMenu.js';
 
 const BUTTONS = [
     { key: 'shoot', size: 'fire', label: 'FIRE', color: 0x5599ff },
@@ -321,6 +321,28 @@ export class TouchControls {
             : { x: orb.x - orb.radius - gap, originX: 1 };
     }
 
+    // Holiday W-86: the width centred on the canvas that clears, a gap short,
+    // every control (the joystick at home) whose top is above `bottomY`;
+    // Infinity where none is.
+    centreRoom(bottomY) {
+        const mid = GAME_CONFIG.width / 2;
+        const gap = TOUCH_CONFIG.gapCss / this._cssPerGamePx();
+        const half = [{ x: this.joy.homeX, y: this.joy.homeY, radius: this.joy.radius }, ...Object.values(this.buttons)]
+            .filter((c) => c.y - c.radius < bottomY)
+            .reduce((m, c) => Math.min(m, Math.abs(c.x - mid) - c.radius - gap), Infinity);
+        return 2 * half;
+    }
+
+    // Holiday W-86: the room from the run clock's anchor (clockAnchor) to
+    // the joystick's inner edge, a gap short of it.
+    clockRoom() {
+        const a = this.clockAnchor();
+        const gap = TOUCH_CONFIG.gapCss / this._cssPerGamePx();
+        return this.mirrored
+            ? this.joy.homeX - this.joy.radius - gap - a.x
+            : a.x - (this.joy.homeX + this.joy.radius) - gap;
+    }
+
     // Size every control to its CSS minimum at the current scale and anchor
     // it to the canvas corners: joystick bottom-left, FIRE bottom-right with
     // ORB to its left and PWR above it, all inside the thumb arcs (mirrored
@@ -337,7 +359,10 @@ export class TouchControls {
         // column would no longer fit the canvas height.
         const base = { j: radius(TOUCH_CONFIG.joystick), f: radius(TOUCH_CONFIG.fire), s: radius(TOUCH_CONFIG.small) };
         const room = H - 2 * margin;
-        const s = Math.min(this.sizeScale, room / (2 * base.j), (room - gap) / (2 * base.f + 2 * base.s));
+        // Holiday W-86: under TEXT: LARGE on a small phone (menuLarge) the
+        // grown text takes the room LARGE controls would: they stay NORMAL.
+        const want = menuLarge(this.scene) ? Math.min(this.sizeScale, 1) : this.sizeScale;
+        const s = Math.min(want, room / (2 * base.j), (room - gap) / (2 * base.f + 2 * base.s));
         this.appliedSize = s;
         const scaled = (cfg) => s * radius(cfg);
 

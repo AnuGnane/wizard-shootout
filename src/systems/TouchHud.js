@@ -11,7 +11,7 @@
 
 import { GAME_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { MATCH_STATE } from './MatchState.js';
-import { hudFloorCss } from './TouchMenu.js';
+import { hudFloorCss, menuLarge } from './TouchMenu.js';
 
 const W = GAME_CONFIG.width;
 const H = GAME_CONFIG.height;
@@ -23,6 +23,8 @@ const WORST = {
     rune: 'x10',
     round: 'ROUND 99  •  99:59',
     kills: 'HORDE SLAIN 999',
+    clock: 'SURVIVED 99:59  •  99 LEFT',
+    clockShort: '99:59  •  99 LEFT',
 };
 
 // Survival hero readouts, longest first (GameScene.updateSurvivalUI).
@@ -243,6 +245,24 @@ export class TouchHud {
         if (btns && s.roundText) {
             const a = s.touchControls.clockAnchor();
             s.roundText.setOrigin(a.originX, 0.5).setPosition(a.x, H - 15);
+            // Holiday W-86: under TEXT: LARGE on a small phone the grown
+            // clock drops its SURVIVED label where the full reading would
+            // run into the joystick (GameScene.survivalClockShort), wraps
+            // short of it if even that does not fit, and keeps its top
+            // where its longest reading ends on the canvas (so the tips,
+            // laid out once, stay clear as it changes).
+            if (menuLarge(s)) {
+                const room = Math.max(1, s.touchControls.clockRoom());
+                s.roundText.setWordWrapWidth(null);
+                s.survivalClockShort = this._measure(s.roundText, WORST.clock).w > room;
+                const worst = s.survivalClockShort ? WORST.clockShort : WORST.clock;
+                s.roundText.setWordWrapWidth(room).setAlign(a.originX ? 'right' : 'left');
+                const { h } = this._measure(s.roundText, worst);
+                s.roundText.setOrigin(a.originX, 0).setY(H - TOUCH_CONFIG.hudClockBottomGap - h);
+            } else if (s.survivalClockShort !== undefined) {
+                s.survivalClockShort = false;
+                s.roundText.setWordWrapWidth(null).setAlign('left');
+            }
         }
 
         s.updateSurvivalUI();
