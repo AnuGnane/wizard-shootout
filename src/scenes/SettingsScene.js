@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { MATCH_CONFIG, FX_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { MATCH_STATE } from '../systems/MatchState.js';
 import { audio } from '../systems/AudioSystem.js';
-import { saveSettings } from '../systems/Storage.js';
+import { applyTextScale, saveSettings } from '../systems/Storage.js';
 import { MenuNav } from '../systems/MenuNav.js';
 import { ensureTapTarget, isTouchDevice, layoutRow, menuFontPx, menuLarge, relayoutTapTargets } from '../systems/TouchMenu.js';
 import { canVibrate } from '../systems/Haptics.js';
@@ -494,6 +494,7 @@ export class SettingsScene extends Phaser.Scene {
         audio.setMusicEnabled(RUNTIME_SETTINGS.musicEnabled);
         MATCH_STATE.targetScore = RUNTIME_SETTINGS.targetScore;
         saveSettings(RUNTIME_SETTINGS);
+        applyTextScale(RUNTIME_SETTINGS);
 
         // Phase 8 — wizard textures bake the team palette in at boot
         // (PixelSprites.generateAllTextures). When Colorblind Team Colors

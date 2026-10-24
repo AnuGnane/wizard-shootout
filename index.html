@@ -67,7 +67,10 @@
       align-items: center;
       background: #1a1a2e;
       color: #e8e8f0;
-      font-size: 18px;
+      /* TEXT: LARGE reaches it through --text-scale (holiday W-88; set by
+         main.js once the saved settings are read, so a first load is at
+         normal size). */
+      font-size: calc(18px * var(--text-scale, 1));
       pointer-events: none;
     }
     /* Rotate prompt: a phone held upright shrinks the 1024x700 canvas to a
@@ -85,7 +88,7 @@
       align-items: center;
       gap: 20px;
       text-align: center;
-      font-size: 18px;
+      font-size: calc(18px * var(--text-scale, 1)); /* TEXT: LARGE (holiday W-88) */
       padding: 24px;
     }
     #rotate-prompt .phone {
