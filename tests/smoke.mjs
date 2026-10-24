@@ -6255,6 +6255,11 @@ try {
                 if (fn === 'heal') s.survivalDirector.showHealPop(s.player1, 25);
             }, [fn, arg]);
             await pg.waitForTimeout(wait);
+            // A round end's banner pops from 0.3 on game time, which a loaded
+            // machine runs slower than the wall clock: sample it settled, as
+            // the round banner is (W-86).
+            if (fn === 'kill') await pg.waitForFunction(() => window.__game.scene.getScene('GameScene').children.list
+                .some((o) => o.type === 'Text' && o.depth === 40 && /SCORES!|WINS THE MATCH/.test(o.text) && o.scaleX === 1), null, { timeout: 5000 }).catch(() => {});
         };
 
         await start('1p', 0);
