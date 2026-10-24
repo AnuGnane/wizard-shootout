@@ -185,6 +185,9 @@
 //      LAYOUT: LEFT at 568x320 with 3d's insets: every text at the LARGE
 //      floor, none over another or a control, every control and text inside
 //      the safe area (W-86),
+//   3aa1l. under Playwright's clock the open menu's Daily line follows the
+//      date past midnight: "today: best N" for a won day, "today: new!"
+//      once the day turns (W-87),
 // The steps the body also holds, by id:
 //   3b. a seat-1 orb pickup reaches stats and the achievement toast,
 //   3c. survival co-op: team-tagged horde, wave pools, the breather heal,
@@ -6421,6 +6424,53 @@ try {
         check('left-handed: tips sit over the mirrored controls; no HUD text or tip overlaps a control',
             tipsPlaced && overlaps.length === 0, JSON.stringify({ tipsPlaced, overlaps, move: T.move, fireTip: T.shoot }));
         await ctx.close();
+    }
+
+    // 3aa1l. Holiday W-87: the Daily line follows the date while the menu
+    // sits open. Playwright's clock (which fakes requestAnimationFrame too,
+    // so the game is driven with runFor) starts a minute before local
+    // midnight on an 844x390 touch phone; a Daily win is recorded through
+    // __statsApi and the menu redrawn: "today: best N". Two minutes on (a
+    // fastForward jump, then frames), with the menu left open, the line
+    // reads "today: new!" and the day's status is unwon.
+    {
+        const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+        const pg = await ctx.newPage();
+        pg.on('pageerror', (e) => errors.push('daily midnight pageerror: ' + e.message));
+        pg.on('console', (m) => { if (m.type() === 'error') errors.push('daily midnight console.error: ' + m.text()); });
+        const eve = new Date();
+        eve.setHours(23, 59, 0, 0);
+        await pg.clock.install({ time: eve });
+        await pg.goto(url, { waitUntil: 'load' });
+        const until = async (test, ms) => {
+            for (let t = 0; t < ms; t += 250) {
+                if (await pg.evaluate(test)) return true;
+                await pg.clock.runFor(250);
+            }
+            return pg.evaluate(test);
+        };
+        const menu = await until(() => !!window.__game?.scene?.isActive('MenuScene'), 30000);
+        await pg.evaluate(() => {
+            window.__statsApi.recordDailyResult(true, 3);
+            const m = window.__game.scene.getScene('MenuScene');
+            m.dailyLine = null;
+            m.scene.restart();
+        });
+        await until(() => window.__game.scene.isActive('MenuScene') && !!window.__game.scene.getScene('MenuScene').dailyLine?.active, 5000);
+        const line = () => pg.evaluate(() => {
+            const l = window.__game.scene.getScene('MenuScene').dailyLine;
+            return { text: l.text, fill: l.style.color, won: window.__statsApi.getDailyStatus().won };
+        });
+        const before = await line();
+        // Two minutes on: jumped (as a phone waking does, due timers firing
+        // once), then a second and a half of frames for update() to see it.
+        await pg.clock.fastForward(120000);
+        await pg.clock.runFor(1500);
+        const after = await line();
+        await ctx.close();
+        check('daily midnight: with the menu left open across local midnight the Daily line goes from "today: best 3" to "today: new!" and the day is unwon',
+            menu && before.text === 'today: best 3' && before.fill === '#66ff66' && after.text === 'today: new!' && after.fill === '#ffdd44' && after.won === false,
+            JSON.stringify({ menu, before, after }));
     }
 
     // 3aa1f. Holiday W-81: TOUCH LAYOUT x TOUCH SIZE inside the safe area. On

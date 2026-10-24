@@ -11,8 +11,16 @@ import { addInstallButton, iosInstallNote } from '../systems/InstallPrompt.js';
 import { secondDeviceGate } from '../systems/SecondDeviceNote.js';
 import { takePendingJoin } from '../systems/Share.js';
 import { isTouchDevice, layoutRow, menuFontPx, menuLarge } from '../systems/TouchMenu.js';
-import { TOUCH_CONFIG } from '../config.js';
+import { DAILY_CONFIG, TOUCH_CONFIG } from '../config.js';
 import { loopTween } from '../systems/ReducedMotion.js';
+
+// The Daily line's text and colour for today's status.
+function dailyLineStyle() {
+    const status = getDailyStatus();
+    return status.won
+        ? { text: `today: best ${status.bestRounds}`, fill: '#66ff66' }
+        : { text: 'today: new!', fill: '#ffdd44' };
+}
 
 export class MenuScene extends Phaser.Scene {
     constructor() {
@@ -170,14 +178,20 @@ export class MenuScene extends Phaser.Scene {
         // the keyboard hints go, and the gamepad line shows while a pad is
         // connected.
 
-        const dailyStatus = getDailyStatus();
-        const dailySubtitle = dailyStatus.won
-            ? `today: best ${dailyStatus.bestRounds}`
-            : 'today: new!';
-        const dailyLine = this.add.text(dailyX, R ? R.dailyY : 532, dailySubtitle, {
+        const daily = dailyLineStyle();
+        const dailyLine = this.add.text(dailyX, R ? R.dailyY : 532, daily.text, {
             font: `${menuFontPx(this, 11)}px monospace`,
-            fill: dailyStatus.won ? '#66ff66' : '#ffdd44',
+            fill: daily.fill,
         }).setOrigin(0.5);
+        // Holiday W-87: the line follows the date while the menu sits open
+        // (left overnight, or back from the background after midnight):
+        // checked in update() and when the page becomes visible again.
+        this.dailyLine = dailyLine;
+        this.dailyKey = DailyChallenge.todayKey();
+        this.dailyCheckAt = 0;
+        const onVisible = () => this.refreshDailyLine();
+        this.game.events.on(Phaser.Core.Events.VISIBLE, onVisible);
+        this.events.once('shutdown', () => this.game.events.off(Phaser.Core.Events.VISIBLE, onVisible));
 
         // Phase 6c: [ WARDROBE ] fills the reserved RIGHT secondary slot.
         const wardrobeX = secondaryStartX + 2 * secondarySpacing;
@@ -351,8 +365,23 @@ export class MenuScene extends Phaser.Scene {
         return btn;
     }
 
-    update() {
+    update(time) {
         this.menuNav.pollPad();
+        if (time >= this.dailyCheckAt) {
+            this.dailyCheckAt = time + DAILY_CONFIG.menuCheckMs;
+            this.refreshDailyLine();
+        }
+    }
+
+    // Holiday W-87: where the date has moved on since the Daily line was
+    // drawn, re-read the status (which rolls the day over) and redraw it in
+    // place: the same strings and colours, no relayout.
+    refreshDailyLine() {
+        const key = DailyChallenge.todayKey();
+        if (!this.dailyLine || !this.dailyLine.active || key === this.dailyKey) return;
+        this.dailyKey = key;
+        const daily = dailyLineStyle();
+        this.dailyLine.setText(daily.text).setFill(daily.fill);
     }
 
     startGame(mode) {
