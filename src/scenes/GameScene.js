@@ -1842,7 +1842,7 @@ export class GameScene extends Phaser.Scene {
         const secs = seconds % 60;
         if (this.isSurvival) {
             this.roundText.setText(
-                `SURVIVED ${mins}:${secs.toString().padStart(2, '0')}  •  ${this.survivalDirector.remainingThisWave()} LEFT`
+                `${this.survivalClockShort ? '' : 'SURVIVED '}${mins}:${secs.toString().padStart(2, '0')}  •  ${this.survivalDirector.remainingThisWave()} LEFT`
             );
         } else {
             this.roundText.setText(`ROUND ${MATCH_STATE.round}  •  ${mins}:${secs.toString().padStart(2, '0')}`);
